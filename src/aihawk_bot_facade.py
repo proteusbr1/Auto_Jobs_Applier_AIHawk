@@ -26,7 +26,7 @@ class AIHawkBotState:
 
 class AIHawkBotFacade:
     def __init__(self, login_component, apply_component):
-        logger.debug("Initializing AIHawkBotFacade")
+        logger.info("Initializing AIHawkBotFacade")
         self.login_component = login_component
         self.apply_component = apply_component
         self.state = AIHawkBotState()
@@ -37,46 +37,45 @@ class AIHawkBotFacade:
         self.parameters = None
 
     def set_job_application_profile_and_resume(self, job_application_profile, resume):
-        logger.debug("Setting job application profile and resume")
+        logger.info("Setting job application profile and resume")
         self._validate_non_empty(job_application_profile, "Job application profile")
         self._validate_non_empty(resume, "Resume")
         self.job_application_profile = job_application_profile
         self.resume = resume
         self.state.job_application_profile_set = True
-        logger.debug("Job application profile and resume set successfully")
-
+        logger.info("Job application profile and resume set successfully")
 
     def set_gpt_answerer_and_resume_generator(self, gpt_answerer_component, resume_generator_manager):
-        logger.debug("Setting GPT answerer and resume generator")
+        logger.info("Setting GPT answerer and resume generator")
         self._ensure_job_profile_and_resume_set()
         gpt_answerer_component.set_job_application_profile(self.job_application_profile)
         gpt_answerer_component.set_resume(self.resume)
         self.apply_component.set_gpt_answerer(gpt_answerer_component)
         self.apply_component.set_resume_generator_manager(resume_generator_manager)
         self.state.gpt_answerer_set = True
-        logger.debug("GPT answerer and resume generator set successfully")
+        logger.info("GPT answerer and resume generator set successfully")
 
     def set_parameters(self, parameters):
-        logger.debug("Setting parameters")
+        logger.info("Setting parameters")
         self._validate_non_empty(parameters, "Parameters")
         self.parameters = parameters
         self.apply_component.set_parameters(parameters)
         self.state.credentials_set = True
         self.state.parameters_set = True
-        logger.debug("Parameters set successfully")
+        logger.info("Parameters set successfully")
 
     def start_login(self):
-        logger.debug("Starting login process")
+        logger.info("Starting login process")
         self.state.validate_state(['credentials_set'])
         self.login_component.start()
         self.state.logged_in = True
-        logger.debug("Login process completed successfully")
+        logger.info("Login process completed successfully")
 
     def start_apply(self):
-        logger.debug("Starting apply process")
+        logger.info("Starting apply process")
         self.state.validate_state(['logged_in', 'job_application_profile_set', 'gpt_answerer_set', 'parameters_set'])
         self.apply_component.start_applying()
-        logger.debug("Apply process started successfully")
+        logger.info("Apply process started successfully")
 
     def _validate_non_empty(self, value, name):
         logger.debug(f"Validating that {name} is not empty")

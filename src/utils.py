@@ -1,38 +1,67 @@
-import logging
 import os
 import random
 import sys
 import time
 
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from loguru import logger
 
 from app_config import MINIMUM_LOG_LEVEL
 
 log_file = "app_log.log"
 
+# Define allowed log levels
+allowed_levels = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
-if MINIMUM_LOG_LEVEL in ["DEBUG", "TRACE", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+# Configure logger based on MINIMUM_LOG_LEVEL
+def configure_logger():
+    if MINIMUM_LOG_LEVEL in allowed_levels:
+        level = MINIMUM_LOG_LEVEL
+    else:
+        level = "DEBUG"
+        logger.warning(f"Invalid log level: {MINIMUM_LOG_LEVEL}. Defaulting to DEBUG.")
+    
     logger.remove()
-    logger.add(sys.stderr, level=MINIMUM_LOG_LEVEL)
-else:
-    logger.warning(f"Invalid log level: {MINIMUM_LOG_LEVEL}. Defaulting to DEBUG.")
-    logger.remove()
-    logger.add(sys.stderr, level="DEBUG")
+    
+    # Add stderr with detailed format
+    logger.add(
+        sys.stderr,
+        level=level,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | "
+               "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        enqueue=True
+    )
+    
+    # Add file handler with DEBUG level and detailed format
+    logger.add(
+        log_file,
+        level="DEBUG",
+        rotation="10 MB",
+        retention="10 days",
+        compression="zip",
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
+        enqueue=True
+    )
 
-chromeProfilePath = os.path.join(os.getcwd(), "chrome_profile", "linkedin_profile")
+configure_logger()
+
+chrome_profile_path = os.path.join(os.getcwd(), "chrome_profile", "linkedin_profile")
 
 def ensure_chrome_profile():
-    logger.debug(f"Ensuring Chrome profile exists at path: {chromeProfilePath}")
-    profile_dir = os.path.dirname(chromeProfilePath)
-    if not os.path.exists(profile_dir):
-        os.makedirs(profile_dir)
-        logger.debug(f"Created directory for Chrome profile: {profile_dir}")
-    if not os.path.exists(chromeProfilePath):
-        os.makedirs(chromeProfilePath)
-        logger.debug(f"Created Chrome profile directory: {chromeProfilePath}")
-    return chromeProfilePath
-
+    logger.debug(f"Ensuring Chrome profile exists at path: {chrome_profile_path}")
+    profile_dir = os.path.dirname(chrome_profile_path)
+    try:
+        if not os.path.exists(profile_dir):
+            os.makedirs(profile_dir)
+            logger.info(f"Created directory for Chrome profile: {profile_dir}")
+        if not os.path.exists(chrome_profile_path):
+            os.makedirs(chrome_profile_path)
+            logger.info(f"Created Chrome profile directory: {chrome_profile_path}")
+    except Exception as e:
+        logger.error(f"Failed to ensure Chrome profile directories: {e}", exc_info=True)
+        raise
+    return chrome_profile_path
 
 def is_scrollable(element):
     """Utility function to determine if an element is scrollable."""
@@ -43,7 +72,7 @@ def is_scrollable(element):
         logger.debug(f"Element scrollable check: scrollHeight={scroll_height}, clientHeight={client_height}, scrollable={scrollable}")
         return scrollable
     except Exception as e:
-        logger.error(f"Error determining scrollability: {e}")
+        logger.error(f"Error determining scrollability: {e}", exc_info=True)
         return False
 
 def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse=False, max_attempts=10):
@@ -81,9 +110,9 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
                     logger.error("The element is still not visible after attempting to scroll into view.")
                     return
                 else:
-                    logger.debug("Element is now visible after scrolling into view.")
+                    logger.info("Element is now visible after scrolling into view.")
             except Exception as e:
-                logger.error(f"Failed to scroll the element into view: {e}")
+                logger.error(f"Failed to scroll the element into view: {e}", exc_info=True)
                 return
 
         # Determine initial scroll positions
@@ -126,7 +155,7 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
                 driver.execute_script(script_scroll_to, scrollable_element, new_scroll_position)
                 logger.debug(f"Scrolled to position: {new_scroll_position}")
             except Exception as e:
-                logger.error(f"Error during scrolling to position {new_scroll_position}: {e}")
+                logger.error(f"Error during scrolling to position {new_scroll_position}: {e}", exc_info=True)
                 break
 
             time.sleep(random.uniform(0.2, 0.5))  # Adjusted sleep time for smoother scrolling
@@ -136,7 +165,7 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
                 current_scroll_position = int(float(scrollable_element.get_attribute("scrollTop") or 0))
                 logger.debug(f"Current scrollTop after scrolling: {current_scroll_position}")
             except Exception as e:
-                logger.error(f"Error fetching current scrollTop: {e}")
+                logger.error(f"Error fetching current scrollTop: {e}", exc_info=True)
                 break
 
             if reverse:
@@ -158,7 +187,7 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
                     attempts += 1
                     logger.debug(f"No new content loaded. Attempt {attempts}/{max_attempts}.")
                     if attempts >= max_attempts:
-                        logger.debug("Maximum scroll attempts reached. Ending scroll.")
+                        logger.info("Maximum scroll attempts reached. Ending scroll.")
                         break
 
                 # Check if we've reached the bottom
@@ -172,10 +201,10 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
             logger.debug(f"Scrolled to final position: {end_position}")
             time.sleep(0.5)
         except Exception as e:
-            logger.error(f"Error scrolling to final position {end_position}: {e}")
+            logger.error(f"Error scrolling to final position {end_position}: {e}", exc_info=True)
 
     except Exception as e:
-        logger.error(f"Exception occurred during scrolling: {e}")
+        logger.critical(f"Exception occurred during scrolling: {e}", exc_info=True)
 
     logger.debug("Completed scroll_slow.")
 
@@ -184,13 +213,13 @@ def chrome_browser_options():
     ensure_chrome_profile()
     options = webdriver.ChromeOptions()
     
-    # Modo Headless
-    # options.add_argument("--headless")
+    # Headless mode
+    options.add_argument("--headless")
     
-    # Especifica o caminho absoluto para o binário do Chrome
-    options.binary_location = '/usr/bin/google-chrome'  # Atualize conforme necessário
+    # Specify the absolute path to the Chrome binary
+    options.binary_location = '/usr/bin/google-chrome'  # Update as necessary
     
-    # Outras opções já existentes
+    # Existing options
     options.add_argument("--start-maximized")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -211,47 +240,52 @@ def chrome_browser_options():
     options.add_argument("--disable-cache")
     options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
 
-    # Flags adicionais para estabilidade
+    # Additional flags for stability
     options.add_argument("--disable-setuid-sandbox")
     # options.add_argument("--disable-software-rasterizer")
     options.add_argument("--no-zygote")
     options.add_argument("--single-process")
     options.add_argument("--remote-debugging-port=9222")
 
-    # Preferências para otimizar o carregamento
+    # Preferences to optimize loading
     prefs = {
         "profile.default_content_setting_values.images": 2,
         "profile.managed_default_content_settings.stylesheets": 2,
     }
     options.add_experimental_option("prefs", prefs)
 
-    # Configuração do perfil do Chrome
-    if len(chromeProfilePath) > 0:
-        initial_path = os.path.dirname(chromeProfilePath)
-        profile_dir = os.path.basename(chromeProfilePath)
-        options.add_argument('--user-data-dir=' + initial_path)
-        options.add_argument("--profile-directory=" + profile_dir)
-        logger.debug(f"Using Chrome profile directory: {chromeProfilePath}")
+    # Chrome profile configuration
+    if chrome_profile_path:
+        initial_path = os.path.dirname(chrome_profile_path)
+        profile_dir = os.path.basename(chrome_profile_path)
+        options.add_argument(f'--user-data-dir={initial_path}')
+        options.add_argument(f"--profile-directory={profile_dir}")
+        logger.info(f"Using Chrome profile directory: {chrome_profile_path}")
     else:
         options.add_argument("--incognito")
-        logger.debug("Using Chrome in incognito mode")
+        logger.info("Using Chrome in incognito mode")
 
     return options
 
+def print_colored(text, color_code):
+    reset = "\033[0m"
+    logger.debug(f"Printing text in color {color_code}: {text}")
+    print(f"{color_code}{text}{reset}")
 
-def printred(text):
+def print_red(text):
     red = "\033[91m"
-    reset = "\033[0m"
-    logger.debug("Printing text in red: %s", text)
-    print(f"{red}{text}{reset}")
+    print_colored(text, red)
 
-
-def printyellow(text):
+def print_yellow(text):
     yellow = "\033[93m"
-    reset = "\033[0m"
-    logger.debug("Printing text in yellow: %s", text)
-    print(f"{yellow}{text}{reset}")
+    print_colored(text, yellow)
 
-def stringWidth(text, font, font_size):
-    bbox = font.getbbox(text)
-    return bbox[2] - bbox[0]
+def string_width(text, font, font_size):
+    try:
+        bbox = font.getbbox(text)
+        width = bbox[2] - bbox[0]
+        logger.debug(f"Calculated string width for '{text}': {width}")
+        return width
+    except Exception as e:
+        logger.error(f"Error calculating string width: {e}", exc_info=True)
+        return 0
