@@ -23,7 +23,7 @@ from app_config import MINIMUM_SCORE_JOB_APPLICATION, USER_RESUME_SUMMARY
 
 import src.utils as utils
 from loguru import logger
-
+from src.llm.llm_manager import GPTAnswerer
 
 class AIHawkEasyApplier:
     def __init__(self, driver: Any, resume_dir: Optional[str], set_old_answers: List[Tuple[str, str, str]],
@@ -146,77 +146,112 @@ class AIHawkEasyApplier:
                 raise
         logger.debug(f"Job saved successfully: {job.title} with score {job.score}")
 
-    def is_job_skipped(self, job: Any) -> bool:
+    # def is_job_skipped(self, job: Any) -> bool:
+    #     """
+    #     Checks if the job was skipped previously and is in the job_score.json file
+    #     """
+    #     file_path = Path('data_folder') / 'output' / 'job_score.json'
+        
+    #     # If file doesn't exist, consider the job not skipped
+    #     if not file_path.exists():
+    #         logger.debug("job_score.json does not exist. Job has not been skipped.")
+    #         return False
+
+    #     # Load skipped jobs
+    #     try:
+    #         with open(file_path, 'r') as f:
+    #             skipped_jobs = json.load(f)
+    #     except json.JSONDecodeError:
+    #         logger.warning("job_score.json is corrupted. Considering job as not skipped.")
+    #         return False
+    #     except Exception as e:
+    #         logger.error(f"Error reading job_score.json: {e}", exc_info=True)
+    #         return False
+
+    #     # Check if current job is in skipped jobs
+    #     for skipped_job in skipped_jobs:
+    #         if skipped_job['link'] == job.link:
+    #             # logger.info(f"Job already skipped: {job.title} at {job.company}")
+    #             return True
+        
+    #     logger.debug(f"Job not skipped: {job.title} at {job.company}")
+    #     return False
+
+    def get_existing_job_score(self, link: str) -> float:
         """
-        Checks if the job was skipped previously and is in the job_score.json file
+        Retrieves the existing score for a job based on its link from job_score.json.
         """
         file_path = Path('data_folder') / 'output' / 'job_score.json'
         
-        # If file doesn't exist, consider the job not skipped
         if not file_path.exists():
-            logger.debug("job_score.json does not exist. Job has not been skipped.")
-            return False
+            logger.error("job_score.json does not exist. Returning default score of 0.")
+            return 0.1
 
-        # Load skipped jobs
         try:
             with open(file_path, 'r') as f:
-                skipped_jobs = json.load(f)
+                scored_jobs = json.load(f)
+                for scored_job in scored_jobs:
+                    if scored_job.get('link') == link:
+                        return scored_job.get('score', 0.0)
+        except Exception as e:
+            logger.error(f"Error reading job_score.json: {e}", exc_info=True)
+
+        return 0.1
+
+    def is_job_already_scored(self, job_title, company, link):
+        """
+        Checks if the job has already been scored (skipped previously) and is in the job_score.json file.
+        """
+        logger.debug(f"Checking if job is already scored: Title='{job_title}', Company='{company}'.")
+        file_path = Path('data_folder') / 'output' / 'job_score.json'
+
+        # Early exit if the file doesn't exist
+        if not file_path.exists():
+            logger.debug("job_score.json does not exist. Job has not been scored.")
+            return False
+
+        # Load the scored jobs from the file
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                scored_jobs = json.load(f)
         except json.JSONDecodeError:
-            logger.warning("job_score.json is corrupted. Considering job as not skipped.")
+            logger.warning("job_score.json is corrupted. Considering job as not scored.")
             return False
         except Exception as e:
             logger.error(f"Error reading job_score.json: {e}", exc_info=True)
             return False
 
-        # Check if current job is in skipped jobs
-        for skipped_job in skipped_jobs:
-            if skipped_job['link'] == job.link:
-                # logger.info(f"Job already skipped: {job.title} at {job.company}")
+        # Check if the current job's link matches any scored job
+        for scored_job in scored_jobs:
+            if scored_job.get('link') == link:
+                logger.debug(f"Job already scored: Title='{job_title}', Company='{company}'.")
                 return True
-        
-        logger.debug(f"Job not skipped: {job.title} at {job.company}")
+
+        logger.debug(f"Job not scored: Title='{job_title}', Company='{company}'.")
         return False
+
 
     def job_apply(self, job: Any):
         logger.info(f"Starting job application for job: {job}")
 
         try:
-            # Navigate to job link
             self.driver.get(job.link)
             logger.debug(f"Navigated to job link: {job.link}")
-        except Exception as e:
-            logger.error(f"Failed to navigate to job link: {job.link}", exc_info=True)
-            raise
-
-        time.sleep(random.uniform(0.5, 1.5))
-        self.check_for_premium_redirect(job)
-
-        try:
-            self.driver.execute_script("document.activeElement.blur();")
-            logger.debug("Focus removed from the active element")
-
-            self.check_for_premium_redirect(job)
-
-            easy_apply_button = self._find_easy_apply_button(job)
-
+            time.sleep(random.uniform(0.5, 1.5))
             self.check_for_premium_redirect(job)
 
             logger.debug("Retrieving job description")
-            job_description = self._get_job_description()
-            job.set_job_description(job_description)
-            # logger.debug(f"Job description set: {job_description[:100]}")
-
-            # Score evaluation logic
-            job.score = evaluate_job(job_description, USER_RESUME_SUMMARY, self.gpt_answerer)
+            job.description = self._get_job_description()
             
-            if job.score >= MINIMUM_SCORE_JOB_APPLICATION:
-                logger.info(f"Score is {job.score}. Proceeding with the application.")
-                    
-                # time.sleep(random.uniform(0.5, 1.5))
+            if job.score is None:
+                job.score = self.gpt_answerer.evaluate_job(job, USER_RESUME_SUMMARY)
 
-                # Perform application
+            logger.debug(f"Job score is: {job.score}")              
+
+            if job.score >= MINIMUM_SCORE_JOB_APPLICATION:
+                logger.info(f"Proceeding with the application. Score is {job.score}.")
                 actions = ActionChains(self.driver)
-                actions.move_to_element(easy_apply_button).click().perform()
+                actions.move_to_element(self._find_easy_apply_button(job)).click().perform()
                 logger.debug("'Easy Apply' button clicked successfully")
                 self._fill_application_form(job)
                 self.save_job_score(job)
@@ -310,26 +345,31 @@ class AIHawkEasyApplier:
         logger.debug("Getting job description")
         try:
             try:
-                see_more_button = self.driver.find_element(By.XPATH,
-                                                           '//button[@aria-label="Click to see more description"]')
+                # Wait until the 'See more description' button is clickable
+                see_more_button = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, '//button[@aria-label="Click to see more description"]'))
+                )
                 actions = ActionChains(self.driver)
                 actions.move_to_element(see_more_button).click().perform()
-                time.sleep(2)
                 logger.debug("Clicked 'See more description' button to expand job description")
-            except NoSuchElementException:
+            except (NoSuchElementException, TimeoutException):
                 logger.debug("'See more description' button not found, proceeding with available description")
 
-            description = self.driver.find_element(By.CLASS_NAME, 'jobs-description-content__text').text
+            # Wait until the job description element is present
+            description_element = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'jobs-description-content__text'))
+            )
+            description = description_element.text
             if description:
                 logger.debug("Job description retrieved successfully")
             else:
                 logger.warning("Job description element found but text is empty")
             return description
-        except NoSuchElementException:
-            logger.exception("Job description not found")
+        except TimeoutException as te:
+            logger.exception(f"Job description not found within the timeout period: {te}")
             raise Exception("Job description not found")
-        except Exception:
-            logger.exception("Error getting Job description")
+        except Exception as e:
+            logger.exception(f"Error getting Job description: {e}")
             raise Exception("Error getting Job description")
 
     def _get_job_recruiter(self):
@@ -459,24 +499,33 @@ class AIHawkEasyApplier:
             logger.warning(f"Failed to discard application: {e}", exc_info=True)
 
     def fill_up(self, job) -> None:
-        logger.debug(f"Filling up form sections for job: {job.title} at {job.company}")
+        logger.debug(f"Starting to fill up form sections for job: {job.title} at {job.company}")
 
         try:
+            # Wait for the easy apply content section to be present
             easy_apply_content = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.CLASS_NAME, 'jobs-easy-apply-content'))
             )
-            logger.debug("Easy apply content section found")
+            logger.debug("Easy apply content section found successfully.")
 
+            # Find all form sections within the easy apply content
             pb4_elements = easy_apply_content.find_elements(By.CLASS_NAME, 'pb4')
-            logger.debug(f"Found {len(pb4_elements)} form sections to process")
-            for element in pb4_elements:
+            logger.debug(f"Found {len(pb4_elements)} form sections to process.")
+
+            # Process each form section
+            for index, element in enumerate(pb4_elements):
+                logger.debug(f"Processing form section {index + 1}/{len(pb4_elements)}")
                 self._process_form_element(element, job)
+
+            logger.debug("All form sections processed successfully.")
+            
         except TimeoutException:
             logger.error("Easy apply content section not found within the timeout period", exc_info=True)
             raise
         except Exception as e:
-            logger.error(f"Failed to find form elements: {e}", exc_info=True)
+            logger.error(f"An error occurred while filling up the form: {e}", exc_info=True)
             raise
+
 
     def _process_form_element(self, element: WebElement, job) -> None:
         logger.debug("Processing form element")
@@ -651,7 +700,7 @@ class AIHawkEasyApplier:
     def _create_and_upload_cover_letter(self, element: WebElement, job) -> None:
         logger.info("Starting the process of creating and uploading cover letter.")
 
-        cover_letter_text = self.gpt_answerer.answer_question_textual_wide_range("Write a cover letter")
+        cover_letter_text = self.gpt_answerer.answer_question_textual_wide_range("Write a cover letter", job=job)
 
         folder_path = 'generated_cv'
 
@@ -683,7 +732,7 @@ class AIHawkEasyApplier:
                     wrapped_lines = []
                     for line in text.splitlines():
 
-                        if utils.stringWidth(line, font, font_size) > max_width:
+                        if utils.string_width(line, font, font_size) > max_width:
                             words = line.split()
                             new_line = ""
                             for word in words:
@@ -1026,36 +1075,40 @@ class AIHawkEasyApplier:
         return sanitized_text
 
 
-def evaluate_job(job_description: str, resume_prompt: str, gpt_answerer: Any) -> float:
-    """
-    Sends the job description and resume to an AI system (using gpt_answerer) and returns a score from 0 to 10
-    """
-    # Create the prompt to evaluate the job description and resume
-    prompt = f"""
-    You are a Human Resources expert specializing in evaluating job applications for the American job market. Your task is to assess the compatibility between the following job description and a provided resume. 
-    Return only a score from 0 to 10 representing the candidate's likelihood of securing the position, with 0 being the lowest probability and 10 being the highest. 
-    The assessment should consider HR-specific criteria for the American job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
+    # def evaluate_job(self, job, resume_prompt: str, gpt_answerer: Any) -> float:
+    #     """
+    #     Sends the job description and resume to an AI system (using gpt_answerer) and returns a score from 0 to 10
+    #     """
 
-    Job Description:
-    {job_description}
+    #     job_description = job.description
 
-    Resume:
-    {resume_prompt}
+        
+    #     # Create the prompt to evaluate the job description and resume
+    #     prompt = f"""
+    #     You are a Human Resources expert specializing in evaluating job applications for the American job market. Your task is to assess the compatibility between the following job description and a provided resume. 
+    #     Return only a score from 0 to 10 representing the candidate's likelihood of securing the position, with 0 being the lowest probability and 10 being the highest. 
+    #     The assessment should consider HR-specific criteria for the American job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
 
-    Score (0 to 10):
-    """
-    
-    logger.debug("Sending job description and resume to GPT for evaluation")
-    # Use the gpt_answerer to make the evaluation
-    response = gpt_answerer.answer_question_textual_wide_range(prompt)
-    logger.debug(f"Received response from GPT: {response}")
-    
-    # Process the response to extract the score
-    try:
-        # Extract the number (score) from GPT's response
-        score = float(re.search(r"\d+(\.\d+)?", response).group(0))
-        logger.debug(f"Extracted score from GPT response: {score}")
-        return score
-    except (AttributeError, ValueError):
-        logger.error(f"Error processing the score from response: {response}", exc_info=True)
-        return 0.1  # Return 0.1 if a valid score cannot be extracted
+    #     Job Description:
+    #     {job_description}
+
+    #     Resume:
+    #     {resume_prompt}
+
+    #     Score (0 to 10):
+    #     """
+        
+    #     logger.debug("Sending job description and resume to GPT for evaluation")
+    #     # Use the gpt_answerer to make the evaluation
+    #     response = gpt_answerer.ask_chatgpt(prompt)
+    #     logger.debug(f"Received response from GPT: {response}")
+        
+    #     # Process the response to extract the score
+    #     try:
+    #         # Extract the number (score) from GPT's response
+    #         score = float(re.search(r"\d+(\.\d+)?", response).group(0))
+    #         logger.debug(f"Extracted score from GPT response: {score}")
+    #         return score
+    #     except (AttributeError, ValueError):
+    #         logger.error(f"Error processing the score from response: {response}", exc_info=True)
+    #         return 0.1  # Return 0.1 if a valid score cannot be extracted

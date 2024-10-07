@@ -214,7 +214,7 @@ def chrome_browser_options():
     options = webdriver.ChromeOptions()
     
     # Headless mode
-    options.add_argument("--headless")
+    # options.add_argument("--headless")
     
     # Specify the absolute path to the Chrome binary
     options.binary_location = '/usr/bin/google-chrome'  # Update as necessary

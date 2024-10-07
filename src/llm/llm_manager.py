@@ -18,6 +18,7 @@ from langchain_core.prompt_values import StringPromptValue
 from langchain_core.prompts import ChatPromptTemplate
 
 import src.strings as strings
+from src.job import Job
 from loguru import logger
 
 load_dotenv()
@@ -178,7 +179,7 @@ class LLMLogger:
         logger.debug(f"LLMLogger initialized with LLM: {self.llm}")
 
     @staticmethod
-    def log_request(prompts, parsed_reply: Dict[str, Dict]):
+    def log_request(prompts: Union[List[Dict[str, str]], StringPromptValue, Dict], parsed_reply: Dict[str, Dict]):
         logger.debug("Starting log_request method.")
         logger.debug(f"Prompts received: {prompts}")
         logger.debug(f"Parsed reply received: {parsed_reply}")
@@ -197,15 +198,23 @@ class LLMLogger:
         elif isinstance(prompts, Dict):
             logger.debug("Prompts are of type Dict.")
             try:
-                prompts = {f"prompt_{i + 1}": prompt.content for i, prompt in enumerate(prompts.messages)}
+                prompts = {f"prompt_{i + 1}": prompt['content'] for i, prompt in enumerate(prompts.get('messages', []))}
                 logger.debug(f"Prompts converted to dictionary: {prompts}")
             except Exception as e:
                 logger.error(f"Error converting prompts to dictionary: {e}")
                 raise
+        elif isinstance(prompts, list):
+            logger.debug("Prompts are of type list.")
+            try:
+                prompts = {f"prompt_{i + 1}": prompt['content'] for i, prompt in enumerate(prompts)}
+                logger.debug(f"Prompts converted to dictionary: {prompts}")
+            except Exception as e:
+                logger.error(f"Error converting prompts from list to dictionary: {e}")
+                raise
         else:
             logger.debug("Prompts are of unknown type, attempting default conversion.")
             try:
-                prompts = {f"prompt_{i + 1}": prompt.content for i, prompt in enumerate(prompts.messages)}
+                prompts = {f"prompt_{i + 1}": prompt['content'] for i, prompt in enumerate(prompts.get('messages', []))}
                 logger.debug(f"Prompts converted to dictionary using default method: {prompts}")
             except Exception as e:
                 logger.error(f"Error converting prompts using default method: {e}")
@@ -277,7 +286,7 @@ class LoggerChatModel:
         self.llm = llm
         logger.debug(f"LoggerChatModel initialized with LLM: {self.llm}")
 
-    def __call__(self, messages: List[Dict[str, str]]) -> str:
+    def __call__(self, messages: List[Dict[str, str]]) -> AIMessage:
         logger.debug(f"Entering __call__ method with messages: {messages}")
         while True:
             try:
@@ -291,9 +300,16 @@ class LoggerChatModel:
                 LLMLogger.log_request(prompts=messages, parsed_reply=parsed_reply)
                 logger.debug("Request successfully logged.")
 
-                return reply
-
+                # Garantir que reply é uma instância de AIMessage
+                if isinstance(reply, AIMessage):
+                    return reply
+                elif isinstance(reply, dict) and 'content' in reply:
+                    return AIMessage(content=reply['content'])
+                else:
+                    logger.error(f"Unexpected reply format: {reply}")
+                    raise ValueError("Unexpected reply format from LLM.")
             except httpx.HTTPStatusError as e:
+                logger.error(f"HTTPStatusError encountered: {e}")
                 logger.error(f"HTTPStatusError encountered: {e}")
                 if e.response.status_code == 429:
                     retry_after = e.response.headers.get('retry-after')
@@ -385,6 +401,7 @@ class GPTAnswerer:
     def __init__(self, config: dict, llm_api_key: str):
         self.ai_adapter = AIAdapter(config, llm_api_key)
         self.llm_cheap = LoggerChatModel(self.ai_adapter)
+        self.job = None
         logger.debug("GPTAnswerer initialized.")
 
     @property
@@ -421,12 +438,15 @@ class GPTAnswerer:
         logger.debug(f"Setting resume: {resume}")
         self.resume = resume
 
-    def set_job(self, job):
-        logger.debug(f"Setting job: {job}")
-        self.job = job
-        summarized_description = self.summarize_job_description(self.job.description)
-        self.job.set_summarize_job_description(summarized_description)
-        logger.debug("Job description summarized and set.")
+    def set_job(self, title: str, company: str, location: str, link: str, apply_method: str, description: str):
+        logger.debug(f"Setting job with title: {title}, company: {company}.")
+        self.job = Job(title=title, company=company, location=location, link=link, apply_method=apply_method, description=description)
+        if self.job.description:
+            summarized_description = self.summarize_job_description(self.job.description)
+            self.job.set_summarize_job_description(summarized_description)
+            logger.debug("Job description summarized and set.")
+        else:
+            logger.error("Job description not set. Skipping summarization.")
 
     def set_job_application_profile(self, job_application_profile):
         logger.debug(f"Setting job application profile: {job_application_profile}")
@@ -456,112 +476,133 @@ class GPTAnswerer:
             logger.error(f"Error creating chain: {e}")
             raise
 
-    def answer_question_textual_wide_range(self, question: str) -> str:
+    def answer_question_textual_wide_range(self, question: str, job: Job = None) -> str:
         logger.debug(f"Answering textual question: {question}")
-        chains = {
-            "personal_information": self._create_chain(strings.personal_information_template),
-            "self_identification": self._create_chain(strings.self_identification_template),
-            "legal_authorization": self._create_chain(strings.legal_authorization_template),
-            "work_preferences": self._create_chain(strings.work_preferences_template),
-            "education_details": self._create_chain(strings.education_details_template),
-            "experience_details": self._create_chain(strings.experience_details_template),
-            "projects": self._create_chain(strings.projects_template),
-            "availability": self._create_chain(strings.availability_template),
-            "salary_expectations": self._create_chain(strings.salary_expectations_template),
-            "certifications": self._create_chain(strings.certifications_template),
-            "languages": self._create_chain(strings.languages_template),
-            "interests": self._create_chain(strings.interests_template),
-            "cover_letter": self._create_chain(strings.coverletter_template),
-        }
-        section_prompt = """
-You are assisting a bot designed to automatically apply for jobs on AIHawk. The bot receives various questions about job applications and needs to determine the most relevant section of the resume to provide an accurate response.
 
-For the following question: '{question}', determine which section of the resume is most relevant. 
-Respond with exactly one of the following options:
-- Personal information
-- Self Identification
-- Legal Authorization
-- Work Preferences
-- Education Details
-- Experience Details
-- Projects
-- Availability
-- Salary Expectations
-- Certifications
-- Languages
-- Interests
-- Cover letter
+        if job:
+            logger.debug(f"Setting job information: {job.title} at {job.company}")
+            self.set_job(
+                title=job.title,
+                company=job.company,
+                location=job.location,
+                link=job.link,
+                apply_method=job.apply_method,
+                description=job.description
+            )
 
-Here are detailed guidelines to help you choose the correct section:
-
-1. **Personal Information**:
-- **Purpose**: Contains your basic contact details and online profiles.
-- **Use When**: The question is about how to contact you or requests links to your professional online presence.
-- **Examples**: Email address, phone number, AIHawk profile, GitHub repository, personal website.
-
-2. **Self Identification**:
-- **Purpose**: Covers personal identifiers and demographic information.
-- **Use When**: The question pertains to your gender, pronouns, veteran status, disability status, or ethnicity.
-- **Examples**: Gender, pronouns, veteran status, disability status, ethnicity.
-
-3. **Legal Authorization**:
-- **Purpose**: Details your work authorization status and visa requirements.
-- **Use When**: The question asks about your ability to work in specific countries or if you need sponsorship or visas.
-- **Examples**: Work authorization in EU and US, visa requirements, legally allowed to work.
-
-4. **Work Preferences**:
-- **Purpose**: Specifies your preferences regarding work conditions and job roles.
-- **Use When**: The question is about your preferences for remote work, in-person work, relocation, and willingness to undergo assessments or background checks.
-- **Examples**: Remote work, in-person work, open to relocation, willingness to complete assessments.
-
-5. **Education Details**:
-- **Purpose**: Contains information about your academic qualifications.
-- **Use When**: The question concerns your degrees, universities attended, GPA, and relevant coursework.
-- **Examples**: Degree, university, GPA, field of study, exams.
-
-6. **Experience Details**:
-- **Purpose**: Details your professional work history and key responsibilities.
-- **Use When**: The question pertains to your job roles, responsibilities, and achievements in previous positions.
-- **Examples**: Job positions, company names, key responsibilities, skills acquired.
-
-7. **Projects**:
-- **Purpose**: Highlights specific projects you have worked on.
-- **Use When**: The question asks about particular projects, their descriptions, or links to project repositories.
-- **Examples**: Project names, descriptions, links to project repositories.
-
-8. **Availability**:
-- **Purpose**: Provides information on your availability for new roles.
-- **Use When**: The question is about how soon you can start a new job or your notice period.
-- **Examples**: Notice period, availability to start.
-
-9. **Salary Expectations**:
-- **Purpose**: Covers your expected salary range.
-- **Use When**: The question pertains to your salary expectations or compensation requirements.
-- **Examples**: Desired salary range.
-
-10. **Certifications**:
-    - **Purpose**: Lists your professional certifications or licenses.
-    - **Use When**: The question involves your certifications or qualifications from recognized organizations.
-    - **Examples**: Certification names, issuing bodies, dates of validity.
-
-11. **Languages**:
-    - **Purpose**: Describes the languages you can speak and your proficiency levels.
-    - **Use When**: The question asks about your language skills or proficiency in specific languages.
-    - **Examples**: Languages spoken, proficiency levels.
-
-12. **Interests**:
-    - **Purpose**: Details your personal or professional interests.
-    - **Use When**: The question is about your hobbies, interests, or activities outside of work.
-    - **Examples**: Personal hobbies, professional interests.
-
-13. **Cover Letter**:
-    - **Purpose**: Contains your personalized cover letter or statement.
-    - **Use When**: The question involves your cover letter or specific written content intended for the job application.
-    - **Examples**: Cover letter content, personalized statements.
-
-Provide only the exact name of the section from the list above with no additional text.
-"""
         try:
+            if self.job is None:
+                logger.error("Job object is None. Cannot proceed with answering the question.")
+                raise ValueError("Job object is None. Please set the job first using set_job().")
+            
+            if not hasattr(self.job, 'description'):
+                logger.error("Job object does not have a 'description' attribute.")
+                raise AttributeError("Job object does not have a 'description' attribute.")
+        
+            chains = {
+                "personal_information": self._create_chain(strings.personal_information_template),
+                "self_identification": self._create_chain(strings.self_identification_template),
+                "legal_authorization": self._create_chain(strings.legal_authorization_template),
+                "work_preferences": self._create_chain(strings.work_preferences_template),
+                "education_details": self._create_chain(strings.education_details_template),
+                "experience_details": self._create_chain(strings.experience_details_template),
+                "projects": self._create_chain(strings.projects_template),
+                "availability": self._create_chain(strings.availability_template),
+                "salary_expectations": self._create_chain(strings.salary_expectations_template),
+                "certifications": self._create_chain(strings.certifications_template),
+                "languages": self._create_chain(strings.languages_template),
+                "interests": self._create_chain(strings.interests_template),
+                "cover_letter": self._create_chain(strings.coverletter_template),
+            }
+            section_prompt = """
+    You are assisting a bot designed to automatically apply for jobs on AIHawk. The bot receives various questions about job applications and needs to determine the most relevant section of the resume to provide an accurate response.
+
+    For the following question: '{question}', determine which section of the resume is most relevant. 
+    Respond with exactly one of the following options:
+    - Personal information
+    - Self Identification
+    - Legal Authorization
+    - Work Preferences
+    - Education Details
+    - Experience Details
+    - Projects
+    - Availability
+    - Salary Expectations
+    - Certifications
+    - Languages
+    - Interests
+    - Cover letter
+
+    Here are detailed guidelines to help you choose the correct section:
+
+    1. **Personal Information**:
+    - **Purpose**: Contains your basic contact details and online profiles.
+    - **Use When**: The question is about how to contact you or requests links to your professional online presence.
+    - **Examples**: Email address, phone number, AIHawk profile, GitHub repository, personal website.
+
+    2. **Self Identification**:
+    - **Purpose**: Covers personal identifiers and demographic information.
+    - **Use When**: The question pertains to your gender, pronouns, veteran status, disability status, or ethnicity.
+    - **Examples**: Gender, pronouns, veteran status, disability status, ethnicity.
+
+    3. **Legal Authorization**:
+    - **Purpose**: Details your work authorization status and visa requirements.
+    - **Use When**: The question asks about your ability to work in specific countries or if you need sponsorship or visas.
+    - **Examples**: Work authorization in EU and US, visa requirements, legally allowed to work.
+
+    4. **Work Preferences**:
+    - **Purpose**: Specifies your preferences regarding work conditions and job roles.
+    - **Use When**: The question is about your preferences for remote work, in-person work, relocation, and willingness to undergo assessments or background checks.
+    - **Examples**: Remote work, in-person work, open to relocation, willingness to complete assessments.
+
+    5. **Education Details**:
+    - **Purpose**: Contains information about your academic qualifications.
+    - **Use When**: The question concerns your degrees, universities attended, GPA, and relevant coursework.
+    - **Examples**: Degree, university, GPA, field of study, exams.
+
+    6. **Experience Details**:
+    - **Purpose**: Details your professional work history and key responsibilities.
+    - **Use When**: The question pertains to your job roles, responsibilities, and achievements in previous positions.
+    - **Examples**: Job positions, company names, key responsibilities, skills acquired.
+
+    7. **Projects**:
+    - **Purpose**: Highlights specific projects you have worked on.
+    - **Use When**: The question asks about particular projects, their descriptions, or links to project repositories.
+    - **Examples**: Project names, descriptions, links to project repositories.
+
+    8. **Availability**:
+    - **Purpose**: Provides information on your availability for new roles.
+    - **Use When**: The question is about how soon you can start a new job or your notice period.
+    - **Examples**: Notice period, availability to start.
+
+    9. **Salary Expectations**:
+    - **Purpose**: Covers your expected salary range.
+    - **Use When**: The question pertains to your salary expectations or compensation requirements.
+    - **Examples**: Desired salary range.
+
+    10. **Certifications**:
+        - **Purpose**: Lists your professional certifications or licenses.
+        - **Use When**: The question involves your certifications or qualifications from recognized organizations.
+        - **Examples**: Certification names, issuing bodies, dates of validity.
+
+    11. **Languages**:
+        - **Purpose**: Describes the languages you can speak and your proficiency levels.
+        - **Use When**: The question asks about your language skills or proficiency in specific languages.
+        - **Examples**: Languages spoken, proficiency levels.
+
+    12. **Interests**:
+        - **Purpose**: Details your personal or professional interests.
+        - **Use When**: The question is about your hobbies, interests, or activities outside of work.
+        - **Examples**: Personal hobbies, professional interests.
+
+    13. **Cover Letter**:
+        - **Purpose**: Contains your personalized cover letter or statement.
+        - **Use When**: The question involves your cover letter or specific written content intended for the job application.
+        - **Examples**: Cover letter content, personalized statements.
+
+    Provide only the exact name of the section from the list above with no additional text.
+    """
+            
             prompt = ChatPromptTemplate.from_template(section_prompt)
             chain = prompt | self.llm_cheap | StrOutputParser()
             output = chain.invoke({"question": question})
@@ -681,3 +722,85 @@ Provide only the exact name of the section from the list above with no additiona
         except Exception as e:
             logger.error(f"Error determining resume or cover letter: {e}")
             raise
+
+    def ask_chatgpt(self, prompt: str) -> str:
+        logger.debug(f"Sending prompt to ChatGPT: {prompt}")
+        try:
+            # Formatar o prompt como uma lista de mensagens
+            formatted_prompt = [{"role": "user", "content": prompt}]
+            
+            # Passar o prompt formatado para o modelo
+            response = self.llm_cheap(formatted_prompt)
+            logger.debug(f"Received response: {response}")
+            
+            # Verificar se a resposta está no formato esperado
+            if hasattr(response, 'content'):
+                content = response.content
+                if content:
+                    logger.debug(f"Returning content: {content}")
+                    return content
+                else:
+                    logger.error("No content found in response.")
+                    return "No content returned from ChatGPT."
+            elif isinstance(response, dict) and 'content' in response:
+                content = response['content']
+                if content:
+                    logger.debug(f"Returning content from dict: {content}")
+                    return content
+                else:
+                    logger.error("No content found in response dictionary.")
+                    return "No content returned from ChatGPT."
+            else:
+                logger.error(f"Unexpected response format: {response}")
+                return "Unexpected response format from ChatGPT."
+        except Exception as e:
+            logger.error(f"Error while getting response from ChatGPT: {e}")
+            raise
+
+
+
+    def evaluate_job(self, job, resume_prompt: str) -> float:
+        """
+        Sends the job description and resume to the AI system and returns a score from 0 to 10.
+        """
+        job_description = job.description
+        
+        # Criar o prompt para avaliar a descrição do trabalho e o currículo
+        prompt = f"""
+        You are a Human Resources expert specializing in evaluating job applications for the American job market. Your task is to assess the compatibility between the following job description and a provided resume. 
+        Return only a score from 0 to 10 representing the candidate's likelihood of securing the position, with 0 being the lowest probability and 10 being the highest. 
+        The assessment should consider HR-specific criteria for the American job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
+
+        Job Description:
+        {job_description}
+
+        Resume:
+        {resume_prompt}
+
+        Score (0 to 10):
+        """
+        
+        logger.debug("Sending job description and resume to GPT for evaluation")
+        
+        # Usar a função ask_chatgpt para realizar a avaliação
+        try:
+            response = self.ask_chatgpt(prompt)
+            logger.debug(f"Received response from GPT: {response}")
+            
+            # Processar a resposta para extrair a pontuação
+            match = re.search(r"\b(\d+(\.\d+)?)\b", response)
+            if match:
+                score = float(match.group(1))
+                if 0 <= score <= 10:
+                    logger.debug(f"Extracted score from GPT response: {score}")
+                    return score
+                else:
+                    logger.error(f"Score out of expected range (0-10): {score}")
+                    return 0.0  # Retorna 0.0 se a pontuação estiver fora do intervalo esperado
+            else:
+                logger.error(f"Could not find a valid score in response: {response}")
+                return 0.1  # Retorna 0.0 se não houver uma pontuação válida
+            
+        except Exception as e:
+            logger.error(f"Error processing the score from response: {e}", exc_info=True)
+            return 0.1  # Retorna 0.0 em caso de erro

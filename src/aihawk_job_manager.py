@@ -5,6 +5,7 @@ import time
 from itertools import product
 from pathlib import Path
 from datetime import datetime
+from typing import List, Optional, Any, Tuple
 
 from inputimeout import inputimeout, TimeoutOccurred
 from selenium.common.exceptions import NoSuchElementException
@@ -272,47 +273,71 @@ class AIHawkJobManager:
 
         for job in job_list:
             logger.debug(f"Evaluating job: '{job.title}' at '{job.company}'")
-            # logger.info(f"Job score is {score}. Proceeding to apply for job: '{job.title}' at '{job.company}'")
-            # Proceed with the application process (existing logic)
+            
+            # Check if the job is blacklisted
             if self.is_blacklisted(job.title, job.company, job.link):
                 logger.debug(f"Job blacklisted: '{job.title}' at '{job.company}'.")
-                # self.write_to_file(job, "skipped")
                 continue
+            
+            # Check if already applied to the job
             if self.is_already_applied_to_job(job.title, job.company, job.link):
                 logger.debug(f"Already applied to job: '{job.title}' at '{job.company}'.")
-                # self.write_to_file(job, "skipped")
                 continue
+            
+            # Check if already applied to the company
             if self.is_already_applied_to_company(job.company):
                 logger.debug(f"Already applied to company: '{job.company}'.")
-                # self.write_to_file(job, "skipped")
                 continue
+            
+            # Check if the job has already been scored
             if self.is_already_scored(job.title, job.company, job.link):
                 logger.debug(f"Job already scored: '{job.title}' at '{job.company}'.")
-                # self.write_to_file(job, "skipped")
-                continue
-                
-            # Call the evaluation function
-            # job.score = self.evaluate_job(job.description, USER_RESUME_SUMMARY, self.gpt_answerer)
-
-            # Check if the score is high enough to apply
-            # if job.score >= MINIMUM_SCORE_JOB_APPLICATION:
-            try:
-                if job.apply_method not in {"Continue", "Applied", "Apply"}:
-                    if self.easy_applier_component.job_apply(job):
-                        self.write_to_file(job, "success")
-                        self.write_job_score(job, job.score)
-                        logger.info(f"Successfully applied to job: '{job.title}' at '{job.company}'.")
-                    else:
-                        self.write_to_file(job, "skipped")
-                        logger.debug(f"Skipped applying for '{job.title}' at '{job.company}'.")
-            except Exception as e:
-                logger.error(f"Failed to apply for '{job.title}' at '{job.company}': {e}", exc_info=True)
-                self.write_to_file(job, "failed")
-                continue
+                job.score = self.get_existing_score(job.title, job.company, job.link)
             # else:
-            #     logger.info(f"Job score is {job.score}. Skipping application for job: '{job.title}' at '{job.company}'.")
-            #     self.write_to_file(job, "skipped")
-            #     self.write_job_score(job, job.score)
+            #     # Evaluate the job score if it hasn't been scored yet
+            #     job.score = self.evaluate_job(job.description, USER_RESUME_SUMMARY, self.gpt_answerer)
+
+            # Check if the score is high enough to apply or if score is None (not yet scored)
+            if job.score is None or job.score >= MINIMUM_SCORE_JOB_APPLICATION:
+                try:
+                    if job.apply_method not in {"Continue", "Applied", "Apply"}:
+                        if self.easy_applier_component.job_apply(job):
+                            self.write_to_file(job, "success")
+                            self.write_job_score(job, job.score)
+                            logger.info(f"Successfully applied to job: '{job.title}' at '{job.company}'.")
+                        else:
+                            self.write_to_file(job, "skipped")
+                            logger.debug(f"Skipped applying for '{job.title}' at '{job.company}'.")
+                except Exception as e:
+                    logger.error(f"Failed to apply for '{job.title}' at '{job.company}': {e}", exc_info=True)
+                    self.write_to_file(job, "failed")
+            else:
+                logger.debug(f"Job score is {job.score}. Skipping application for job: '{job.title}' at '{job.company}'.")
+                # self.write_to_file(job, "skipped")
+                self.write_job_score(job, job.score)
+
+
+    def get_existing_score(self, job_title, company, link):
+        """
+        Retrieves the existing score for the job from the job_score.json file.
+        """
+        file_path = self.output_file_directory / 'job_score.json'
+        
+        if not file_path.exists():
+            return 0  # Return a default low score if file does not exist
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                scored_jobs = json.load(f)
+                for scored_job in scored_jobs:
+                    if scored_job.get('link') == link:
+                        return scored_job.get('score', 0)  # Return existing score or 0 if not found
+        except json.JSONDecodeError:
+            logger.warning("job_score.json is corrupted. Returning score as 0.")
+            return 0
+        except Exception as e:
+            logger.error(f"Error reading job_score.json: {e}", exc_info=True)
+            return 0
 
     def write_to_file(self, job, file_name):
         logger.debug(f"Writing job application result to file: '{file_name}'.")
@@ -499,54 +524,54 @@ class AIHawkJobManager:
         logger.debug(f"Job not scored: Title='{job_title}', Company='{company}'.")
         return False
 
-    # def write_job_score(self, job: Any, score: float):
-    #     """
-    #     Saves jobs that were not applied to avoid future GPT queries, including the score and timestamp.
-    #     """
-    #     logger.debug(f"Saving skipped job: {job.title} at {job.company} with score {score}")
-    #     file_path = self.output_file_directory / 'job_score.json'
+    def write_job_score(self, job: Any, score: float):
+        """
+        Saves jobs that were not applied to avoid future GPT queries, including the score and timestamp.
+        """
+        logger.debug(f"Saving skipped job: {job.title} at {job.company} with score {score}")
+        file_path = self.output_file_directory / 'job_score.json'
 
-    #     # Get current date and time
-    #     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Get current date and time
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-    #     # Data format to be saved
-    #     job_data = {
-    #         "search_term": job.position, 
-    #         "company": job.company,
-    #         "job_title": job.title,
-    #         "link": job.link,
-    #         "score": score,  # Adds the score to the record
-    #         "timestamp": current_time  # Adds the timestamp
-    #     }
+        # Data format to be saved
+        job_data = {
+            "search_term": job.position, 
+            "company": job.company,
+            "job_title": job.title,
+            "link": job.link,
+            "score": score,  # Adds the score to the record
+            "timestamp": current_time  # Adds the timestamp
+        }
 
-    #     # Check if file exists, if not, create a new one
-    #     if not file_path.exists():
-    #         try:
-    #             with open(file_path, 'w') as f:
-    #                 json.dump([job_data], f, indent=4)
-    #             logger.debug(f"Created new job_score.json with job: {job.title}")
-    #         except Exception as e:
-    #             logger.error(f"Failed to create job_score.json: {e}", exc_info=True)
-    #             raise
-    #     else:
-    #         # If it exists, load existing data and append the new job
-    #         try:
-    #             with open(file_path, 'r+') as f:
-    #                 try:
-    #                     existing_data = json.load(f)
-    #                     if not isinstance(existing_data, list):
-    #                         logger.warning("job_score.json format is incorrect. Overwriting with a new list.")
-    #                         existing_data = []
-    #                 except json.JSONDecodeError:
-    #                     logger.warning("job_score.json is empty or corrupted. Initializing with an empty list.")
-    #                     existing_data = []
+        # Check if file exists, if not, create a new one
+        if not file_path.exists():
+            try:
+                with open(file_path, 'w') as f:
+                    json.dump([job_data], f, indent=4)
+                logger.debug(f"Created new job_score.json with job: {job.title}")
+            except Exception as e:
+                logger.error(f"Failed to create job_score.json: {e}", exc_info=True)
+                raise
+        else:
+            # If it exists, load existing data and append the new job
+            try:
+                with open(file_path, 'r+') as f:
+                    try:
+                        existing_data = json.load(f)
+                        if not isinstance(existing_data, list):
+                            logger.warning("job_score.json format is incorrect. Overwriting with a new list.")
+                            existing_data = []
+                    except json.JSONDecodeError:
+                        logger.warning("job_score.json is empty or corrupted. Initializing with an empty list.")
+                        existing_data = []
                     
-    #                 existing_data.append(job_data)
-    #                 f.seek(0)
-    #                 json.dump(existing_data, f, indent=4)
-    #                 f.truncate()
-    #             logger.debug(f"Appended job to job_score.json: {job.title}")
-    #         except Exception as e:
-    #             logger.error(f"Failed to append job to job_score.json: {e}", exc_info=True)
-    #             raise
-    #     logger.debug(f"Job saved successfully: {job.title} with score {score}")
+                    existing_data.append(job_data)
+                    f.seek(0)
+                    json.dump(existing_data, f, indent=4)
+                    f.truncate()
+                logger.debug(f"Appended job to job_score.json: {job.title}")
+            except Exception as e:
+                logger.error(f"Failed to append job to job_score.json: {e}", exc_info=True)
+                raise
+        logger.debug(f"Job saved successfully: {job.title} with score {score}")
