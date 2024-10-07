@@ -57,22 +57,22 @@ class ConfigValidator:
             'positions': list,
             'locations': list,
             'distance': int,
-            'companyBlacklist': list,
-            'titleBlacklist': list,
+            'company_blacklist': list,
+            'title_blacklist': list,
             'llm_model_type': str,
             'llm_model': str
         }
 
         for key, expected_type in required_keys.items():
             if key not in parameters:
-                if key in ['companyBlacklist', 'titleBlacklist']:
+                if key in ['company_blacklist', 'title_blacklist']:
                     parameters[key] = []
                     logger.warning(f"Missing key '{key}' in config. Setting default empty list.")
                 else:
                     logger.error(f"Missing or invalid key '{key}' in config file {config_yaml_path}")
                     raise ConfigError(f"Missing or invalid key '{key}' in config file {config_yaml_path}")
             elif not isinstance(parameters[key], expected_type):
-                if key in ['companyBlacklist', 'titleBlacklist'] and parameters[key] is None:
+                if key in ['company_blacklist', 'title_blacklist'] and parameters[key] is None:
                     parameters[key] = []
                     logger.warning(f"Key '{key}' is None in config. Setting to empty list.")
                 else:
@@ -118,7 +118,7 @@ class ConfigValidator:
             raise ConfigError(f"Invalid distance value in config file {config_yaml_path}. Must be one of: {approved_distances}")
         logger.debug(f"Distance value '{parameters['distance']}' is valid.")
 
-        for blacklist in ['companyBlacklist', 'titleBlacklist']:
+        for blacklist in ['company_blacklist', 'title_blacklist']:
             if not isinstance(parameters.get(blacklist), list):
                 logger.error(f"'{blacklist}' must be a list in config file {config_yaml_path}")
                 raise ConfigError(f"'{blacklist}' must be a list in config file {config_yaml_path}")

@@ -257,20 +257,20 @@ This file defines your job search parameters and bot behavior. Each section cont
   - Set the radius for your job search in miles
   - Example: `distance: 50`
 
-- `companyBlacklist:`
+- `company_blacklist:`
   - List companies you want to exclude from your search, one per line
   - Example:
     ```yaml
-    companyBlacklist:
+    company_blacklist:
       - Company X
       - Company Y
     ```
 
-- `titleBlacklist:`
+- `title_blacklist:`
   - List keywords in job titles you want to avoid, one per line
   - Example:
     ```yaml
-    titleBlacklist:
+    title_blacklist:
       - Sales
       - Marketing
     ```

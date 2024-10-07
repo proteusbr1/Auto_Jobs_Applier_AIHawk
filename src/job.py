@@ -15,6 +15,7 @@ class Job:
     pdf_path: str = ""
     recruiter_link: str = ""
     position: str = ""
+    score: float = None
 
     def set_summarize_job_description(self, summarize_job_description):
         logger.debug("Setting summarized job description.")

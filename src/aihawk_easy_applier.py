@@ -19,9 +19,9 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from pathlib import Path
+from app_config import MINIMUM_SCORE_JOB_APPLICATION, USER_RESUME_SUMMARY
 
 import src.utils as utils
-from src.strings import resume_prompt
 from loguru import logger
 
 
@@ -94,12 +94,12 @@ class AIHawkEasyApplier:
             logger.error(f"Failed to apply to job: {job.title} at {job.company}", exc_info=True)
             raise e
 
-    def save_job_score(self, job: Any, score: float):
+    def save_job_score(self, job: Any):
         """
         Saves jobs that were not applied to avoid future GPT queries, including the score and timestamp.
         """
-        logger.debug(f"Saving skipped job: {job.title} at {job.company} with score {score}")
-        file_path = Path('job_score.json')
+        logger.debug(f"Saving skipped job: {job.title} at {job.company} with score {job.score}")
+        file_path = Path('data_folder') / 'output' / 'job_score.json'
 
         # Get current date and time
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -110,7 +110,7 @@ class AIHawkEasyApplier:
             "company": job.company,
             "job_title": job.title,
             "link": job.link,
-            "score": score,  # Adds the score to the record
+            "score": job.score,  # Adds the score to the record
             "timestamp": current_time  # Adds the timestamp
         }
 
@@ -144,13 +144,13 @@ class AIHawkEasyApplier:
             except Exception as e:
                 logger.error(f"Failed to append job to job_score.json: {e}", exc_info=True)
                 raise
-        logger.debug(f"Job saved successfully: {job.title} with score {score}")
+        logger.debug(f"Job saved successfully: {job.title} with score {job.score}")
 
     def is_job_skipped(self, job: Any) -> bool:
         """
         Checks if the job was skipped previously and is in the job_score.json file
         """
-        file_path = Path('job_score.json')
+        file_path = Path('data_folder') / 'output' / 'job_score.json'
         
         # If file doesn't exist, consider the job not skipped
         if not file_path.exists():
@@ -178,15 +178,9 @@ class AIHawkEasyApplier:
         return False
 
     def job_apply(self, job: Any):
-        logger.debug(f"Starting job application for job: {job}")
+        logger.info(f"Starting job application for job: {job}")
 
         try:
-            logger.debug(f"Checking if job {job.title} at {job.company} is skipped before navigating.")
-            # Check if job was skipped before navigating to the page
-            if self.is_job_skipped(job):
-                logger.debug(f"Skipping job {job.title} at {job.company} as it is in job_score.json.")
-                return False
-
             # Navigate to job link
             self.driver.get(job.link)
             logger.debug(f"Navigated to job link: {job.link}")
@@ -213,23 +207,24 @@ class AIHawkEasyApplier:
             # logger.debug(f"Job description set: {job_description[:100]}")
 
             # Score evaluation logic
-            score = evaluate_job(job_description, resume_prompt, self.gpt_answerer)
-            self.save_job_score(job, score)
-
-            if score >= 6:
-                logger.info(f"Score is {score}. Proceeding with the application.")
-                
-                time.sleep(random.uniform(0.5, 1.5))
+            job.score = evaluate_job(job_description, USER_RESUME_SUMMARY, self.gpt_answerer)
+            
+            if job.score >= MINIMUM_SCORE_JOB_APPLICATION:
+                logger.info(f"Score is {job.score}. Proceeding with the application.")
+                    
+                # time.sleep(random.uniform(0.5, 1.5))
 
                 # Perform application
                 actions = ActionChains(self.driver)
                 actions.move_to_element(easy_apply_button).click().perform()
                 logger.debug("'Easy Apply' button clicked successfully")
                 self._fill_application_form(job)
+                self.save_job_score(job)
                 logger.debug(f"Job application process completed successfully for job: {job.title} at {job.company}")
                 return True
             else:
-                logger.info(f"Score is {score}. Skipping this job: {job.title} at {job.company}.")
+                logger.info(f"Score is {job.score}. Skipping this job: {job.title} at {job.company}.")
+                self.save_job_score(job)
                 return False
 
         except Exception as e:
@@ -1059,7 +1054,7 @@ def evaluate_job(job_description: str, resume_prompt: str, gpt_answerer: Any) ->
     try:
         # Extract the number (score) from GPT's response
         score = float(re.search(r"\d+(\.\d+)?", response).group(0))
-        logger.info(f"Extracted score from GPT response: {score}")
+        logger.debug(f"Extracted score from GPT response: {score}")
         return score
     except (AttributeError, ValueError):
         logger.error(f"Error processing the score from response: {response}", exc_info=True)

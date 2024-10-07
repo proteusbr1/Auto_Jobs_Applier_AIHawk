@@ -160,3 +160,5 @@ mono_crash.*
 run_auto_jobs.sh
 resumes/resume.pdf
 job_score.json
+
+*.zip
