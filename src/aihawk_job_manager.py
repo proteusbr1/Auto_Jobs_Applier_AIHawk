@@ -120,79 +120,10 @@ class AIHawkJobManager:
 
                     logger.info("Completed applying to jobs on this page.")
 
-                    # time_left = minimum_page_time - time.time()
-
-                    # Ask user if they want to skip waiting, with timeout
-                    # if time_left > 0:
-                    #     try:
-                    #         user_input = inputimeout(
-                    #             prompt=f"Sleeping for {time_left:.0f} seconds. Press 'y' to skip waiting. Timeout 60 seconds: ",
-                    #             timeout=0
-                    #         ).strip().lower()
-                    #     except TimeoutOccurred:
-                    #         user_input = ''  # No input after timeout
-                    #     if user_input == 'y':
-                    #         logger.info("User chose to skip waiting.")
-                    #     else:
-                    #         logger.debug(f"Sleeping for {time_left:.0f} seconds as user chose not to skip.")
-                    #         time.sleep(time_left)
-
-                    # minimum_page_time = time.time() + minimum_time
-
-                    # if page_sleep % 5 == 0:
-                    #     sleep_time = 0
-                    #     # sleep_time = random.randint(5, 34)
-                    #     try:
-                    #         user_input = inputimeout(
-                    #             prompt=f"Sleeping for {sleep_time / 60:.2f} minutes. Press 'y' to skip waiting. Timeout 60 seconds: ",
-                    #             timeout=0
-                    #         ).strip().lower()
-                    #     except TimeoutOccurred:
-                    #         user_input = ''  # No input after timeout
-                    #     if user_input == 'y':
-                    #         logger.info("User chose to skip waiting.")
-                    #     else:
-                    #         logger.debug(f"Sleeping for {sleep_time} seconds.")
-                    #         time.sleep(sleep_time)
-                    #     page_sleep += 1
             except Exception as e:
                 logger.error("Unexpected error during job search.", exc_info=True)
                 continue
 
-            # time_left = minimum_page_time - time.time()
-
-            # if time_left > 0:
-            #     try:
-            #         user_input = inputimeout(
-            #             prompt=f"Sleeping for {time_left:.0f} seconds. Press 'y' to skip waiting. Timeout 60 seconds: ",
-            #             timeout=0
-            #         ).strip().lower()
-            #     except TimeoutOccurred:
-            #         user_input = ''  # No input after timeout
-            #     if user_input == 'y':
-            #         logger.info("User chose to skip waiting.")
-            #     else:
-            #         logger.debug(f"Sleeping for {time_left:.0f} seconds as user chose not to skip.")
-            #         time.sleep(time_left)
-
-            # minimum_page_time = time.time() + minimum_time
-
-            # if page_sleep % 5 == 0:
-            #     sleep_time = 0
-            #     # sleep_time = random.randint(50, 90)
-            #     try:
-            #         user_input = inputimeout(
-            #             prompt=f"Sleeping for {sleep_time / 60:.2f} minutes. Press 'y' to skip waiting: ",
-            #             timeout=0
-            #         ).strip().lower()
-            #     except TimeoutOccurred:
-            #         user_input = ''  # No input after timeout
-            #     if user_input == 'y':
-            #         logger.info("User chose to skip waiting.")
-            #     else:
-            #         logger.debug(f"Sleeping for {sleep_time} seconds.")
-            #         time.sleep(sleep_time)
-            #     page_sleep += 1
 
     def get_jobs_from_page(self):
         try:
@@ -222,41 +153,6 @@ class AIHawkJobManager:
         except Exception as e:
             logger.error("Error while fetching job elements.", exc_info=True)
             return []
-
-
-    # def evaluate_job(self, job_description: str, resume_prompt: str, gpt_answerer: Any) -> float:
-    #     """
-    #     Sends the job description and resume to an AI system (using gpt_answerer) and returns a score from 0 to 10
-    #     """
-    #     # Create the prompt to evaluate the job description and resume
-    #     prompt = f"""
-    #     You are a Human Resources expert specializing in evaluating job applications for the American job market. Your task is to assess the compatibility between the following job description and a provided resume. 
-    #     Return only a score from 0 to 10 representing the candidate's likelihood of securing the position, with 0 being the lowest probability and 10 being the highest. 
-    #     The assessment should consider HR-specific criteria for the American job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
-
-    #     Job Description:
-    #     {job_description}
-
-    #     Resume:
-    #     {resume_prompt}
-
-    #     Score (0 to 10):
-    #     """
-        
-    #     logger.debug("Sending job description and resume to GPT for evaluation")
-    #     # Use the gpt_answerer to make the evaluation
-    #     response = gpt_answerer.answer_question_textual_wide_range(prompt)
-    #     logger.debug(f"Received response from GPT: {response}")
-        
-    #     # Process the response to extract the score
-    #     try:
-    #         # Extract the number (score) from GPT's response
-    #         score = float(re.search(r"\d+(\.\d+)?", response).group(0))
-    #         logger.info(f"Extracted score from GPT response: {score}")
-    #         return score
-    #     except (AttributeError, ValueError):
-    #         logger.error(f"Error processing the score from response: {response}", exc_info=True)
-    #         return 0.1  # Return 0.1 if a valid score cannot be extracted
 
 
     def apply_jobs(self, position):
@@ -420,37 +316,38 @@ class AIHawkJobManager:
     def extract_job_information_from_tile(self, job_tile):
         logger.debug("Extracting job information from tile.")
         job_title, company, job_location, link, apply_method = "", "", "", "", ""
-        
+
+        # Extracting job title, link, and company
         try:
             job_title = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title').find_element(By.TAG_NAME, 'strong').text
             link = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title').get_attribute('href').split('?')[0]
             company = job_tile.find_element(By.CLASS_NAME, 'job-card-container__primary-description').text
             logger.debug(f"Job information extracted: Title='{job_title}', Company='{company}', Link='{link}'")
         except NoSuchElementException as e:
-            logger.warning(f"Failed to extract job title, link, or company: {e}")
+            logger.error(f"Failed to extract job title, link, or company. Exception: {e}")
+            logger.error(f"Job tile content for debugging: {job_tile.get_attribute('outerHTML')}")
 
+        # Extracting job location
         try:
             job_location = job_tile.find_element(By.CLASS_NAME, 'job-card-container__metadata-item').text
             logger.debug(f"Job location extracted: '{job_location}'.")
         except NoSuchElementException as e:
             logger.warning(f"Failed to extract job location: {e}")
 
+        # Extracting apply method using both CSS selectors
         try:
-            # Primeiro tenta encontrar o seletor da nova classe
-            apply_method = job_tile.find_element(By.CLASS_NAME, 'job-card-container__footer-job-state').text
-            logger.debug(f"Apply method extracted from '.job-card-container__footer-job-state': '{apply_method}'.")
-        except NoSuchElementException as e:
-            logger.debug(f"Failed to extract apply method from '.job-card-container__footer-job-state'. Exception: {e}")
-            
+            # First, try the latest CSS selector
             try:
-                # Se falhar, tenta encontrar o seletor da classe anterior
+                apply_method = job_tile.find_element(By.CLASS_NAME, 'job-card-container__footer-job-state').text
+                logger.debug(f"Apply method extracted from '.job-card-container__footer-job-state': '{apply_method}'.")
+            except NoSuchElementException:
+                # If the first one fails, try the older selector
                 apply_method = job_tile.find_element(By.CLASS_NAME, 'job-card-container__apply-method').text
                 logger.debug(f"Apply method extracted from '.job-card-container__apply-method': '{apply_method}'.")
-            except NoSuchElementException as e:
-                apply_method = "Applied"
-                logger.warning(f"Failed to extract apply method from both CSS classes. Assuming 'Applied'. Exception: {e}")
-                logger.warning(f"Job tile content for debugging: {job_tile.get_attribute('innerHTML')}")
-                logger.warning(f"Job tile inner HTML for debugging: {job_tile.get_attribute('innerHTML')}")
+        except NoSuchElementException as e:
+            apply_method = "Applied"  # Default value if both selectors fail
+            logger.error(f"Failed to extract apply method from both CSS classes. Assuming 'Applied'. Exception: {e}")
+            logger.error(f"Job tile content for debugging: {job_tile.get_attribute('outerHTML')}")
 
         return job_title, company, job_location, link, apply_method
 
