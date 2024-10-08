@@ -8,8 +8,10 @@ from datetime import datetime
 from typing import List, Optional, Any, Tuple
 
 from inputimeout import inputimeout, TimeoutOccurred
-from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException 
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 import src.utils as utils
 from app_config import MINIMUM_WAIT_TIME, MINIMUM_SCORE_JOB_APPLICATION, USER_RESUME_SUMMARY
@@ -39,9 +41,10 @@ class EnvironmentKeys:
 
 
 class AIHawkJobManager:
-    def __init__(self, driver):
+    def __init__(self, driver, wait_time: int = 10):
         logger.debug("Initializing AIHawkJobManager")
         self.driver = driver
+        self.wait = WebDriverWait(self.driver, wait_time)
         self.set_old_answers = set()
         self.easy_applier_component = None
         logger.debug("AIHawkJobManager initialized successfully")
@@ -86,8 +89,6 @@ class AIHawkJobManager:
         searches = list(product(self.positions, self.locations))
         random.shuffle(searches)
         page_sleep = 0
-        # minimum_time = MINIMUM_WAIT_TIME
-        # minimum_page_time = time.time() + minimum_time
 
         for position, location in searches:
             location_url = "&location=" + location
@@ -100,7 +101,6 @@ class AIHawkJobManager:
                     job_page_number += 1
                     logger.info(f"Navigating to job page {job_page_number} for position '{position}' in '{location}'.")
                     self.next_job_page(position, location_url, job_page_number)
-                    time.sleep(random.uniform(1.5, 3.5))
                     logger.debug("Initiating the application process for this page.")
 
                     try:
@@ -124,40 +124,98 @@ class AIHawkJobManager:
                 logger.error("Unexpected error during job search.", exc_info=True)
                 continue
 
-
     def get_jobs_from_page(self):
         logger.debug("Starting get_jobs_from_page.")
         try:
-            no_jobs_element = self.driver.find_element(By.CLASS_NAME, 'jobs-search-no-results-banner')
-            if 'No matching jobs found' in no_jobs_element.text or 'unfortunately, things aren' in self.driver.page_source.lower():
-                logger.info("No matching jobs found on this search.")
+            no_results_locator = (By.CLASS_NAME, 'jobs-search-no-results-banner')
+            job_locator = (By.CSS_SELECTOR, 'ul.scaffold-layout__list-container > li.jobs-search-results__list-item[data-occludable-job-id]')
+
+            logger.debug(f"Waiting for either {no_results_locator} or {job_locator}.")
+
+            try:
+                self.wait.until(
+                    EC.any_of(
+                        EC.presence_of_element_located(no_results_locator),
+                        EC.presence_of_element_located(job_locator)
+                    )
+                )
+                logger.debug("Elements condition met.")
+            except TimeoutException:
+                logger.warning("Timed out waiting for the 'no results' banner or the job elements.")
                 return []
-        except NoSuchElementException:
-            logger.debug("No 'no results' banner found on the page.")
-        
-        try:
-            job_results = self.driver.find_element(By.CLASS_NAME, "jobs-search-results-list")
-            utils.scroll_slow(self.driver, job_results)
-            utils.scroll_slow(self.driver, job_results, step=300, reverse=True)
 
-            job_list_elements = self.driver.find_elements(By.CLASS_NAME, 'scaffold-layout__list-container')[0].find_elements(By.CLASS_NAME, 'jobs-search-results__list-item')
-            if not job_list_elements:
-                logger.info("No job list elements found on page, skipping.")
+            # Verificar se o banner de "sem resultados" está presente
+            no_results_elements = self.driver.find_elements(*no_results_locator)
+            if no_results_elements:
+                no_results_banner = no_results_elements[0]
+                banner_text = no_results_banner.text.lower()
+                logger.debug(f"No results banner text: '{banner_text}'.")
+                if 'no matching jobs found' in banner_text or "unfortunately, things aren't" in banner_text:
+                    logger.info("No matching jobs found on this search.")
+                    return []
+
+            # Caso contrário, assumir que os resultados de empregos estão presentes
+            try:
+                job_list_container = self.wait.until(
+                    EC.presence_of_element_located((By.CLASS_NAME, 'jobs-search-results-list'))
+                )
+                logger.debug("Job list container found.")
+
+                # Scroll otimizado para carregar todos os elementos de trabalho
+                logger.debug("Initiating optimized scroll to load all job elements.")
+                utils.scroll_slow(self.driver, job_list_container, step=500, reverse=False, max_attempts=5)
+                # utils.scroll_slow(self.driver, job_list_container, step=500, reverse=True, max_attempts=5)
+                logger.debug("Scrolling completed.")
+
+                job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
+                logger.debug(f"Found {len(job_list_elements)} job elements on the page.")
+
+                if not job_list_elements:
+                    logger.info("No job elements found on the page, skipping.")
+                    return []
+
+                return job_list_elements
+
+            except TimeoutException:
+                logger.warning("Timed out waiting for the job list container to load.")
                 return []
-
-            return job_list_elements
-
-        except NoSuchElementException:
-            logger.warning("No job results found on the page.")
+            except NoSuchElementException:
+                logger.error("Job list container element not found on the page.")
+                return []
+            except StaleElementReferenceException:
+                logger.error("StaleElementReferenceException encountered. Attempting to recapture job elements.")
+                try:
+                    job_list_container = self.driver.find_element(By.CSS_SELECTOR, 'ul.scaffold-layout__list-container')
+                    job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
+                    logger.debug(f"Recaptured {len(job_list_elements)} job elements after StaleElementReferenceException.")
+                    return job_list_elements
+                except Exception as e:
+                    logger.error(f"Failed to recapture job elements after StaleElementReferenceException: {e}", exc_info=True)
+                    return []
+            except Exception as e:
+                logger.error(f"Unexpected error while extracting job elements: {e}", exc_info=True)
+                return []
+        except TimeoutException:
+            logger.warning("Timed out waiting for either 'no results' banner or job results list to load.")
             return []
-
         except Exception as e:
-            logger.error("Error while fetching job elements.", exc_info=True)
+            logger.error(f"Error while fetching job elements. {e}", exc_info=True)
             return []
+
 
 
     def apply_jobs(self, position):
-        job_list_elements = self.driver.find_elements(By.CLASS_NAME, 'scaffold-layout__list-container')[0].find_elements(By.CLASS_NAME, 'jobs-search-results__list-item')
+        try:
+            job_list_container = self.wait.until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'scaffold-layout__list-container'))
+            )
+            job_list_elements = job_list_container.find_elements(By.CLASS_NAME, 'jobs-search-results__list-item')
+        except TimeoutException:
+            logger.warning("Timed out waiting for job list container.")
+            return
+        except NoSuchElementException:
+            logger.info("No job list elements found on page, skipping.")
+            return
 
         if not job_list_elements:
             logger.info("No job list elements found on page, skipping.")
@@ -212,7 +270,6 @@ class AIHawkJobManager:
                 logger.debug(f"Job score is {job.score}. Skipping application for job: '{job.title}' at '{job.company}'.")
                 # self.write_to_file(job, "skipped")
                 self.write_job_score(job, job.score)
-
 
     def get_existing_score(self, job_title, company, link):
         """
@@ -315,42 +372,107 @@ class AIHawkJobManager:
         )
 
     def extract_job_information_from_tile(self, job_tile):
-        logger.debug("Extracting job information from tile.")
-        job_title, company, job_location, link, apply_method = "", "", "", "", ""
+        """
+        Extracts job information from a job tile element.
 
-        # Extracting job title, link, and company
-        try:
-            job_title = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title').find_element(By.TAG_NAME, 'strong').text
-            link = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title').get_attribute('href').split('?')[0]
-            company = job_tile.find_element(By.CLASS_NAME, 'job-card-container__primary-description').text
-            logger.debug(f"Job information extracted: Title='{job_title}', Company='{company}', Link='{link}'")
-        except NoSuchElementException as e:
-            logger.error(f"Failed to extract job title, link, or company. Exception: {e}")
-            logger.error(f"Job tile content for debugging: {job_tile.get_attribute('outerHTML')}")
+        Args:
+            job_tile (WebElement): The Selenium WebElement representing the job tile.
 
-        # Extracting job location
-        try:
-            job_location = job_tile.find_element(By.CLASS_NAME, 'job-card-container__metadata-item').text
-            logger.debug(f"Job location extracted: '{job_location}'.")
-        except NoSuchElementException as e:
-            logger.warning(f"Failed to extract job location: {e}")
+        Returns:
+            Tuple[str, str, str, str, str]: A tuple containing job_title, company, job_location, link, apply_method.
+        """
+        logger.debug("Starting extraction of job information from tile.")
 
-        # Extracting apply method using both CSS selectors
-        try:
-            # First, try the latest CSS selector
-            try:
-                apply_method = job_tile.find_element(By.CLASS_NAME, 'job-card-container__footer-job-state').text
-                logger.debug(f"Apply method extracted from '.job-card-container__footer-job-state': '{apply_method}'.")
-            except NoSuchElementException:
-                # If the first one fails, try the older selector
-                apply_method = job_tile.find_element(By.CLASS_NAME, 'job-card-container__apply-method').text
-                logger.debug(f"Apply method extracted from '.job-card-container__apply-method': '{apply_method}'.")
-        except NoSuchElementException as e:
-            apply_method = "Applied"  # Default value if both selectors fail
-            logger.error(f"Failed to extract apply method from both CSS classes. Assuming 'Applied'. Exception: {e}")
-            logger.error(f"Job tile content for debugging: {job_tile.get_attribute('outerHTML')}")
+        # Initialize variables
+        job_title, company, link = self._extract_title_company_link(job_tile)
+        job_location = self._extract_job_location(job_tile)
+        apply_method = self._extract_apply_method(job_tile)
+
+        logger.debug(
+            f"Completed extraction: Title='{job_title}', Company='{company}', "
+            f"Location='{job_location}', Link='{link}', Apply Method='{apply_method}'"
+        )
 
         return job_title, company, job_location, link, apply_method
+
+    def _extract_title_company_link(self, job_tile):
+        """
+        Extracts the job title, company, and link from the job tile.
+
+        Args:
+            job_tile (WebElement): The Selenium WebElement representing the job tile.
+
+        Returns:
+            Tuple[str, str, str]: A tuple containing job_title, company, link.
+        """
+        job_title = ""
+        company = ""
+        link = ""
+        try:
+            job_title_element = self.wait.until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'job-card-list__title'))
+            )
+            job_title = job_title_element.find_element(By.TAG_NAME, 'strong').text
+            link = job_title_element.get_attribute('href').split('?')[0]
+            company = job_tile.find_element(By.CLASS_NAME, 'job-card-container__primary-description').text
+            logger.debug(f"Extracted Job Title: '{job_title}', Company: '{company}', Link: '{link}'")
+        except (NoSuchElementException, TimeoutException) as e:
+            logger.error(f"Failed to extract job title, link, or company. Exception: {e}")
+            logger.error(f"Job tile HTML for debugging: {job_tile.get_attribute('outerHTML')}")
+        return job_title, company, link
+
+    def _extract_job_location(self, job_tile):
+        """
+        Extracts the job location from the job tile.
+
+        Args:
+            job_tile (WebElement): The Selenium WebElement representing the job tile.
+
+        Returns:
+            str: The job location.
+        """
+        job_location = ""
+        try:
+            job_location_element = self.wait.until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__metadata-item'))
+            )
+            job_location = job_location_element.text
+            logger.debug(f"Extracted Job Location: '{job_location}'")
+        except (NoSuchElementException, TimeoutException) as e:
+            logger.warning(f"Failed to extract job location. Exception: {e}")
+        return job_location
+
+    def _extract_apply_method(self, job_tile):
+        """
+        Extracts the apply method from the job tile using CSS selectors.
+
+        Args:
+            job_tile (WebElement): The Selenium WebElement representing the job tile.
+
+        Returns:
+            str: The apply method.
+        """
+        apply_method = ""
+        try:
+            # Try the latest CSS selector first
+            try:
+                apply_method_element = self.wait.until(
+                    EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__footer-job-state'))
+                )
+                apply_method = apply_method_element.text
+                logger.debug(f"Extracted Apply Method from 'job-card-container__footer-job-state': '{apply_method}'")
+            except TimeoutException:
+                # Fallback to older selector if latest not found
+                apply_method_element = self.wait.until(
+                    EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__apply-method'))
+                )
+                apply_method = apply_method_element.text
+                logger.debug(f"Extracted Apply Method from 'job-card-container__apply-method': '{apply_method}'")
+        except (NoSuchElementException, TimeoutException) as e:
+            apply_method = "Applied"  # Default value if both selectors fail
+            logger.error(f"Failed to extract apply method from both CSS classes. Assuming 'Applied'. Exception: {e}")
+            logger.error(f"Job tile HTML for debugging: {job_tile.get_attribute('outerHTML')}")
+        return apply_method
 
 
     def is_blacklisted(self, job_title, company, link):

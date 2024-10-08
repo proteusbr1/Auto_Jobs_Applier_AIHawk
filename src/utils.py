@@ -4,7 +4,9 @@ import sys
 import time
 
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 from loguru import logger
 
 from app_config import MINIMUM_LOG_LEVEL
@@ -76,22 +78,18 @@ def is_scrollable(element):
         return False
 
 def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse=False, max_attempts=10):
-    """
-    Scrolls a scrollable element slowly to the end (bottom) or back to the top.
-
-    :param driver: Selenium WebDriver instance.
-    :param scrollable_element: The web element to scroll.
-    :param start: Starting scroll position (ignored).
-    :param end: Ending scroll position (ignored).
-    :param step: Scroll step size in pixels.
-    :param reverse: If True, scrolls upwards to the top; otherwise, scrolls downwards to the bottom.
-    :param max_attempts: Maximum number of attempts to scroll without new content (for infinite scroll).
-    """
     logger.debug("Starting scroll_slow.")
 
     if step <= 0:
         logger.error("Step value must be positive.")
         raise ValueError("Step must be positive.")
+
+    # Add explicit wait before checking if the element is scrollable
+    try:
+        WebDriverWait(driver, 10).until(EC.visibility_of(scrollable_element))
+    except Exception as e:
+        logger.error("Scrollable element is not visible: %s", e)
+        return
 
     if not is_scrollable(scrollable_element):
         logger.warning("The element is not scrollable.")
@@ -122,59 +120,48 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
 
         logger.debug(f"Scroll height: {scroll_height}, Client height: {client_height}, Max scroll position: {max_scroll_position}")
 
-        # Set scrolling direction and end position based on 'reverse'
+        # Set scrolling direction
         if reverse:
-            step = -abs(step)  # Ensure step is negative for upward scrolling
+            step = -abs(step)
             end_position = 0
             logger.debug("Configured to scroll upwards to the top.")
         else:
-            step = abs(step)   # Ensure step is positive for downward scrolling
+            step = abs(step)
             end_position = max_scroll_position
             logger.debug("Configured to scroll downwards to the bottom.")
 
         attempts = 0
         last_scroll_height = scroll_height
-
         current_scroll_position = int(float(scrollable_element.get_attribute("scrollTop") or 0))
         logger.debug(f"Initial scroll position: {current_scroll_position}")
 
         while True:
+            # Calculate new scroll position
+            new_scroll_position = current_scroll_position + step
             if reverse:
-                # Scrolling upwards
-                new_scroll_position = current_scroll_position + step
                 if new_scroll_position <= end_position:
                     new_scroll_position = end_position
             else:
-                # Scrolling downwards
-                new_scroll_position = current_scroll_position + step
                 if new_scroll_position >= end_position:
                     new_scroll_position = end_position
 
             # Execute the scroll
-            try:
-                driver.execute_script(script_scroll_to, scrollable_element, new_scroll_position)
-                logger.debug(f"Scrolled to position: {new_scroll_position}")
-            except Exception as e:
-                logger.error(f"Error during scrolling to position {new_scroll_position}: {e}", exc_info=True)
-                break
+            driver.execute_script(script_scroll_to, scrollable_element, new_scroll_position)
+            logger.debug(f"Scrolled to position: {new_scroll_position}")
 
-            time.sleep(random.uniform(0.2, 0.5))  # Adjusted sleep time for smoother scrolling
+            # Wait after each scroll
+            time.sleep(random.uniform(0.2, 0.5))  # Wait time for new content to load
 
             # Update current scroll position
-            try:
-                current_scroll_position = int(float(scrollable_element.get_attribute("scrollTop") or 0))
-                logger.debug(f"Current scrollTop after scrolling: {current_scroll_position}")
-            except Exception as e:
-                logger.error(f"Error fetching current scrollTop: {e}", exc_info=True)
-                break
+            current_scroll_position = int(float(scrollable_element.get_attribute("scrollTop") or 0))
+            logger.debug(f"Current scrollTop after scrolling: {current_scroll_position}")
 
             if reverse:
-                # Check if we've reached the top
                 if current_scroll_position <= end_position:
                     logger.debug("Reached the top of the element.")
                     break
             else:
-                # For infinite scroll, detect if new content has loaded
+                # Check for new content
                 new_scroll_height = int(scrollable_element.get_attribute("scrollHeight") or 0)
                 logger.debug(f"New scroll height: {new_scroll_height}")
 
@@ -182,7 +169,7 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
                     logger.debug("New content detected. Updating end_position.")
                     last_scroll_height = new_scroll_height
                     end_position = new_scroll_height - client_height
-                    attempts = 0  # Reset attempts if new content is loaded
+                    attempts = 0
                 else:
                     attempts += 1
                     logger.debug(f"No new content loaded. Attempt {attempts}/{max_attempts}.")
@@ -190,22 +177,16 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
                         logger.info("Maximum scroll attempts reached. Ending scroll.")
                         break
 
-                # Check if we've reached the bottom
                 if current_scroll_position >= end_position:
                     logger.debug("Reached the bottom of the element.")
                     break
 
         # Ensure the final scroll position is correct
-        try:
-            driver.execute_script(script_scroll_to, scrollable_element, end_position)
-            logger.debug(f"Scrolled to final position: {end_position}")
-            time.sleep(0.5)
-        except Exception as e:
-            logger.error(f"Error scrolling to final position {end_position}: {e}", exc_info=True)
+        driver.execute_script(script_scroll_to, scrollable_element, end_position)
+        logger.debug(f"Scrolled to final position: {end_position}")
 
     except Exception as e:
-        logger.critical(f"Exception occurred during scrolling: {e}", exc_info=True)
-
+        logger.error(f"An error occurred during scrolling: {e}", exc_info=True)
     logger.debug("Completed scroll_slow.")
 
 def chrome_browser_options():
@@ -214,7 +195,7 @@ def chrome_browser_options():
     options = webdriver.ChromeOptions()
     
     # Headless mode
-    options.add_argument("--headless")
+    # options.add_argument("--headless")
     
     # Specify the absolute path to the Chrome binary
     options.binary_location = '/usr/bin/google-chrome'  # Update as necessary

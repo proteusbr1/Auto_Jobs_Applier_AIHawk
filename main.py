@@ -210,7 +210,7 @@ def init_browser() -> webdriver.Chrome:
     logger.info("Initializing browser.")
     try:
         options = chrome_browser_options()
-        service = ChromeService(ChromeDriverManager().install())
+        service = ChromeService(executable_path=ChromeDriverManager().install(), log_path="chromedriver.log")
         browser = webdriver.Chrome(service=service, options=options)
         logger.info("Browser initialized successfully.")
         return browser
