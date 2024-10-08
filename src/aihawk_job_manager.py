@@ -126,6 +126,7 @@ class AIHawkJobManager:
 
 
     def get_jobs_from_page(self):
+        logger.debug("Starting get_jobs_from_page.")
         try:
             no_jobs_element = self.driver.find_element(By.CLASS_NAME, 'jobs-search-no-results-banner')
             if 'No matching jobs found' in no_jobs_element.text or 'unfortunately, things aren' in self.driver.page_source.lower():
