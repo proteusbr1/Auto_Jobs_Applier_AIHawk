@@ -16,6 +16,8 @@ from langchain_core.messages.ai import AIMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompt_values import StringPromptValue
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompt_values import ChatPromptValue
+
 
 import src.strings as strings
 from src.job import Job
@@ -179,10 +181,16 @@ class LLMLogger:
         logger.debug(f"LLMLogger initialized with LLM: {self.llm}")
 
     @staticmethod
-    def log_request(prompts: Union[List[Dict[str, str]], StringPromptValue, Dict], parsed_reply: Dict[str, Dict]):
+    def log_request(prompts: Union[List[BaseMessage], StringPromptValue, Dict], parsed_reply: Dict[str, Dict]):
         logger.debug("Starting log_request method.")
         logger.debug(f"Prompts received: {prompts}")
         logger.debug(f"Parsed reply received: {parsed_reply}")
+
+        if isinstance(prompts, ChatPromptValue):
+            logger.debug("Prompts are of type ChatPromptValue.")
+            # Access 'messages' attribute if available
+            prompts = prompts.messages if hasattr(prompts, 'messages') else prompts.text
+            logger.debug(f"Prompts converted to text/messages: {prompts}")
 
         try:
             calls_log = os.path.join(Path("data_folder/output"), "open_ai_calls.json")
@@ -198,7 +206,9 @@ class LLMLogger:
         elif isinstance(prompts, Dict):
             logger.debug("Prompts are of type Dict.")
             try:
-                prompts = {f"prompt_{i + 1}": prompt['content'] for i, prompt in enumerate(prompts.get('messages', []))}
+                # Handle both dict and object with 'content' attribute
+                prompts = {f"prompt_{i + 1}": (prompt.get('content') if isinstance(prompt, dict) else prompt.content)
+                          for i, prompt in enumerate(prompts.get('messages', []))}
                 logger.debug(f"Prompts converted to dictionary: {prompts}")
             except Exception as e:
                 logger.error(f"Error converting prompts to dictionary: {e}")
@@ -206,7 +216,8 @@ class LLMLogger:
         elif isinstance(prompts, list):
             logger.debug("Prompts are of type list.")
             try:
-                prompts = {f"prompt_{i + 1}": prompt['content'] for i, prompt in enumerate(prompts)}
+                prompts = {f"prompt_{i + 1}": (prompt.get('content') if isinstance(prompt, dict) else prompt.content)
+                          for i, prompt in enumerate(prompts)}
                 logger.debug(f"Prompts converted to dictionary: {prompts}")
             except Exception as e:
                 logger.error(f"Error converting prompts from list to dictionary: {e}")
@@ -214,7 +225,8 @@ class LLMLogger:
         else:
             logger.debug("Prompts are of unknown type, attempting default conversion.")
             try:
-                prompts = {f"prompt_{i + 1}": prompt['content'] for i, prompt in enumerate(prompts.get('messages', []))}
+                prompts = {f"prompt_{i + 1}": (prompt.get('content') if isinstance(prompt, dict) else prompt.content)
+                          for i, prompt in enumerate(prompts.get('messages', []))}
                 logger.debug(f"Prompts converted to dictionary using default method: {prompts}")
             except Exception as e:
                 logger.error(f"Error converting prompts using default method: {e}")

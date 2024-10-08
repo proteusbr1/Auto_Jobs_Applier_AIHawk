@@ -21,7 +21,7 @@ contact@drmariojunqueira.com
 
 PROFESSIONAL SUMMARY
 Experienced Medical Doctor and Legal Consultant with over 13 years in medical expertise, healthcare leadership, and legal medicine. Currently pursuing a Master of Law at the University of Pennsylvania, specializing in health law and policy. Expertise in medical jurisprudence and AI technologies to drive healthcare innovation and uphold ethical standards.
-Se atentar para o fato de não ser advogado, não ter licença para exercer medicina nos EUA e necessitar de visto de trabalho.
+Se atentar para o fato de não ser advogado e não ter licença para exercer medicina nos EUA.
 
 EDUCATION
 Master of Law (ML)
@@ -44,6 +44,7 @@ Occupational Safety and Medicine
 Neurology and Neurosurgery
 Ophthalmology
 União Brasileira de Faculdades, Brasília, DF, Brazil (2018-2021)
+
 PROFESSIONAL EXPERIENCE
 Founder & CEO, PericialMed, Brasília, DF, Brazil
 2017 – Present
@@ -80,18 +81,22 @@ Emergency Room Physician, Various Hospitals, Brasília, DF, Brazil
 2010 – 2013
 
 Delivered immediate medical care in high-pressure emergency settings.
+
 TECHNICAL SKILLS
 Programming & Technologies: Python, Flask, PostgreSQL, PHP, MySQL, Docker, Cisco Networks, Ubuntu
 AI & APIs: ChatGPT API, Stripe API, WhatsApp API
 Systems & Software: Microsoft Office, Adobe Creative Cloud, Apple Products
+
 INNOVATIVE PROJECTS
 Chat-Summary: AI tool for transcribing, summarizing, and translating large data volumes.
 Busca-Ativa: AI tool to identify lawsuits needing medical expertise.
 PennAiPath: AI program recommending university classes based on resumes.
 WelcomeToPenn: Wiki platform to assist students with university information navigation.
+
 LANGUAGES
 English: Proficient (TOEFL iBT: High-Intermediate Reading & Listening; Intermediate Speaking & Writing)
 Portuguese: Native
+
 SELECTED ACHIEVEMENTS
 International (US):
 
@@ -107,6 +112,7 @@ Regional (Federal District, Brazil):
 
 Authored a report prohibiting non-physicians from performing IUD procedures, enhancing patient safety.
 Served as a technical consultant for Parliamentary Inquiry Committees on medical malpractice.
+
 PUBLICATIONS & CONTRIBUTIONS
 Authored articles and advisory opinions on medical errors, legal aspects of suicide, and medical expertise in justice.
 Presented at international conferences and participated in public policy discussions.

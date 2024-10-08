@@ -146,37 +146,6 @@ class AIHawkEasyApplier:
                 raise
         logger.debug(f"Job saved successfully: {job.title} with score {job.score}")
 
-    # def is_job_skipped(self, job: Any) -> bool:
-    #     """
-    #     Checks if the job was skipped previously and is in the job_score.json file
-    #     """
-    #     file_path = Path('data_folder') / 'output' / 'job_score.json'
-        
-    #     # If file doesn't exist, consider the job not skipped
-    #     if not file_path.exists():
-    #         logger.debug("job_score.json does not exist. Job has not been skipped.")
-    #         return False
-
-    #     # Load skipped jobs
-    #     try:
-    #         with open(file_path, 'r') as f:
-    #             skipped_jobs = json.load(f)
-    #     except json.JSONDecodeError:
-    #         logger.warning("job_score.json is corrupted. Considering job as not skipped.")
-    #         return False
-    #     except Exception as e:
-    #         logger.error(f"Error reading job_score.json: {e}", exc_info=True)
-    #         return False
-
-    #     # Check if current job is in skipped jobs
-    #     for skipped_job in skipped_jobs:
-    #         if skipped_job['link'] == job.link:
-    #             # logger.info(f"Job already skipped: {job.title} at {job.company}")
-    #             return True
-        
-    #     logger.debug(f"Job not skipped: {job.title} at {job.company}")
-    #     return False
-
     def get_existing_job_score(self, link: str) -> float:
         """
         Retrieves the existing score for a job based on its link from job_score.json.
@@ -1073,42 +1042,3 @@ class AIHawkEasyApplier:
         sanitized_text = re.sub(r'[\x00-\x1F\x7F]', '', sanitized_text).replace('\n', ' ').replace('\r', '').rstrip(',')
         logger.debug(f"Sanitized text: {sanitized_text}")
         return sanitized_text
-
-
-    # def evaluate_job(self, job, resume_prompt: str, gpt_answerer: Any) -> float:
-    #     """
-    #     Sends the job description and resume to an AI system (using gpt_answerer) and returns a score from 0 to 10
-    #     """
-
-    #     job_description = job.description
-
-        
-    #     # Create the prompt to evaluate the job description and resume
-    #     prompt = f"""
-    #     You are a Human Resources expert specializing in evaluating job applications for the American job market. Your task is to assess the compatibility between the following job description and a provided resume. 
-    #     Return only a score from 0 to 10 representing the candidate's likelihood of securing the position, with 0 being the lowest probability and 10 being the highest. 
-    #     The assessment should consider HR-specific criteria for the American job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
-
-    #     Job Description:
-    #     {job_description}
-
-    #     Resume:
-    #     {resume_prompt}
-
-    #     Score (0 to 10):
-    #     """
-        
-    #     logger.debug("Sending job description and resume to GPT for evaluation")
-    #     # Use the gpt_answerer to make the evaluation
-    #     response = gpt_answerer.ask_chatgpt(prompt)
-    #     logger.debug(f"Received response from GPT: {response}")
-        
-    #     # Process the response to extract the score
-    #     try:
-    #         # Extract the number (score) from GPT's response
-    #         score = float(re.search(r"\d+(\.\d+)?", response).group(0))
-    #         logger.debug(f"Extracted score from GPT response: {score}")
-    #         return score
-    #     except (AttributeError, ValueError):
-    #         logger.error(f"Error processing the score from response: {response}", exc_info=True)
-    #         return 0.1  # Return 0.1 if a valid score cannot be extracted

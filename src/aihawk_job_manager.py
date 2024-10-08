@@ -118,7 +118,7 @@ class AIHawkJobManager:
                         logger.error(f"Error during job application: {e}", exc_info=True)
                         continue
 
-                    logger.info("Completed applying to jobs on this page.")
+                    logger.debug("Completed applying to jobs on this page.")
 
             except Exception as e:
                 logger.error("Unexpected error during job search.", exc_info=True)
@@ -129,7 +129,7 @@ class AIHawkJobManager:
         try:
             no_jobs_element = self.driver.find_element(By.CLASS_NAME, 'jobs-search-no-results-banner')
             if 'No matching jobs found' in no_jobs_element.text or 'unfortunately, things aren' in self.driver.page_source.lower():
-                logger.info("No matching jobs found on this page, skipping.")
+                logger.info("No matching jobs found on this search.")
                 return []
         except NoSuchElementException:
             logger.debug("No 'no results' banner found on the page.")
