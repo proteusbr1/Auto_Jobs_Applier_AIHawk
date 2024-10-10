@@ -1,20 +1,16 @@
 import json
 import os
 import random
-import time
 from itertools import product
 from pathlib import Path
-from datetime import datetime
-from typing import List, Optional, Any, Tuple
 
-from inputimeout import inputimeout, TimeoutOccurred
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 import src.utils as utils
-from app_config import MINIMUM_WAIT_TIME, MINIMUM_SCORE_JOB_APPLICATION, USER_RESUME_SUMMARY
+from app_config import MINIMUM_WAIT_TIME, MINIMUM_SCORE_JOB_APPLICATION, USER_RESUME_SUMMARY, USE_JOB_SCORE
 from src.job import Job
 from src.aihawk_easy_applier import AIHawkEasyApplier
 from loguru import logger
@@ -47,28 +43,34 @@ class AIHawkJobManager:
         self.wait = WebDriverWait(self.driver, wait_time)
         self.set_old_answers = set()
         self.easy_applier_component = None
+        self.seen_jobs = []
+        self.title_blacklist_set = set()
+        self.company_blacklist_set = set()
+        self.output_files_cache = {}
+        self.applied_companies_cache = set()
         logger.debug("AIHawkJobManager initialized successfully")
 
     def set_parameters(self, parameters):
-        logger.info("Setting parameters for AIHawkJobManager")
-        self.company_blacklist = [company.lower() for company in parameters.get('company_blacklist', [])] or []
-        self.title_blacklist = [word.lower() for word in parameters.get('title_blacklist', [])] or []
-        self.positions = parameters.get('positions', [])
-        self.locations = parameters.get('locations', [])
-        self.apply_once_at_company = parameters.get('apply_once_at_company', False)
+        logger.debug("Setting parameters for AIHawkJobManager")
+        self.company_blacklist = parameters.get("company_blacklist", [])
+        self.title_blacklist = parameters.get("title_blacklist", [])
+        self.title_blacklist_set = set(word.lower().strip() for word in self.title_blacklist)
+        self.company_blacklist_set = set(word.lower().strip() for word in self.company_blacklist)
+        self.positions = parameters.get("positions", [])
+        self.locations = parameters.get("locations", [])
+        self.apply_once_at_company = parameters.get("apply_once_at_company", False)
         self.base_search_url = self.get_base_search_url(parameters)
         self.seen_jobs = []
 
-        job_applicants_threshold = parameters.get('job_applicants_threshold', {})
-        self.min_applicants = job_applicants_threshold.get('min_applicants', 0)
-        self.max_applicants = job_applicants_threshold.get('max_applicants', float('inf'))
+        job_applicants_threshold = parameters.get("job_applicants_threshold", {})
+        self.min_applicants = job_applicants_threshold.get("min_applicants", 0)
+        self.max_applicants = job_applicants_threshold.get("max_applicants", float("inf"))
 
-        resume_path = parameters.get('uploads', {}).get('resume', None)
+        resume_path = parameters.get("uploads", {}).get("resume", None)
         self.resume_path = Path(resume_path) if resume_path and Path(resume_path).exists() else None
-        self.output_file_directory = Path(parameters['outputFileDirectory'])
+        self.output_file_directory = Path(parameters["outputFileDirectory"])
         self.env_config = EnvironmentKeys()
         logger.debug("Parameters set successfully")
-
     def set_gpt_answerer(self, gpt_answerer):
         logger.debug("Setting GPT answerer")
         self.gpt_answerer = gpt_answerer
@@ -78,7 +80,7 @@ class AIHawkJobManager:
         self.resume_generator_manager = resume_generator_manager
 
     def start_applying(self):
-        logger.info("Starting job application process")
+        logger.debug("Starting job application process")
         self.easy_applier_component = AIHawkEasyApplier(
             self.driver,
             self.resume_path,
@@ -151,7 +153,7 @@ class AIHawkJobManager:
                 banner_text = no_results_banner.text.lower()
                 logger.debug(f"No results banner text: '{banner_text}'.")
                 if 'no matching jobs found' in banner_text or "unfortunately, things aren't" in banner_text:
-                    logger.info("No matching jobs found on this search.")
+                    logger.debug("No matching jobs found on this search.")
                     return []
 
             # Caso contrário, assumir que os resultados de empregos estão presentes
@@ -171,7 +173,7 @@ class AIHawkJobManager:
                 logger.debug(f"Found {len(job_list_elements)} job elements on the page.")
 
                 if not job_list_elements:
-                    logger.info("No job elements found on the page, skipping.")
+                    logger.error("No job elements found on the page, skipping.")
                     return []
 
                 return job_list_elements
@@ -202,23 +204,18 @@ class AIHawkJobManager:
             logger.error(f"Error while fetching job elements. {e}", exc_info=True)
             return []
 
-
-
     def apply_jobs(self, position):
         try:
             job_list_container = self.wait.until(
                 EC.presence_of_element_located((By.CLASS_NAME, 'scaffold-layout__list-container'))
             )
             job_list_elements = job_list_container.find_elements(By.CLASS_NAME, 'jobs-search-results__list-item')
-        except TimeoutException:
+        except (TimeoutException, NoSuchElementException):
             logger.warning("Timed out waiting for job list container.")
-            return
-        except NoSuchElementException:
-            logger.info("No job list elements found on page, skipping.")
             return
 
         if not job_list_elements:
-            logger.info("No job list elements found on page, skipping.")
+            logger.warning("No job list elements found on page, skipping.")
             return
 
         job_list = [
@@ -228,54 +225,45 @@ class AIHawkJobManager:
 
         for job in job_list:
             logger.debug(f"Evaluating job: '{job.title}' at '{job.company}'")
-            
-            # Check if the job is blacklisted
-            if self.is_blacklisted(job.title, job.company, job.link):
-                logger.debug(f"Job blacklisted: '{job.title}' at '{job.company}'.")
-                continue
-            
-            # Check if already applied to the job
-            if self.is_already_applied_to_job(job.title, job.company, job.link):
-                logger.debug(f"Already applied to job: '{job.title}' at '{job.company}'.")
-                continue
-            
-            # Check if already applied to the company
-            if self.is_already_applied_to_company(job.company):
-                logger.debug(f"Already applied to company: '{job.company}'.")
-                continue
+
+            # Check if the job must be skipped
+            if self.must_be_skipped(job):
+                logger.debug(f"Skipping job blacklisted: {job.link}")
+                continue 
             
             # Check if the job has already been scored
-            if self.is_already_scored(job.title, job.company, job.link):
-                logger.debug(f"Job already scored: '{job.title}' at '{job.company}'.")
-                job.score = self.get_existing_score(job.title, job.company, job.link)
-            # else:
-            #     # Evaluate the job score if it hasn't been scored yet
-            #     job.score = self.evaluate_job(job.description, USER_RESUME_SUMMARY, self.gpt_answerer)
+            if USE_JOB_SCORE:
+                if self.is_already_scored(job):
+                    logger.debug(f"Job already scored: '{job.title}' at '{job.company}'.")
+                    job.score = self.get_existing_score(job)
+                
+                if job.score is not None and job.score < MINIMUM_SCORE_JOB_APPLICATION:
+                    logger.debug(f"Skipping by low score: {job.score}")
+                    continue
 
-            # Check if the score is high enough to apply or if score is None (not yet scored)
-            if job.score is None or job.score >= MINIMUM_SCORE_JOB_APPLICATION:
-                try:
-                    if job.apply_method not in {"Continue", "Applied", "Apply"}:
-                        if self.easy_applier_component.job_apply(job):
-                            self.write_to_file(job, "success")
-                            self.write_job_score(job, job.score)
-                            logger.info(f"Successfully applied to job: '{job.title}' at '{job.company}'.")
-                        else:
-                            self.write_to_file(job, "skipped")
-                            logger.debug(f"Skipped applying for '{job.title}' at '{job.company}'.")
-                except Exception as e:
-                    logger.error(f"Failed to apply for '{job.title}' at '{job.company}': {e}", exc_info=True)
-                    self.write_to_file(job, "failed")
-            else:
-                logger.debug(f"Job score is {job.score}. Skipping application for job: '{job.title}' at '{job.company}'.")
-                # self.write_to_file(job, "skipped")
-                self.write_job_score(job, job.score)
+            try:
+                if self.easy_applier_component.job_apply(job):
+                    utils.write_to_file(job, "success")
+                    logger.info(f"Applied: {job.link}")
 
-    def get_existing_score(self, job_title, company, link):
+            except Exception as e:
+                logger.error(
+                        f"Failed to apply for job: Title='{job.title}', Company='{job.company}', "
+                        f"Location='{job.location}', Link='{job.link}', Job State='{job.state}', Apply Method='{job.apply_method}', "
+                        f"Error: {e}"
+                    )
+                utils.write_to_file(job, "failed")
+
+            # Add job link to seen jobs set
+            self.seen_jobs.append(job.link)
+
+
+    def get_existing_score(self, job):
         """
         Retrieves the existing score for the job from the job_score.json file.
         """
         file_path = self.output_file_directory / 'job_score.json'
+        link = job.link
         
         if not file_path.exists():
             return 0  # Return a default low score if file does not exist
@@ -292,51 +280,6 @@ class AIHawkJobManager:
         except Exception as e:
             logger.error(f"Error reading job_score.json: {e}", exc_info=True)
             return 0
-
-    def write_to_file(self, job, file_name):
-        logger.debug(f"Writing job application result to file: '{file_name}'.")
-        pdf_path = Path(job.pdf_path).resolve()
-        pdf_path = pdf_path.as_uri()
-        
-        # Get current date and time
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        data = {
-            "company": job.company,
-            "job_title": job.title,
-            "link": job.link,
-            "score": job.score,  
-            "job_recruiter": job.recruiter_link,
-            "job_location": job.location,
-            "pdf_path": pdf_path,
-            "timestamp": current_time
-        }
-        
-        file_path = self.output_file_directory / f"{file_name}.json"
-        
-        if not file_path.exists():
-            try:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump([data], f, indent=4)
-                logger.debug(f"Job data written to new file: '{file_name}'.")
-            except Exception as e:
-                logger.error(f"Failed to write to new file '{file_name}': {e}", exc_info=True)
-        else:
-            try:
-                with open(file_path, 'r+', encoding='utf-8') as f:
-                    try:
-                        existing_data = json.load(f)
-                    except json.JSONDecodeError:
-                        logger.error(f"JSON decode error in file: {file_path}. Initializing with empty list.")
-                        existing_data = []
-                    
-                    existing_data.append(data)
-                    f.seek(0)
-                    json.dump(existing_data, f, indent=4)
-                    f.truncate()
-                logger.debug(f"Job data appended to existing file: '{file_name}'.")
-            except Exception as e:
-                logger.error(f"Failed to append to file '{file_name}': {e}", exc_info=True)
 
     def get_base_search_url(self, parameters):
         logger.debug("Constructing base search URL.")
@@ -379,47 +322,113 @@ class AIHawkJobManager:
             job_tile (WebElement): The Selenium WebElement representing the job tile.
 
         Returns:
-            Tuple[str, str, str, str, str]: A tuple containing job_title, company, job_location, link, apply_method.
+            Tuple[str, str, str, str, str, str]: A tuple containing job_title, company, job_location, link, apply_method, job_state.
         """
         logger.debug("Starting extraction of job information from tile.")
 
         # Initialize variables
-        job_title, company, link = self._extract_title_company_link(job_tile)
+        job_title = self._extract_job_title(job_tile)
+        company = self._extract_company(job_tile)
+        link = self._extract_link(job_tile)
         job_location = self._extract_job_location(job_tile)
         apply_method = self._extract_apply_method(job_tile)
+        job_state = self._extract_job_state(job_tile)
+        
 
         logger.debug(
             f"Completed extraction: Title='{job_title}', Company='{company}', "
-            f"Location='{job_location}', Link='{link}', Apply Method='{apply_method}'"
+            f"Location='{job_location}', Link='{link}', Job State='{job_state}', Apply Method='{apply_method}'"
         )
 
-        return job_title, company, job_location, link, apply_method
+        return job_title, company, job_location, link, apply_method, job_state
 
-    def _extract_title_company_link(self, job_tile):
+    def _extract_job_title(self, job_tile):
         """
-        Extracts the job title, company, and link from the job tile.
+        Extracts the job title from the job tile.
 
         Args:
             job_tile (WebElement): The Selenium WebElement representing the job tile.
 
         Returns:
-            Tuple[str, str, str]: A tuple containing job_title, company, link.
+            str: The job title.
         """
+        logger.debug("Extracting job title.")
         job_title = ""
+        try:
+            job_title_element = WebDriverWait(job_tile, 10).until(
+            EC.presence_of_element_located(
+                (By.XPATH, ".//a[contains(@class, 'job-card-list__title')]")
+            )
+        )
+            job_title = job_title_element.text.strip()
+            logger.debug(f"Extracted Job Title: '{job_title}'")
+        except NoSuchElementException:
+            logger.error("Job title element not found.")
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        except TimeoutException:
+            logger.error("Timed out waiting for the job title element.")
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        except Exception as e:
+            logger.error(f"Unexpected error in _extract_job_title: {e}", exc_info=True)
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        return job_title
+
+
+    def _extract_company(self, job_tile):
+        """
+        Extracts the company from the job tile.
+
+        Args:
+            job_tile (WebElement): The Selenium WebElement representing the job tile.
+
+        Returns:
+            str: The company name.
+        """
+        logger.debug("Extracting company.")
         company = ""
+        try:
+            company_element = WebDriverWait(job_tile, 2).until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__primary-description')))
+            company = company_element.text.strip()
+            logger.debug(f"Extracted Company: '{company}'")
+        except NoSuchElementException:
+            logger.error("Element not found.")
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        except TimeoutException:
+            logger.error("Timed out.")
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}", exc_info=True)
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        return company
+
+    def _extract_link(self, job_tile):
+        """
+        Extracts the job link from the job tile.
+
+        Args:
+            job_tile (WebElement): The Selenium WebElement representing the job tile.
+
+        Returns:
+            str: The job link.
+        """
+        logger.debug("Extracting job link.")
         link = ""
         try:
-            job_title_element = self.wait.until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'job-card-list__title'))
-            )
-            job_title = job_title_element.find_element(By.TAG_NAME, 'strong').text
+            job_title_element = WebDriverWait(job_tile, 2).until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'job-card-list__title')))
             link = job_title_element.get_attribute('href').split('?')[0]
-            company = job_tile.find_element(By.CLASS_NAME, 'job-card-container__primary-description').text
-            logger.debug(f"Extracted Job Title: '{job_title}', Company: '{company}', Link: '{link}'")
-        except (NoSuchElementException, TimeoutException) as e:
-            logger.error(f"Failed to extract job title, link, or company. Exception: {e}")
-            logger.error(f"Job tile HTML for debugging: {job_tile.get_attribute('outerHTML')}")
-        return job_title, company, link
+            logger.debug(f"Extracted Link: '{link}'")
+        except NoSuchElementException:
+            logger.error("Element not found.")
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        except TimeoutException:
+            logger.error("Timed out.")
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}", exc_info=True)
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        return link
 
     def _extract_job_location(self, job_tile):
         """
@@ -431,92 +440,314 @@ class AIHawkJobManager:
         Returns:
             str: The job location.
         """
+        logger.debug("Extracting job location.")
         job_location = ""
         try:
-            job_location_element = self.wait.until(
+            job_location_element = WebDriverWait(job_tile, 2).until(
                 EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__metadata-item'))
             )
-            job_location = job_location_element.text
+            job_location = job_location_element.text.strip()
             logger.debug(f"Extracted Job Location: '{job_location}'")
-        except (NoSuchElementException, TimeoutException) as e:
-            logger.warning(f"Failed to extract job location. Exception: {e}")
+        except NoSuchElementException:
+            logger.error("Element not found.")
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        except TimeoutException:
+            logger.error("Timed out.")
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}", exc_info=True)
+            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
         return job_location
 
     def _extract_apply_method(self, job_tile):
         """
-        Extracts the apply method from the job tile using CSS selectors.
+        Extracts the apply method from the job_tile using the CSS class 'job-card-container__apply-method'.
+        This is done only after ensuring that the <ul> element with the class 'job-card-container__footer-wrapper' is present.
 
         Args:
-            job_tile (WebElement): The Selenium WebElement representing the job tile.
+            job_tile (WebElement): The Selenium WebElement representing the job_tile.
 
         Returns:
-            str: The apply method.
+            str: The apply method or None if it is not 'Easy Apply' or if the element is not found.
         """
-        apply_method = ""
+        logger.debug("Starting apply method extraction.")
+        apply_method = None
         try:
-            # Try the latest CSS selector first
-            try:
-                apply_method_element = self.wait.until(
-                    EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__footer-job-state'))
-                )
-                apply_method = apply_method_element.text
-                logger.debug(f"Extracted Apply Method from 'job-card-container__footer-job-state': '{apply_method}'")
-            except TimeoutException:
-                # Fallback to older selector if latest not found
-                apply_method_element = self.wait.until(
-                    EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__apply-method'))
-                )
-                apply_method = apply_method_element.text
-                logger.debug(f"Extracted Apply Method from 'job-card-container__apply-method': '{apply_method}'")
-        except (NoSuchElementException, TimeoutException) as e:
-            apply_method = "Applied"  # Default value if both selectors fail
-            logger.error(f"Failed to extract apply method from both CSS classes. Assuming 'Applied'. Exception: {e}")
-            logger.error(f"Job tile HTML for debugging: {job_tile.get_attribute('outerHTML')}")
+            # Wait for the footer <ul> element to be present
+            WebDriverWait(job_tile, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'ul.job-card-container__footer-wrapper'))
+            )
+            logger.debug("Footer <ul> element found.")
+
+            # Attempt to extract the apply method after the <ul> is present
+            apply_method_element = job_tile.find_element(By.CLASS_NAME, 'job-card-container__apply-method')
+            apply_method_text = apply_method_element.text.strip()
+            logger.debug(f"Extracted apply method: '{apply_method_text}'")
+
+            if apply_method_text.lower() == 'easy apply':
+                apply_method = apply_method_text
+
+        except TimeoutException:
+            logger.debug("Timeout while waiting for the footer <ul> element.")
+            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+        except NoSuchElementException:
+            logger.debug("Element 'job-card-container__apply-method' not found.")
+            # logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+        except Exception as e:
+            logger.debug(f"Unexpected error while extracting apply method: {e}", exc_info=True)
+            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+
         return apply_method
 
 
-    def is_blacklisted(self, job_title, company, link):
-        logger.debug(f"Checking if job is blacklisted: Title='{job_title}', Company='{company}'.")
-        job_title_words = job_title.lower().split(' ')
-        title_blacklisted = any(word in self.title_blacklist for word in job_title_words)
-        company_blacklisted = company.strip().lower() in (word.strip().lower() for word in self.company_blacklist)
-        link_seen = link in self.seen_jobs
-        is_blacklisted = title_blacklisted or company_blacklisted or link_seen
-        logger.debug(f"Job blacklisted status: {is_blacklisted}")
+    def _extract_job_state(self, job_tile):
+        """
+        Extracts the job state from the job_tile using the CSS class 'job-card-container__footer-job-state'.
+        This is done only after ensuring that the <ul> element with the class 'job-card-container__footer-wrapper' is present.
+
+        Args:
+            job_tile (WebElement): The Selenium WebElement representing the job_tile.
+
+        Returns:
+            str: The job state or None if the element is not found.
+        """
+        logger.debug("Starting job state extraction.")
+        job_state = None
+        try:
+            # Wait for the footer <ul> element to be present
+            WebDriverWait(job_tile, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, 'ul.job-card-container__footer-wrapper'))
+            )
+            logger.debug("Footer <ul> element found.")
+
+            # Attempt to extract the job state after the <ul> is present
+            job_state_element = job_tile.find_element(By.CLASS_NAME, 'job-card-container__footer-job-state')
+            job_state_text = job_state_element.text.strip()
+            logger.debug(f"Extracted job state: '{job_state_text}'")
+
+            job_state = job_state_text
+
+        except TimeoutException:
+            logger.debug("Timeout while waiting for the footer <ul> element.")
+            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+        except NoSuchElementException:
+            logger.debug("Element 'job-card-container__footer-job-state' not found.")
+            # logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+        except Exception as e:
+            logger.debug(f"Unexpected error while extracting job state: {e}", exc_info=True)
+            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+
+        return job_state
+
+
+
+    def must_be_skipped(self, job: Job) -> bool:
+        """
+        Determines if a given job should be skipped based on various criteria, including blacklist checks,
+        job state, and apply method.
+
+        Args:
+            job (Job): The job object to evaluate.
+
+        Returns:
+            bool: True if the job should be skipped, False otherwise.
+        """
+        logger.debug("Checking if job should be skipped.")
+
+        # Extract job information
+        job_title = job.title
+        company = job.company
+        link = job.link
+
+        # Check if job state is Applied, Continue, or Apply
+        if self._is_job_state_invalid(job):
+            logger.debug(f"Skipping by state: {job.state}")
+            return True
+
+        # Check if apply method is not 'Easy Apply'
+        if self._is_apply_method_not_easy_apply(job):
+            logger.debug(f"Skipping by apply method: {job.apply_method}")
+            return True
+
+        # Check Title Blacklist
+        if self._is_title_blacklisted(job_title):
+            logger.debug(f"Skipping by title blacklist: {job_title}")
+            return True
+
+        # Check Company Blacklist
+        if self._is_company_blacklisted(company):
+            logger.debug(f"Skipping by company blacklist: {company}")
+            return True
+
+        # Check if the link has already been seen
+        if self._is_link_seen(link):
+            logger.debug(f"Skipping by seen link: {link}")
+            return True
+
+        # Check if the job has already been applied to the company
+        if self._is_already_applied_to_company(company):
+            logger.debug(f"Skipping by company application policy: {company}")
+            return True
+
+        logger.debug("Job does not meet any skip conditions.")
+        return False
+
+    def _is_job_state_invalid(self, job: Job) -> bool:
+        """
+        Checks if the job state is not in the not valid states.
+
+        Args:
+            job (Job): The job object to evaluate.
+
+        Returns:
+            bool: True if job state is invalid, False otherwise.
+        """
+        return job.state in {"Continue", "Applied", "Apply"}
+
+    def _is_apply_method_not_easy_apply(self, job: Job) -> bool:
+        """
+        Checks if the apply method is not 'Easy Apply'.
+
+        Args:
+            job (Job): The job object to evaluate.
+
+        Returns:
+            bool: True if apply method is not 'Easy Apply', False otherwise.
+        """
+        return job.apply_method != "Easy Apply"
+
+
+    def _is_title_blacklisted(self, title: str) -> bool:
+        """
+        Checks if the job title contains any blacklisted words.
+
+        Args:
+            title (str): The job title to evaluate.
+
+        Returns:
+            bool: True if any blacklisted word is found in the title, False otherwise.
+        """
+        title_lower = title.lower()
+        title_words = set(title_lower.split())
+        intersection = title_words.intersection(self.title_blacklist_set)
+        is_blacklisted = bool(intersection)
+
+        if is_blacklisted:
+            logger.debug(f"Blacklisted words found in title: {intersection}")
 
         return is_blacklisted
 
-    def is_already_applied_to_job(self, job_title, company, link):
-        link_seen = link in self.seen_jobs
-        if link_seen:
-            logger.debug(f"Already applied to job: Title='{job_title}', Company='{company}', Link='{link}'.")
-        return link_seen
+    def _is_company_blacklisted(self, company: str) -> bool:
+        """
+        Checks if the company name is in the blacklist.
 
-    def is_already_applied_to_company(self, company):
+        Args:
+            company (str): The company name to evaluate.
+
+        Returns:
+            bool: True if the company is blacklisted, False otherwise.
+        """
+        company_cleaned = company.strip().lower()
+        is_blacklisted = company_cleaned in self.company_blacklist_set
+
+        if is_blacklisted:
+            logger.debug(f"Company '{company_cleaned}' is in the blacklist.")
+
+        return is_blacklisted
+
+    def _is_link_seen(self, link: str) -> bool:
+        """
+        Checks if the job link has already been seen/applied to.
+
+        Args:
+            link (str): The job link to evaluate.
+
+        Returns:
+            bool: True if the link has been seen, False otherwise.
+        """
+        is_seen = link in self.seen_jobs
+
+        if is_seen:
+            logger.debug(f"Job link '{link}' has already been processed.")
+
+        return is_seen
+
+    def _is_already_applied_to_company(self, company: str) -> bool:
+        """
+        Determines if an application has already been submitted to the company's jobs,
+        based on a one-application-per-company policy.
+
+        Args:
+            company (str): The company name to evaluate.
+
+        Returns:
+            bool: True if already applied to the company, False otherwise.
+        """
+        logger.debug("Checking if job has already been applied at the company.")
+        company = company.strip().lower()
+
         if not self.apply_once_at_company:
+            logger.debug("apply_once_at_company is disabled. Skipping check.")
             return False
+
+        # Check cache first
+        if company in self.applied_companies_cache:
+            logger.debug(
+                f"Company '{company}' is already in the applied companies cache. Skipping."
+            )
+            return True
 
         output_files = ["success.json"]
         for file_name in output_files:
             file_path = self.output_file_directory / file_name
-            if file_path.exists():
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
+            if not file_path.exists():
+                logger.debug(f"Output file '{file_path}' does not exist. Skipping.")
+                continue
+
+            try:
+                if file_path in self.output_files_cache:
+                    existing_data = self.output_files_cache[file_path]
+                else:
+                    with open(file_path, "r", encoding="utf-8") as f:
                         existing_data = json.load(f)
-                        for applied_job in existing_data:
-                            if applied_job['company'].strip().lower() == company.strip().lower():
-                                logger.info(f"Already applied at '{company}' (once per company policy). Skipping.")
-                                return True
-                except json.JSONDecodeError:
-                    logger.error(f"JSON decode error in file: {file_path}. Skipping file.")
+                        self.output_files_cache[file_path] = existing_data
+
+                if not isinstance(existing_data, list):
+                    logger.warning(f"Unexpected data format in '{file_path}'. Expected a list.")
                     continue
+
+                for applied_job in existing_data:
+                    if not isinstance(applied_job, dict):
+                        logger.warning(f"Invalid job entry format in '{file_path}': {applied_job}. Skipping entry.")
+                        continue
+                    applied_company = applied_job.get("company", "").strip().lower()
+                    if not applied_company:
+                        logger.warning(f"Missing 'company' key in job entry: {applied_job}. Skipping entry.")
+                        continue
+                    if applied_company == company:
+                        logger.debug(
+                            f"Already applied at '{company}' (once per company policy). Skipping."
+                        )
+                        self.applied_companies_cache.add(company)
+                        return True
+            except json.JSONDecodeError:
+                logger.error(f"JSON decode error in file: {file_path}. Skipping file.")
+                continue
+            except Exception as e:
+                logger.error(f"Error reading file '{file_path}': {e}", exc_info=True)
+                continue
+
+        logger.debug(f"No previous applications found for company '{company}'.")
         return False
     
-    def is_already_scored(self, job_title, company, link):
+    def is_already_scored(self, job):
         """
         Checks if the job has already been scored (skipped previously) and is in the job_score.json file.
         """
-        logger.debug(f"Checking if job is already scored: Title='{job_title}', Company='{company}'.")
+        logger.debug(f"Checking if job is already scored.")
+        job_title = job.title 
+        company = job.company
+        link = job.link
         file_path = self.output_file_directory / 'job_score.json'
 
         # Early exit if the file doesn't exist
@@ -543,55 +774,3 @@ class AIHawkJobManager:
 
         logger.debug(f"Job not scored: Title='{job_title}', Company='{company}'.")
         return False
-
-    def write_job_score(self, job: Any, score: float):
-        """
-        Saves jobs that were not applied to avoid future GPT queries, including the score and timestamp.
-        """
-        logger.debug(f"Saving skipped job: {job.title} at {job.company} with score {score}")
-        file_path = self.output_file_directory / 'job_score.json'
-
-        # Get current date and time
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Data format to be saved
-        job_data = {
-            "search_term": job.position, 
-            "company": job.company,
-            "job_title": job.title,
-            "link": job.link,
-            "score": score,  # Adds the score to the record
-            "timestamp": current_time  # Adds the timestamp
-        }
-
-        # Check if file exists, if not, create a new one
-        if not file_path.exists():
-            try:
-                with open(file_path, 'w') as f:
-                    json.dump([job_data], f, indent=4)
-                logger.debug(f"Created new job_score.json with job: {job.title}")
-            except Exception as e:
-                logger.error(f"Failed to create job_score.json: {e}", exc_info=True)
-                raise
-        else:
-            # If it exists, load existing data and append the new job
-            try:
-                with open(file_path, 'r+') as f:
-                    try:
-                        existing_data = json.load(f)
-                        if not isinstance(existing_data, list):
-                            logger.warning("job_score.json format is incorrect. Overwriting with a new list.")
-                            existing_data = []
-                    except json.JSONDecodeError:
-                        logger.warning("job_score.json is empty or corrupted. Initializing with an empty list.")
-                        existing_data = []
-                    
-                    existing_data.append(job_data)
-                    f.seek(0)
-                    json.dump(existing_data, f, indent=4)
-                    f.truncate()
-                logger.debug(f"Appended job to job_score.json: {job.title}")
-            except Exception as e:
-                logger.error(f"Failed to append job to job_score.json: {e}", exc_info=True)
-                raise
-        logger.debug(f"Job saved successfully: {job.title} with score {score}")

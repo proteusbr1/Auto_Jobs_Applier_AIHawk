@@ -47,7 +47,7 @@ class ConfigValidator:
     
     @staticmethod
     def validate_config(config_yaml_path: Path) -> dict:
-        logger.info(f"Validating configuration file: {config_yaml_path}")
+        logger.debug(f"Validating configuration file: {config_yaml_path}")
         parameters = ConfigValidator.validate_yaml_file(config_yaml_path)
         required_keys = {
             'remote': bool,
@@ -127,12 +127,12 @@ class ConfigValidator:
                 logger.warning(f"'{blacklist}' is None in config. Setting to empty list.")
             logger.debug(f"Blacklist '{blacklist}' validated successfully.")
 
-        logger.info("Configuration file validated successfully.")
+        logger.debug("Configuration file validated successfully.")
         return parameters
 
     @staticmethod
     def validate_secrets(env_path: Path = Path('.env')) -> str:
-        logger.info(f"Validating secrets from environment file: {env_path}")
+        logger.debug(f"Validating secrets from environment file: {env_path}")
         load_dotenv(dotenv_path=env_path)
         mandatory_secrets = ['LLM_API_KEY']
 
@@ -146,7 +146,7 @@ class ConfigValidator:
                 raise ConfigError(f"Environment variable '{secret}' cannot be empty in {env_path}.")
             logger.debug(f"Environment variable '{secret}' is set.")
 
-        logger.info("All required secrets are validated.")
+        logger.debug("All required secrets are validated.")
         return os.getenv('LLM_API_KEY')
 
 class FileManager:
@@ -169,7 +169,7 @@ class FileManager:
 
     @staticmethod
     def validate_data_folder(app_data_folder: Path) -> tuple:
-        logger.info(f"Validating data folder at: {app_data_folder}")
+        logger.debug(f"Validating data folder at: {app_data_folder}")
         if not app_data_folder.exists() or not app_data_folder.is_dir():
             logger.error(f"Data folder not found: {app_data_folder}")
             raise FileNotFoundError(f"Data folder not found: {app_data_folder}")
@@ -207,19 +207,19 @@ class FileManager:
         return result
 
 def init_browser() -> webdriver.Chrome:
-    logger.info("Initializing browser.")
+    logger.debug("Initializing browser.")
     try:
         options = chrome_browser_options()
-        service = ChromeService(executable_path=ChromeDriverManager().install(), log_path="chromedriver.log")
+        service = ChromeService(executable_path=ChromeDriverManager().install(), log_path="./log/chromedriver.log")
         browser = webdriver.Chrome(service=service, options=options)
-        logger.info("Browser initialized successfully.")
+        logger.debug("Browser initialized successfully.")
         return browser
     except WebDriverException as e:
         logger.exception("WebDriver failed to initialize.")
         raise RuntimeError(f"Failed to initialize browser: {str(e)}")
 
 def create_and_run_bot(parameters, llm_api_key):
-    logger.info("Creating and running the bot.")
+    logger.debug("Creating and running the bot.")
     try:
         logger.debug("Initializing StyleManager and ResumeGenerator.")
         style_manager = StyleManager()
@@ -245,11 +245,11 @@ def create_and_run_bot(parameters, llm_api_key):
         )
         logger.debug("FacadeManager initialized.")
         
-        logger.info("Clearing terminal screen.")
-        os.system('cls' if os.name == 'nt' else 'clear')
+        logger.debug("Clearing terminal screen.")
+        # os.system('cls' if os.name == 'nt' else 'clear')
         logger.debug("Choosing resume style.")
         resume_generator_manager.choose_style()
-        os.system('cls' if os.name == 'nt' else 'clear')
+        # os.system('cls' if os.name == 'nt' else 'clear')
         
         logger.debug("Creating JobApplicationProfile object.")
         job_application_profile_object = JobApplicationProfile(plain_text_resume)
@@ -272,11 +272,11 @@ def create_and_run_bot(parameters, llm_api_key):
         bot.set_parameters(parameters)
         logger.debug("AIHawkBotFacade setup complete.")
         
-        logger.info("Starting bot login process.")
+        logger.debug("Starting bot login process.")
         bot.start_login()
-        logger.info("Starting bot application process.")
+        logger.debug("Starting bot application process.")
         bot.start_apply()
-        logger.info("Bot has finished running.")
+        logger.debug("Bot has finished running.")
     except WebDriverException as e:
         logger.exception("WebDriver error occurred while running the bot.")
     except ConfigError as ce:
@@ -315,7 +315,7 @@ def main(resume: Path = None):
         parameters['uploads'] = FileManager.file_paths_to_dict(resume, plain_text_resume_file)
         parameters['outputFileDirectory'] = output_folder
         
-        logger.info("Starting bot creation and execution.")
+        logger.debug("Starting bot creation and execution.")
         create_and_run_bot(parameters, llm_api_key)
     
     except ConfigError as ce:

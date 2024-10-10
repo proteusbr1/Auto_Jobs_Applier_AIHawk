@@ -2,6 +2,9 @@ import os
 import random
 import sys
 import time
+from pathlib import Path
+from datetime import datetime
+import json
 
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
@@ -11,7 +14,7 @@ from loguru import logger
 
 from app_config import MINIMUM_LOG_LEVEL
 
-log_file = "app_log.log"
+log_file = "./log/app_log.log"
 
 # Define allowed log levels
 allowed_levels = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -56,10 +59,10 @@ def ensure_chrome_profile():
     try:
         if not os.path.exists(profile_dir):
             os.makedirs(profile_dir)
-            logger.info(f"Created directory for Chrome profile: {profile_dir}")
+            logger.debug(f"Created directory for Chrome profile: {profile_dir}")
         if not os.path.exists(chrome_profile_path):
             os.makedirs(chrome_profile_path)
-            logger.info(f"Created Chrome profile directory: {chrome_profile_path}")
+            logger.debug(f"Created Chrome profile directory: {chrome_profile_path}")
     except Exception as e:
         logger.error(f"Failed to ensure Chrome profile directories: {e}", exc_info=True)
         raise
@@ -108,7 +111,7 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
                     logger.error("The element is still not visible after attempting to scroll into view.")
                     return
                 else:
-                    logger.info("Element is now visible after scrolling into view.")
+                    logger.debug("Element is now visible after scrolling into view.")
             except Exception as e:
                 logger.error(f"Failed to scroll the element into view: {e}", exc_info=True)
                 return
@@ -174,7 +177,7 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
                     attempts += 1
                     logger.debug(f"No new content loaded. Attempt {attempts}/{max_attempts}.")
                     if attempts >= max_attempts:
-                        logger.info("Maximum scroll attempts reached. Ending scroll.")
+                        logger.debug("Maximum scroll attempts reached. Ending scroll.")
                         break
 
                 if current_scroll_position >= end_position:
@@ -241,25 +244,12 @@ def chrome_browser_options():
         profile_dir = os.path.basename(chrome_profile_path)
         options.add_argument(f'--user-data-dir={initial_path}')
         options.add_argument(f"--profile-directory={profile_dir}")
-        logger.info(f"Using Chrome profile directory: {chrome_profile_path}")
+        logger.debug(f"Using Chrome profile directory: {chrome_profile_path}")
     else:
         options.add_argument("--incognito")
-        logger.info("Using Chrome in incognito mode")
+        logger.debug("Using Chrome in incognito mode")
 
     return options
-
-def print_colored(text, color_code):
-    reset = "\033[0m"
-    logger.debug(f"Printing text in color {color_code}: {text}")
-    print(f"{color_code}{text}{reset}")
-
-def print_red(text):
-    red = "\033[91m"
-    print_colored(text, red)
-
-def print_yellow(text):
-    yellow = "\033[93m"
-    print_colored(text, yellow)
 
 def string_width(text, font, font_size):
     try:
@@ -270,3 +260,53 @@ def string_width(text, font, font_size):
     except Exception as e:
         logger.error(f"Error calculating string width: {e}", exc_info=True)
         return 0
+    
+def write_to_file(job, file_name):
+    logger.debug(f"Writing job application result to file: '{file_name}'.")
+    pdf_path = Path(job.pdf_path).resolve()
+    pdf_path = pdf_path.as_uri()
+    
+    # Get current date and time
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    data = {
+        "title": job.title,
+        "company": job.company,
+        "location": job.location,
+        "link": job.link,
+        "apply_method": job.apply_method,
+        "state": job.state,
+        # "description": job.description,
+        # "summarize_job_description": job.summarize_job_description,	
+        "pdf_path": pdf_path,
+        "recruiter_link": job.recruiter_link,
+        "position": job.position,
+        "score": job.score,  
+        "timestamp": current_time
+    }
+    
+    file_path = Path("data_folder") / "output" / f"{file_name}.json"
+    
+    if not file_path.exists():
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump([data], f, indent=4)
+            logger.debug(f"Job data written to new file: '{file_name}'.")
+        except Exception as e:
+            logger.error(f"Failed to write to new file '{file_name}': {e}", exc_info=True)
+    else:
+        try:
+            with open(file_path, 'r+', encoding='utf-8') as f:
+                try:
+                    existing_data = json.load(f)
+                except json.JSONDecodeError:
+                    logger.error(f"JSON decode error in file: {file_path}. Initializing with empty list.")
+                    existing_data = []
+                
+                existing_data.append(data)
+                f.seek(0)
+                json.dump(existing_data, f, indent=4)
+                f.truncate()
+            logger.debug(f"Job data appended to existing file: '{file_name}'.")
+        except Exception as e:
+            logger.error(f"Failed to append to file '{file_name}': {e}", exc_info=True)

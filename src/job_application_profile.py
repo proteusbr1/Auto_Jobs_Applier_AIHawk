@@ -168,7 +168,7 @@ class JobApplicationProfile:
             logger.exception("An unexpected error occurred while processing salary_expectations.")
             raise RuntimeError("An unexpected error occurred while processing salary_expectations.") from e
 
-        logger.info("JobApplicationProfile initialization completed successfully.")
+        logger.debug("JobApplicationProfile initialization completed successfully.")
 
     def __str__(self):
         logger.debug("Generating string representation of JobApplicationProfile")

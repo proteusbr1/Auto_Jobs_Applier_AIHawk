@@ -20,7 +20,7 @@ set -o pipefail  # Prevent errors in a pipeline from being masked
 PROJECT_DIR="$(pwd)"
 VENV_DIR="virtual"
 CRON_SCRIPT="run_auto_jobs.sh"
-CRON_LOG="$PROJECT_DIR/cron.log"
+CRON_LOG="$PROJECT_DIR/log/cron.log"
 RESUME_DIR="$PROJECT_DIR/resumes"
 RESUME_FILE="resume.pdf"
 

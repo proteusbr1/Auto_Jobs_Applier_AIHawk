@@ -21,15 +21,15 @@ class AIHawkAuthenticator:
         logger.debug(f"AIHawkAuthenticator initialized with driver: {driver}")
 
     def start(self):
-        logger.info("Starting Chrome browser to log in to AIHawk.")
+        logger.debug("Starting Chrome browser to log in to AIHawk.")
         if self.is_logged_in():
-            logger.info("User is already logged in. Skipping login process.")
+            logger.debug("User is already logged in. Skipping login process.")
             return
-        logger.info("User is not logged in. Proceeding with login.")
+        logger.debug("User is not logged in. Proceeding with login.")
         self.handle_login()
 
     def handle_login(self):
-        logger.info("Navigating to the AIHawk login page...")
+        logger.debug("Navigating to the AIHawk login page...")
         try:
             self.driver.get("https://www.linkedin.com/login")
             if 'feed' in self.driver.current_url:
@@ -48,7 +48,7 @@ class AIHawkAuthenticator:
         try:
             while True:
                 current_url = self.driver.current_url
-                logger.info(f"Please login on {current_url}")
+                logger.debug(f"Please login on {current_url}")
 
                 if 'feed' in current_url:
                     logger.debug("Login successful, redirected to feed page.")
@@ -78,7 +78,7 @@ class AIHawkAuthenticator:
             WebDriverWait(self.driver, 300).until(
                 EC.url_contains('https://www.linkedin.com/feed/')
             )
-            logger.info("Security check completed.")
+            logger.debug("Security check completed.")
         except TimeoutException:
             logger.error("Security check not completed within the timeout period. Please try again later.")
         except Exception as e:
@@ -100,15 +100,15 @@ class AIHawkAuthenticator:
                 logger.debug(f"Button {i} text: '{button.text.strip()}'")
 
             if any(button.text.strip().lower() == 'start a post' for button in buttons):
-                logger.info("Found 'Start a post' button indicating user is logged in.")
+                logger.debug("Found 'Start a post' button indicating user is logged in.")
                 return True
 
             profile_img_elements = self.driver.find_elements(By.XPATH, "//img[contains(@alt, 'Photo of')]")
             if profile_img_elements:
-                logger.info("Profile image found. Assuming user is logged in.")
+                logger.debug("Profile image found. Assuming user is logged in.")
                 return True
 
-            logger.info("Did not find 'Start a post' button or profile image. User might not be logged in.")
+            logger.debug("Did not find 'Start a post' button or profile image. User might not be logged in.")
             return False
 
         except TimeoutException:

@@ -1,11 +1,9 @@
 import base64
 import json
 import os
-import random
 import re
 import time
 from typing import List, Optional, Any, Tuple
-from datetime import datetime
 import traceback
 
 from httpx import HTTPStatusError
@@ -23,7 +21,7 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from pathlib import Path
-from app_config import MINIMUM_SCORE_JOB_APPLICATION, USER_RESUME_SUMMARY
+from app_config import MINIMUM_SCORE_JOB_APPLICATION, USER_RESUME_SUMMARY, USE_JOB_SCORE
 
 import src.utils as utils
 from loguru import logger
@@ -129,202 +127,68 @@ class AIHawkEasyApplier:
             )
             raise e
 
-    def save_job_score(self, job: Any):
-        """
-        Saves jobs that were not applied to avoid future GPT queries, including the score and timestamp.
-        """
-        logger.debug(
-            f"Saving skipped job: {job.title} at {job.company} with score {job.score}"
-        )
-        file_path = Path("data_folder") / "output" / "job_score.json"
-
-        # Get current date and time
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Data format to be saved
-        job_data = {
-            "search_term": job.position,
-            "company": job.company,
-            "job_title": job.title,
-            "link": job.link,
-            "score": job.score,  # Adds the score to the record
-            "timestamp": current_time,  # Adds the timestamp
-        }
-
-        # Check if file exists, if not, create a new one
-        if not file_path.exists():
-            try:
-                with open(file_path, "w") as f:
-                    json.dump([job_data], f, indent=4)
-                logger.debug(f"Created new job_score.json with job: {job.title}")
-            except Exception as e:
-                logger.error(f"Failed to create job_score.json: {e}", exc_info=True)
-                raise
-        else:
-            # If it exists, load existing data and append the new job
-            try:
-                with open(file_path, "r+") as f:
-                    try:
-                        existing_data = json.load(f)
-                        if not isinstance(existing_data, list):
-                            logger.warning(
-                                "job_score.json format is incorrect. Overwriting with a new list."
-                            )
-                            existing_data = []
-                    except json.JSONDecodeError:
-                        logger.warning(
-                            "job_score.json is empty or corrupted. Initializing with an empty list."
-                        )
-                        existing_data = []
-
-                    existing_data.append(job_data)
-                    f.seek(0)
-                    json.dump(existing_data, f, indent=4)
-                    f.truncate()
-                logger.debug(f"Appended job to job_score.json: {job.title}")
-            except Exception as e:
-                logger.error(
-                    f"Failed to append job to job_score.json: {e}", exc_info=True
-                )
-                raise
-        logger.debug(
-            f"Job saved successfully: {job.title} with score {job.score}"
-        )
-
-    def get_existing_job_score(self, link: str) -> float:
-        """
-        Retrieves the existing score for a job based on its link from job_score.json.
-        """
-        file_path = Path("data_folder") / "output" / "job_score.json"
-
-        if not file_path.exists():
-            logger.error("job_score.json does not exist. Returning default score of 0.")
-            return 0.1
-
-        try:
-            with open(file_path, "r") as f:
-                scored_jobs = json.load(f)
-                for scored_job in scored_jobs:
-                    if scored_job.get("link") == link:
-                        return scored_job.get("score", 0.0)
-        except Exception as e:
-            logger.error(f"Error reading job_score.json: {e}", exc_info=True)
-
-        return 0.1
-
-    def is_job_already_scored(self, job_title, company, link):
-        """
-        Checks if the job has already been scored (skipped previously) and is in the job_score.json file.
-        """
-        logger.debug(
-            f"Checking if job is already scored: Title='{job_title}', Company='{company}'."
-        )
-        file_path = Path("data_folder") / "output" / "job_score.json"
-
-        # Early exit if the file doesn't exist
-        if not file_path.exists():
-            logger.debug("job_score.json does not exist. Job has not been scored.")
-            return False
-
-        # Load the scored jobs from the file
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                scored_jobs = json.load(f)
-        except json.JSONDecodeError:
-            logger.warning("job_score.json is corrupted. Considering job as not scored.")
-            return False
-        except Exception as e:
-            logger.error(f"Error reading job_score.json: {e}", exc_info=True)
-            return False
-
-        # Check if the current job's link matches any scored job
-        for scored_job in scored_jobs:
-            if scored_job.get("link") == link:
-                logger.debug(
-                    f"Job already scored: Title='{job_title}', Company='{company}'."
-                )
-                return True
-
-        logger.debug(f"Job not scored: Title='{job_title}', Company='{company}'.")
-        return False
-
     def job_apply(self, job: Any):
-        logger.info(f"Starting job application for job: {job.title} at {job.company}, link: {job.link}")
+        logger.debug(f"Open job: {job.link}")
 
         try:
-            self.driver.get(job.link)
             logger.debug(f"Navigated to job link: {job.link}")
-            # try:
-            #     self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'jobs-easy-apply-content')))
-            #     logger.debug("Job page loaded successfully.")
-            # except TimeoutException as te:
-            #     logger.exception("Timeout while waiting for the job page to load.")
-            #     raise
-
-            self.check_for_premium_redirect(job)
+            self.driver.get(job.link)
+            
             logger.debug("Checked for premium redirect.")
-
+            self.check_for_premium_redirect(job)
+            
             logger.debug("Retrieving job description")
             job.description = self._get_job_description()
 
-            if job.score is None:
+            if USE_JOB_SCORE:
                 logger.debug("Evaluating job score using GPT.")
-                job.score = self.gpt_answerer.evaluate_job(
-                    job, USER_RESUME_SUMMARY
-                )
-
-            logger.debug(f"Job score is: {job.score}")
-
-            if job.score >= MINIMUM_SCORE_JOB_APPLICATION:
-                logger.info(
-                    f"Proceeding with the application. Score is {job.score}."
-                )
-                try:
-                    easy_apply_button = self._find_easy_apply_button(job)
-                except Exception as e:
-                    logger.error(f"Failed to find 'Easy Apply' button: {e}", exc_info=True)
-                    self.save_job_score(job)
-                    return False
-
-                if easy_apply_button:
-                    logger.debug("Easy Apply button found. Attempting to click.")
-                    ActionChains(self.driver).move_to_element(
-                        easy_apply_button
-                    ).click().perform()
-                    logger.debug("'Easy Apply' button clicked successfully")
-                    self._fill_application_form(job)
-                    self.save_job_score(job)
-                    logger.debug(
-                        f"Job application process completed successfully for job: {job.title} at {job.company}"
+                if job.score is None:
+                    job.score = self.gpt_answerer.evaluate_job(
+                        job, USER_RESUME_SUMMARY
                     )
-                    return True
+                    logger.debug(f"Job score is: {job.score}")
+                    utils.write_to_file(job, "job_score")
+                
+                if job.score < MINIMUM_SCORE_JOB_APPLICATION:
+                    logger.info(f"Score is {job.score}. Skipping application.")
+                    return False
                 else:
-                    logger.warning(
-                        f"'Easy Apply' button not found for job: {job.title} at {job.company}"
-                    )
-                    self.save_job_score(job)
-                    return False
-            else:
-                logger.info(
-                    f"Score is {job.score}. Skipping application."
+                    logger.info(f"Proceeding with the application. Score is {job.score}.")
+
+            try:
+                easy_apply_button = self._find_easy_apply_button(job)
+            except Exception as e:
+                logger.error(f"Failed to find 'Easy Apply' button: {e}", exc_info=True)
+                return False
+
+            if easy_apply_button:
+                logger.debug("Easy Apply button found. Attempting to click.")
+                ActionChains(self.driver).move_to_element(
+                    easy_apply_button
+                ).click().perform()
+                logger.debug("'Easy Apply' button clicked successfully")
+                
+                # Handle potential modals that might obstruct the button
+                self._handle_job_search_safety_reminder()
+                
+                self._fill_application_form(job)
+                logger.debug(
+                    f"Job application process completed successfully for job: {job.title} at {job.company}"
                 )
-                self.save_job_score(job)
+                return True
+            else:
+                logger.warning(f"'Easy Apply' button not found for job: {job.title} at {job.company}")
                 return False
 
         except Exception as e:
             logger.error(f"Failed to apply for the job: {e}")
-            logger.debug("Discarding application due to failure")
-            logger.debug(traceback.format_exc())
-            # self._discard_application()
             raise
 
     def _find_easy_apply_button(self, job: Any) -> Optional[WebElement]:
-        logger.debug("Searching for 'Easy Apply' button")
-        attempt = 0
-
+        logger.debug("Starting search for 'Easy Apply' button.")
         search_methods = [
             {
-                "description": "find all 'Easy Apply' buttons using find_elements",
+                "description": "Find all 'Easy Apply' buttons using find_elements",
                 "find_elements": True,
                 "xpath": '//button[contains(@class, "jobs-apply-button") and contains(., "Easy Apply")]',
             },
@@ -333,102 +197,99 @@ class AIHawkEasyApplier:
                 "xpath": '//button[contains(@aria-label, "Easy Apply to")]',
             },
             {
-                "description": "button text search",
+                "description": "Button text search for 'Easy Apply' or 'Apply now'",
                 "xpath": '//button[contains(text(), "Easy Apply") or contains(text(), "Apply now")]',
             },
         ]
 
-        while attempt < 2:
-
+        max_attempts = 2
+        for attempt in range(max_attempts):
+            logger.debug(f"Attempt {attempt + 1} to find 'Easy Apply' button.")
             self.check_for_premium_redirect(job)
             self._scroll_page()
 
             for method in search_methods:
                 try:
-                    logger.debug(f"Attempting search using {method['description']}")
-
+                    logger.debug(f"Using search method: {method['description']}")
                     if method.get("find_elements"):
-
-                        try:
-                            elements = self.wait.until(
-                                lambda d: d.find_elements(By.XPATH, method["xpath"])
-                            )
-                            buttons = elements
-                        except Exception as e:
-                            logger.warning(
-                                f"Exception occurred while finding elements using {method['description']}: {e}",
-                                exc_info=True,
-                            )
-                            buttons = []
-
-                        if buttons:
-                            for index, button in enumerate(buttons):
-                                try:
-                                    self.wait.until(
-                                        EC.visibility_of(button)
-                                    )
-                                    self.wait.until(
-                                        EC.element_to_be_clickable(button)
-                                    )
-                                    logger.debug(
-                                        f"Found 'Easy Apply' button {index + 1}, verifying clickability"
-                                    )
-                                    return button
-                                except Exception as e:
-                                    logger.warning(
-                                        f"Button {index + 1} found but not clickable: {e}",
-                                        exc_info=True,
-                                    )
-                        else:
-                            raise TimeoutException("No 'Easy Apply' buttons found")
+                        buttons = self._find_buttons_by_xpath(method["xpath"])
+                        for index, button in enumerate(buttons):
+                            if self._is_element_clickable(button):
+                                logger.debug(f"'Easy Apply' button found using {method['description']} (Button {index + 1}).")
+                                return button
+                            else:
+                                logger.warning(f"'Easy Apply' button {index + 1} found but not clickable.")
                     else:
-
-                        try:
-                            button = self.wait.until(
-                                EC.presence_of_element_located((By.XPATH, method["xpath"]))
-                            )
-                            self.wait.until(EC.visibility_of(button))
-                            self.wait.until(EC.element_to_be_clickable(button))
-                            logger.debug("Found 'Easy Apply' button, verifying clickability")
+                        button = self._find_single_button(method["xpath"])
+                        if self._is_element_clickable(button):
+                            logger.debug(f"'Easy Apply' button found using {method['description']}.")
                             return button
-                        except Exception as e:
-                            logger.warning(
-                                f"Exception occurred while locating button using {method['description']}: {e}",
-                                exc_info=True,
-                            )
-                            continue
-
                 except TimeoutException:
-                    logger.warning(
-                        f"Timeout during search using {method['description']}"
-                    )
+                    logger.warning(f"Timeout while using search method: {method['description']}")
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to find 'Easy Apply' button using {method['description']} on attempt {attempt + 1}: {e}",
-                        exc_info=True,
-                    )
+                    logger.warning(f"Error using search method {method['description']}: {e}", exc_info=True)
 
-            self.check_for_premium_redirect(job)
-
-            if attempt == 0:
-                logger.debug("Refreshing page to retry finding 'Easy Apply' button")
+            if attempt < max_attempts - 1:
+                logger.debug("Refreshing page to retry finding 'Easy Apply' button.")
                 self.driver.refresh()
                 try:
-                    self.wait.until(
-                        EC.presence_of_element_located((By.XPATH, '//button'))
-                    )
+                    self.wait.until(EC.presence_of_element_located((By.XPATH, '//button')))
+                    logger.debug("Page refreshed and buttons reloaded.")
                 except TimeoutException:
-                    logger.warning(
-                        "Timed out waiting for buttons to load after refresh."
-                    )
-                # time.sleep(random.randint(3, 5))
-            attempt += 1
+                    logger.warning("Timed out waiting for buttons to load after refresh.")
 
-        page_source = self.driver.page_source
-        logger.error(
-            f"No clickable 'Easy Apply' button found after 2 attempts. Page source length: {len(page_source)} characters."
-        )
-        raise Exception("No clickable 'Easy Apply' button found")
+        # After max attempts, raise an exception if the button is not found
+        logger.error("No clickable 'Easy Apply' button found after multiple attempts.")
+        raise Exception("No clickable 'Easy Apply' button found.")
+
+    def _handle_job_search_safety_reminder(self) -> None:
+        """
+        Handles the 'Job search safety reminder' modal if it appears.
+        """
+        try:
+            modal = self.wait.until(
+                EC.presence_of_element_located((By.CLASS_NAME, "artdeco-modal"))
+            )
+            logger.debug("Job search safety reminder modal detected.")
+            continue_button = modal.find_element(
+                By.XPATH, '//button[contains(., "Continue applying")]'
+            )
+            if continue_button:
+                continue_button.click()
+                logger.debug("Clicked 'Continue applying' button in modal.")
+        except TimeoutException:
+            logger.debug("No 'Job search safety reminder' modal detected.")
+        except NoSuchElementException:
+            logger.warning("'Continue applying' button not found in modal.")
+        except Exception as e:
+            logger.error(f"Unexpected error while handling safety reminder modal: {e}", exc_info=True)
+
+    def _find_buttons_by_xpath(self, xpath: str) -> List[WebElement]:
+        """
+        Finds multiple buttons based on the provided XPath.
+        """
+        logger.debug(f"Searching for buttons with XPath: {xpath}")
+        return self.wait.until(lambda d: d.find_elements(By.XPATH, xpath))
+
+    def _find_single_button(self, xpath: str) -> WebElement:
+        """
+        Finds a single button based on the provided XPath.
+        """
+        logger.debug(f"Searching for single button with XPath: {xpath}")
+        return self.wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
+
+    def _is_element_clickable(self, element: WebElement) -> bool:
+        """
+        Checks if a given WebElement is clickable.
+        """
+        try:
+            self.wait.until(EC.visibility_of(element))
+            self.wait.until(EC.element_to_be_clickable(element))
+            logger.debug("Element is visible and clickable.")
+            return True
+        except Exception as e:
+            logger.debug(f"Element is not clickable: {e}")
+            return False
 
     def _get_job_description(self) -> str:
         logger.debug("Getting job description")
@@ -1128,6 +989,7 @@ class AIHawkEasyApplier:
         )
 
     def _handle_terms_of_service(self, element: WebElement) -> bool:
+        logger.debug("Handling terms of service checkbox")
         labels = element.find_elements(By.TAG_NAME, "label")
         if labels and any(
             term in labels[0].text.lower()
@@ -1147,6 +1009,7 @@ class AIHawkEasyApplier:
         return False
 
     def _find_and_handle_radio_question(self, section: WebElement) -> bool:
+        logger.debug("Searching for radio questions in the section.")
         try:
             question = section.find_element(
                 By.CLASS_NAME, "jobs-easy-apply-form-element"
@@ -1283,6 +1146,7 @@ class AIHawkEasyApplier:
         return False
 
     def _find_and_handle_date_question(self, section: WebElement) -> bool:
+        logger.debug("Searching for date fields in the section.")
         date_fields = section.find_elements(
             By.CLASS_NAME, "artdeco-datepicker__input "
         )
@@ -1320,6 +1184,7 @@ class AIHawkEasyApplier:
         return False
 
     def _find_and_handle_dropdown_question(self, section: WebElement) -> bool:
+        logger.debug("Searching for dropdown or combobox questions in the section.")
         try:
             question = section.find_element(
                 By.CLASS_NAME, "jobs-easy-apply-form-element"
@@ -1403,6 +1268,7 @@ class AIHawkEasyApplier:
             return False
 
     def _is_numeric_field(self, field: WebElement) -> bool:
+        logger.debug("Checking if field is numeric")
         field_type = field.get_attribute("type").lower()
         field_id = field.get_attribute("id").lower()
         is_numeric = (
