@@ -155,6 +155,8 @@ company_blacklist:
   - Jobot
   - Jobot Consulting
   - Jobot Health
+  - TORKLAW
+  - Mindrift
 
 title_blacklist:
   - Attorney
@@ -187,7 +189,6 @@ title_blacklist:
   - Registered
   - Therapist
   - Therapists
-
 
 job_applicants_threshold:
   min_applicants: 0

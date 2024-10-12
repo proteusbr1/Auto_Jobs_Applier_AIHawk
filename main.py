@@ -1,3 +1,4 @@
+#main.py
 import os
 import re
 import sys
@@ -210,7 +211,20 @@ def init_browser() -> webdriver.Chrome:
     logger.debug("Initializing browser.")
     try:
         options = chrome_browser_options()
-        service = ChromeService(executable_path=ChromeDriverManager().install(), log_path="./log/chromedriver.log")
+        
+        # Certifique-se de que o diretório de logs existe
+        log_dir = "./log"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+            logger.debug(f"Created log directory at: {log_dir}")
+        
+        # Configurar o serviço do ChromeDriver com nível de log reduzido
+        service = ChromeService(
+            executable_path=ChromeDriverManager().install(),
+            log_path=os.path.join(log_dir, "chromedriver.log"),
+            log_level='WARNING'  # Ajuste para 'INFO' ou 'SEVERE' conforme necessário
+        )
+        
         browser = webdriver.Chrome(service=service, options=options)
         logger.debug("Browser initialized successfully.")
         return browser
@@ -245,11 +259,8 @@ def create_and_run_bot(parameters, llm_api_key):
         )
         logger.debug("FacadeManager initialized.")
         
-        logger.debug("Clearing terminal screen.")
-        # os.system('cls' if os.name == 'nt' else 'clear')
         logger.debug("Choosing resume style.")
         resume_generator_manager.choose_style()
-        # os.system('cls' if os.name == 'nt' else 'clear')
         
         logger.debug("Creating JobApplicationProfile object.")
         job_application_profile_object = JobApplicationProfile(plain_text_resume)

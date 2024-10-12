@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 import json
+import logging
 
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
@@ -14,42 +15,67 @@ from loguru import logger
 
 from app_config import MINIMUM_LOG_LEVEL
 
-log_file = "./log/app_log.log"
+# Define log file path
+LOG_FILE_PATH = Path("./log/app.log")
 
 # Define allowed log levels
-allowed_levels = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+ALLOWED_LEVELS = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
-# Configure logger based on MINIMUM_LOG_LEVEL
-def configure_logger():
-    if MINIMUM_LOG_LEVEL in allowed_levels:
-        level = MINIMUM_LOG_LEVEL
-    else:
-        level = "DEBUG"
-        logger.warning(f"Invalid log level: {MINIMUM_LOG_LEVEL}. Defaulting to DEBUG.")
-    
+# Class to intercept standard logging and redirect to Loguru
+class InterceptHandler(logging.Handler):
+    def emit(self, record):
+        # Retrieve Loguru level
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = "INFO"
+        # Get the log message
+        message = record.getMessage()
+        # Log via Loguru
+        logger.log(level, message)
+
+def configure_logging():
+    # Remove default Loguru handlers to prevent duplicate logs
     logger.remove()
-    
-    # Add stderr with detailed format
+
+    # Validate and set minimum log level for the log file
+    if MINIMUM_LOG_LEVEL in ALLOWED_LEVELS:
+        file_log_level = MINIMUM_LOG_LEVEL
+    else:
+        file_log_level = "WARNING"
+        logger.warning(f"Invalid MINIMUM_LOG_LEVEL: {MINIMUM_LOG_LEVEL}. Defaulting to WARNING.")
+
+    # Add Loguru handler for terminal (INFO and above)
     logger.add(
         sys.stderr,
-        level=level,
+        level="INFO",
         format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | "
                "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
         enqueue=True
     )
-    
-    # Add file handler with DEBUG level and detailed format
+
+    # Add Loguru handler for log file (MINIMUM_LOG_LEVEL and above)
     logger.add(
-        log_file,
-        level="DEBUG",
-        rotation="10 MB",
+        LOG_FILE_PATH,
+        level=file_log_level,
+        rotation="100 MB",
         retention="10 days",
         compression="zip",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         enqueue=True
     )
 
-configure_logger()
+    # Intercept standard logging and redirect to Loguru
+    logging.basicConfig(handlers=[InterceptHandler()], level=logging.WARNING)
+
+    # Set specific library log levels to WARNING to reduce noise
+    logging.getLogger("WDM").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+    logger.debug(f"Logging configured. Logs at level {file_log_level} and above are saved to {LOG_FILE_PATH}.")
+    logger.info("INFO level and above are displayed in the terminal.")
+
+configure_logging()
 
 chrome_profile_path = os.path.join(os.getcwd(), "chrome_profile", "linkedin_profile")
 
@@ -198,10 +224,10 @@ def chrome_browser_options():
     options = webdriver.ChromeOptions()
     
     # Headless mode
-    # options.add_argument("--headless")
+    options.add_argument("--headless")
     
     # Specify the absolute path to the Chrome binary
-    options.binary_location = '/usr/bin/google-chrome'  # Update as necessary
+    options.binary_location = '/usr/bin/google-chrome'
     
     # Existing options
     options.add_argument("--start-maximized")

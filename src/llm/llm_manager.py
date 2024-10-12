@@ -1,3 +1,4 @@
+#llm_manager.py
 import json
 import os
 import re
@@ -451,8 +452,21 @@ class GPTAnswerer:
         self.resume = resume
 
     def set_job(self, title: str, company: str, location: str, link: str, apply_method: str, description: str):
-        logger.debug(f"Setting job with title: {title}, company: {company}.")
-        self.job = Job(title=title, company=company, location=location, link=link, apply_method=apply_method, description=description)
+        logger.debug(f"Setting job with title: {title}, company: {company}, location: {location}, link: {link}, apply_method: {apply_method}")
+        if not all([title, company, location, link, apply_method, description]):
+            logger.error("One or more Job attributes are missing.")
+            raise ValueError("All Job attributes must be provided.")
+        
+        self.job = Job(
+            title=title,
+            company=company,
+            location=location,
+            link=link,
+            apply_method=apply_method,
+            description=description
+        )
+        logger.debug(f"Job object set: {self.job}")
+        
         if self.job.description:
             summarized_description = self.summarize_job_description(self.job.description)
             self.job.set_summarize_job_description(summarized_description)
@@ -501,6 +515,9 @@ class GPTAnswerer:
                 apply_method=job.apply_method,
                 description=job.description
             )
+        else:
+            logger.error("Job parameter is None.")
+            raise ValueError("Job parameter cannot be None.")
 
         try:
             if self.job is None:
@@ -771,17 +788,21 @@ class GPTAnswerer:
 
 
 
-    def evaluate_job(self, job, resume_prompt: str) -> float:
+    def evaluate_job(self, job: Job, resume_prompt: str) -> float:
         """
         Sends the job description and resume to the AI system and returns a score from 0 to 10.
         """
         job_description = job.description
+        job_title = job.title
         
-        # Criar o prompt para avaliar a descrição do trabalho e o currículo
+        # Create the prompt for evaluating the job and resume
         prompt = f"""
         You are a Human Resources expert specializing in evaluating job applications for the American job market. Your task is to assess the compatibility between the following job description and a provided resume. 
         Return only a score from 0 to 10 representing the candidate's likelihood of securing the position, with 0 being the lowest probability and 10 being the highest. 
         The assessment should consider HR-specific criteria for the American job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
+
+        Job Title: 
+        {job_title}
 
         Job Description:
         {job_description}
@@ -794,12 +815,12 @@ class GPTAnswerer:
         
         logger.debug("Sending job description and resume to GPT for evaluation")
         
-        # Usar a função ask_chatgpt para realizar a avaliação
+        # Use the function ask_chatgpt to perform the evaluation
         try:
             response = self.ask_chatgpt(prompt)
             logger.debug(f"Received response from GPT: {response}")
             
-            # Processar a resposta para extrair a pontuação
+            # Process the response to extract the score
             match = re.search(r"\b(\d+(\.\d+)?)\b", response)
             if match:
                 score = float(match.group(1))
@@ -808,11 +829,11 @@ class GPTAnswerer:
                     return score
                 else:
                     logger.error(f"Score out of expected range (0-10): {score}")
-                    return 0.0  # Retorna 0.0 se a pontuação estiver fora do intervalo esperado
+                    return 0.0  # Returns 0.0 if the score is out of the expected range
             else:
                 logger.error(f"Could not find a valid score in response: {response}")
-                return 0.1  # Retorna 0.0 se não houver uma pontuação válida
-            
+                return 0.1  # Returns 0.1 if no valid score is found
+                
         except Exception as e:
             logger.error(f"Error processing the score from response: {e}", exc_info=True)
-            return 0.1  # Retorna 0.0 em caso de erro
+            return 0.1  # Returns 0.1 in case of an error

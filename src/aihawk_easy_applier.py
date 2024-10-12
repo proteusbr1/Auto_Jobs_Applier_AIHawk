@@ -8,7 +8,11 @@ import traceback
 
 from httpx import HTTPStatusError
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
+from reportlab.platypus import Frame, Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.enums import TA_JUSTIFY
 from selenium.common.exceptions import (
     NoSuchElementException,
     TimeoutException,
@@ -21,10 +25,12 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from pathlib import Path
-from app_config import MINIMUM_SCORE_JOB_APPLICATION, USER_RESUME_SUMMARY, USE_JOB_SCORE
 
+from app_config import MINIMUM_SCORE_JOB_APPLICATION, USER_RESUME_SUMMARY, USE_JOB_SCORE
 import src.utils as utils
+from src.llm.llm_manager import GPTAnswerer
 from loguru import logger
+from src.job import Job
 
 
 class AIHawkEasyApplier:
@@ -33,9 +39,9 @@ class AIHawkEasyApplier:
         driver: Any,
         resume_dir: Optional[str],
         set_old_answers: List[Tuple[str, str, str]],
-        gpt_answerer: Any,
+        gpt_answerer: GPTAnswerer,
         resume_generator_manager,
-        wait_time: int = 10,  # Default wait time
+        wait_time: int = 10,
     ):
         logger.debug("Initializing AIHawkEasyApplier")
         if resume_dir is None or not os.path.exists(resume_dir):
@@ -109,36 +115,28 @@ class AIHawkEasyApplier:
                 f"Redirected to AIHawk Premium page and failed to return after {max_attempts} attempts. Job application aborted."
             )
 
-    def apply_to_job(self, job: Any) -> None:
-        """
-        Starts the process of applying to a job.
-        :param job: A job object with the job details.
-        :return: None
-        """
-        logger.info(f"Initiating application process for job: {job.title} at {job.company}")
-        try:
-            self.job_apply(job)
-            logger.info(
-                f"Successfully applied to job: {job.title} at {job.company}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Failed to apply to job: {job.title} at {job.company}", exc_info=True
-            )
-            raise e
-
-    def job_apply(self, job: Any):
+    def job_apply(self, job: Job):
         logger.debug(f"Open job: {job.link}")
 
+        if job is None:
+            logger.error("Job object is None. Cannot apply.")
+            raise ValueError("Job object is None. Cannot apply")
+        
+        # Set the job in GPTAnswerer before any evaluations or form filling
+        self.gpt_answerer.set_job(
+            title=job.title,
+            company=job.company,
+            location=job.location,
+            link=job.link,
+            apply_method=job.apply_method,
+            description=job.description
+        )
+        logger.debug("Job set in GPTAnswerer successfully.")
+
         try:
-            logger.debug(f"Navigated to job link: {job.link}")
             self.driver.get(job.link)
-            
-            logger.debug("Checked for premium redirect.")
             self.check_for_premium_redirect(job)
-            
-            logger.debug("Retrieving job description")
-            job.description = self._get_job_description()
+            job.description = self._get_job_description()         
 
             if USE_JOB_SCORE:
                 logger.debug("Evaluating job score using GPT.")
@@ -150,10 +148,10 @@ class AIHawkEasyApplier:
                     utils.write_to_file(job, "job_score")
                 
                 if job.score < MINIMUM_SCORE_JOB_APPLICATION:
-                    logger.info(f"Score is {job.score}. Skipping application.")
+                    logger.debug(f"Score is {job.score}. Skipping application.")
                     return False
                 else:
-                    logger.info(f"Proceeding with the application. Score is {job.score}.")
+                    logger.debug(f"Score is {job.score}. Proceeding with the application.")
 
             try:
                 easy_apply_button = self._find_easy_apply_button(job)
@@ -162,19 +160,17 @@ class AIHawkEasyApplier:
                 return False
 
             if easy_apply_button:
+                # Click the 'Easy Apply' button
                 logger.debug("Easy Apply button found. Attempting to click.")
-                ActionChains(self.driver).move_to_element(
-                    easy_apply_button
-                ).click().perform()
+                ActionChains(self.driver).move_to_element(easy_apply_button).click().perform()
                 logger.debug("'Easy Apply' button clicked successfully")
                 
                 # Handle potential modals that might obstruct the button
                 self._handle_job_search_safety_reminder()
                 
+                # Apply for the job
                 self._fill_application_form(job)
-                logger.debug(
-                    f"Job application process completed successfully for job: {job.title} at {job.company}"
-                )
+                logger.debug(f"Job application process completed successfully for job: {job.title} at {job.company}")
                 return True
             else:
                 logger.warning(f"'Easy Apply' button not found for job: {job.title} at {job.company}")
@@ -224,10 +220,15 @@ class AIHawkEasyApplier:
                         if self._is_element_clickable(button):
                             logger.debug(f"'Easy Apply' button found using {method['description']}.")
                             return button
-                except TimeoutException:
-                    logger.warning(f"Timeout while using search method: {method['description']}")
+                except NoSuchElementException as e:
+                    logger.warning(f"'Easy Apply' button not found using method: {method['description']}")
+                    logger.warning(f"Página atual HTML: {self.driver.page_source}")
+                except TimeoutException as te:
+                    logger.warning    (f"Timed out using search method: {method['description']}")
+                    logger.warning(f"Página atual HTML: {self.driver.page_source}")
                 except Exception as e:
                     logger.warning(f"Error using search method {method['description']}: {e}", exc_info=True)
+                    logger.warning(f"Página atual HTML: {self.driver.page_source}")
 
             if attempt < max_attempts - 1:
                 logger.debug("Refreshing page to retry finding 'Easy Apply' button.")
@@ -235,11 +236,13 @@ class AIHawkEasyApplier:
                 try:
                     self.wait.until(EC.presence_of_element_located((By.XPATH, '//button')))
                     logger.debug("Page refreshed and buttons reloaded.")
-                except TimeoutException:
+                except TimeoutException as te:
                     logger.warning("Timed out waiting for buttons to load after refresh.")
+                    logger.warning(f"Página atual HTML: {self.driver.page_source}")
 
         # After max attempts, raise an exception if the button is not found
         logger.error("No clickable 'Easy Apply' button found after multiple attempts.")
+        logger.debug(f"Página atual HTML: {self.driver.page_source}")
         raise Exception("No clickable 'Easy Apply' button found.")
 
     def _handle_job_search_safety_reminder(self) -> None:
@@ -257,12 +260,14 @@ class AIHawkEasyApplier:
             if continue_button:
                 continue_button.click()
                 logger.debug("Clicked 'Continue applying' button in modal.")
+        except NoSuchElementException:
+            logger.debug("Job search safety reminder elements not found.")
+            logger.debug(f"Página atual HTML: {self.driver.page_source}")
         except TimeoutException:
             logger.debug("No 'Job search safety reminder' modal detected.")
-        except NoSuchElementException:
-            logger.warning("'Continue applying' button not found in modal.")
         except Exception as e:
-            logger.error(f"Unexpected error while handling safety reminder modal: {e}", exc_info=True)
+            logger.warning(f"Unexpected error while handling safety reminder modal: {e}", exc_info=True)
+            logger.debug(f"Página atual HTML: {self.driver.page_source}")
 
     def _find_buttons_by_xpath(self, xpath: str) -> List[WebElement]:
         """
@@ -324,14 +329,19 @@ class AIHawkEasyApplier:
             else:
                 logger.warning("Job description element found but text is empty")
             return description
+        except NoSuchElementException as e:
+            logger.warning("Job description element not found.")
+            logger.warning(f"Página atual HTML: {self.driver.page_source}")
+            raise Exception("Job description element not found") from e
         except TimeoutException as te:
-            logger.exception(
-                f"Job description not found within the timeout period: {te}"
-            )
-            raise Exception("Job description not found")
+            logger.warning("Timed out waiting for the job description element.")
+            logger.warning(f"Página atual HTML: {self.driver.page_source}")
+            raise Exception("Timed out waiting for the job description element") from te
         except Exception as e:
-            logger.exception(f"Error getting Job description: {e}")
-            raise Exception("Error getting Job description")
+            logger.warning(f"Unexpected error in _get_job_description: {e}", exc_info=True)
+            logger.warning(f"Página atual HTML: {self.driver.page_source}")
+            raise Exception("Error getting job description") from e
+
 
     def _get_job_recruiter(self):
         logger.debug("Getting job recruiter information")
@@ -350,12 +360,12 @@ class AIHawkEasyApplier:
             if recruiter_elements:
                 recruiter_element = recruiter_elements[0]
                 recruiter_link = recruiter_element.get_attribute("href")
-                logger.info(
+                logger.debug(
                     f"Job recruiter link retrieved successfully: {recruiter_link}"
                 )
                 return recruiter_link
             else:
-                logger.info("No recruiter link found in the hiring team section")
+                logger.debug("No recruiter link found in the hiring team section")
                 return ""
         except TimeoutException:
             logger.warning(
@@ -380,14 +390,12 @@ class AIHawkEasyApplier:
         except Exception as e:
             logger.warning(f"Failed to scroll the page: {e}", exc_info=True)
 
-    def _fill_application_form(self, job):
-        logger.debug(
-            f"Filling out application form for job: {job.title} at {job.company}"
-        )
+    def _fill_application_form(self, job: Job):
+        logger.debug(f"Filling out application form for job: {job.title} at {job.company}")
         while True:
             self.fill_up(job)
             if self._next_or_submit():
-                logger.info("Application form submitted successfully")
+                logger.debug("Application form submitted successfully")
                 break
 
     def _next_or_submit(self):
@@ -412,7 +420,7 @@ class AIHawkEasyApplier:
                 next_button.click()
                 self.wait.until(EC.staleness_of(next_button))
                 # time.sleep(random.uniform(0.5, 1.5))
-                logger.info("Application submitted")
+                logger.debug("Application submitted")
                 return True
 
             # For the "Next" button
@@ -520,7 +528,7 @@ class AIHawkEasyApplier:
                 f"Failed to discard application: {e}", exc_info=True
             )
 
-    def fill_up(self, job) -> None:
+    def fill_up(self, job: Job) -> None:
         logger.debug(
             f"Starting to fill up form sections for job: {job.title} at {job.company}"
         )
@@ -528,51 +536,41 @@ class AIHawkEasyApplier:
         try:
             # Wait for the easy apply content section to be present
             try:
-                easy_apply_content = self.wait.until(
-                    EC.presence_of_element_located(
-                        (By.CLASS_NAME, "jobs-easy-apply-content")
-                    )
-                )
+                easy_apply_content = self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, "jobs-easy-apply-content")))
                 logger.debug("Easy apply content section found successfully.")
+            except NoSuchElementException:
+                logger.error("Easy apply content section not found")
+                raise
             except TimeoutException as te:
-                logger.exception(
-                    "Easy apply content section not found within the timeout period"
-                )
+                logger.exception("Easy apply content section not found within the timeout period")
+                raise
+            except Exception as e:
+                logger.exception("Error while finding easy apply content section")
                 raise
 
             # Find all form sections within the easy apply content
             pb4_elements = easy_apply_content.find_elements(By.CLASS_NAME, "pb4")
-            logger.debug(
-                f"Found {len(pb4_elements)} form sections to process."
-            )
+            logger.debug(f"Found {len(pb4_elements)} form sections to process.")
 
             # Process each form section
             for index, element in enumerate(pb4_elements):
-                logger.debug(
-                    f"Processing form section {index + 1}/{len(pb4_elements)}"
-                )
+                logger.debug(f"Processing form section {index + 1}/{len(pb4_elements)}")
                 self._process_form_element(element, job)
-
             logger.debug("All form sections processed successfully.")
 
         except TimeoutException:
-            logger.error(
-                "Easy apply content section not found within the timeout period",
-                exc_info=True,
-            )
+            logger.error("Easy apply content section not found within the timeout period",exc_info=True,)
             raise
         except Exception as e:
-            logger.error(
-                f"An error occurred while filling up the form: {e}", exc_info=True
-            )
+            logger.error(f"An error occurred while filling up the form: {e}", exc_info=True)
             raise
 
-    def _process_form_element(self, element: WebElement, job) -> None:
+    def _process_form_element(self, element: WebElement, job: Job) -> None:
         logger.debug("Processing form element")
         if self._is_upload_field(element):
             self._handle_upload_fields(element, job)
         else:
-            self._fill_additional_questions()
+            self._fill_additional_questions(job)
 
     def _handle_dropdown_fields(self, element: WebElement) -> None:
         logger.debug("Handling dropdown fields")
@@ -633,7 +631,7 @@ class AIHawkEasyApplier:
         return is_upload
 
     def _handle_upload_fields(self, element: WebElement, job) -> None:
-        logger.info("Handling upload fields")
+        logger.debug("Handling upload fields")
         try:
             show_more_button = self.wait.until(
                 EC.element_to_be_clickable(
@@ -646,7 +644,7 @@ class AIHawkEasyApplier:
             show_more_button.click()
             logger.debug("Clicked 'Show more resumes' button")
         except TimeoutException:
-            logger.info(
+            logger.warning(
                 "'Show more resumes' button not found within the timeout period, continuing with available upload fields"
             )
 
@@ -666,7 +664,7 @@ class AIHawkEasyApplier:
 
             output = self.gpt_answerer.resume_or_cover(parent.text.lower())
             if "resume" in output:
-                logger.info("Uploading resume")
+                logger.debug("Uploading resume")
                 if (
                     self.resume_path is not None
                     and Path(self.resume_path).resolve().is_file()
@@ -675,7 +673,7 @@ class AIHawkEasyApplier:
                         file_element.send_keys(
                             str(Path(self.resume_path).resolve())
                         )
-                        logger.info(
+                        logger.debug(
                             f"Resume uploaded from path: {Path(self.resume_path).resolve()}"
                         )
                     except Exception as e:
@@ -690,17 +688,17 @@ class AIHawkEasyApplier:
                     )
                     self._create_and_upload_resume(file_element, job)
             elif "cover" in output:
-                logger.info("Uploading cover letter")
+                logger.debug("Uploading cover letter")
                 self._create_and_upload_cover_letter(file_element, job)
             else:
                 logger.warning(
                     f"Unexpected output from resume_or_cover: {output}"
                 )
 
-        logger.info("Finished handling upload fields")
+        logger.debug("Finished handling upload fields")
 
     def _create_and_upload_resume(self, element, job):
-        logger.info("Starting the process of creating and uploading resume.")
+        logger.debug("Starting the process of creating and uploading resume.")
         folder_path = "generated_cv"
 
         try:
@@ -718,7 +716,7 @@ class AIHawkEasyApplier:
                 file_path_pdf = os.path.join(folder_path, f"CV_{timestamp}.pdf")
                 logger.debug(f"Generated file path for resume: {file_path_pdf}")
 
-                logger.info(
+                logger.debug(
                     f"Generating resume for job: {job.title} at {job.company}"
                 )
                 resume_pdf_base64 = self.resume_generator_manager.pdf_base64(
@@ -726,7 +724,7 @@ class AIHawkEasyApplier:
                 )
                 with open(file_path_pdf, "xb") as f:
                     f.write(base64.b64decode(resume_pdf_base64))
-                logger.info(
+                logger.debug(
                     f"Resume successfully generated and saved to: {file_path_pdf}"
                 )
 
@@ -791,7 +789,7 @@ class AIHawkEasyApplier:
             )
 
         try:
-            logger.info(f"Uploading resume from path: {file_path_pdf}")
+            logger.debug(f"Uploading resume from path: {file_path_pdf}")
             element.send_keys(os.path.abspath(file_path_pdf))
             job.pdf_path = os.path.abspath(file_path_pdf)
             try:
@@ -803,7 +801,7 @@ class AIHawkEasyApplier:
                     f"Uploaded resume link not found on the page: {job.pdf_path}"
                 )
             time.sleep(2)
-            logger.info(
+            logger.debug(
                 f"Resume uploaded successfully from: {file_path_pdf}"
             )
         except Exception as e:
@@ -813,7 +811,7 @@ class AIHawkEasyApplier:
     def _create_and_upload_cover_letter(
         self, element: WebElement, job
     ) -> None:
-        logger.info("Starting the process of creating and uploading cover letter.")
+        logger.debug("Starting the process of creating and uploading the cover letter.")
 
         cover_letter_text = self.gpt_answerer.answer_question_textual_wide_range(
             "Write a cover letter", job=job
@@ -837,89 +835,72 @@ class AIHawkEasyApplier:
                     folder_path, f"Cover_Letter_{timestamp}.pdf"
                 )
                 logger.debug(
-                    f"Generated file path for cover letter: {file_path_pdf}"
+                    f"Generated file path for the cover letter: {file_path_pdf}"
                 )
 
+                # Create the PDF canvas
                 c = canvas.Canvas(file_path_pdf, pagesize=A4)
                 page_width, page_height = A4
-                text_object = c.beginText(50, page_height - 50)
-                text_object.setFont("Helvetica", 12)
 
-                max_width = page_width - 100
-                bottom_margin = 50
-                available_height = page_height - bottom_margin - 50
+                # Define styles
+                styles = getSampleStyleSheet()
+                styleN = styles['Normal']
+                styleN.fontName = 'Helvetica'
+                styleN.fontSize = 12
+                styleN.leading = 15  # Line spacing
+                styleN.alignment = TA_JUSTIFY  # Justify the text
 
-                def split_text_by_width(text, font, font_size, max_width):
-                    wrapped_lines = []
-                    for line in text.splitlines():
+                # Create a Paragraph object with the cover letter text
+                paragraph = Paragraph(cover_letter_text, styleN)
 
-                        if utils.string_width(line, font, font_size) > max_width:
-                            words = line.split()
-                            new_line = ""
-                            for word in words:
-                                if utils.stringWidth(
-                                    new_line + word + " ", font, font_size
-                                ) <= max_width:
-                                    new_line += word + " "
-                                else:
-                                    wrapped_lines.append(new_line.strip())
-                                    new_line = word + " "
-                            wrapped_lines.append(new_line.strip())
-                        else:
-                            wrapped_lines.append(line)
-                    return wrapped_lines
-
-                lines = split_text_by_width(
-                    cover_letter_text, "Helvetica", 12, max_width
+                # Define a Frame for the paragraph
+                frame = Frame(
+                    inch,  # Left margin
+                    inch,  # Bottom margin
+                    page_width - 2 * inch,  # Width of the frame
+                    page_height - 2 * inch,  # Height of the frame
+                    showBoundary=0  # Set to 1 to visualize the borders (useful for debugging)
                 )
 
-                for line in lines:
-                    text_height = text_object.getY()
-                    if text_height > bottom_margin:
-                        text_object.textLine(line)
-                    else:
+                # Add the paragraph to the frame
+                frame.addFromList([paragraph], c)
 
-                        c.drawText(text_object)
-                        c.showPage()
-                        text_object = c.beginText(50, page_height - 50)
-                        text_object.setFont("Helvetica", 12)
-                        text_object.textLine(line)
-
-                c.drawText(text_object)
+                # Save the PDF
                 c.save()
-                logger.info(
-                    f"Cover letter successfully generated and saved to: {file_path_pdf}"
+                logger.debug(
+                    f"Cover letter generated successfully and saved at: {file_path_pdf}"
                 )
 
                 break
             except Exception as e:
-                logger.exception("Failed to generate cover letter")
+                logger.warning("Failed to generate the cover letter")
                 raise
 
+        # Check the file size and extension, as before
         file_size = os.path.getsize(file_path_pdf)
         max_file_size = 2 * 1024 * 1024  # 2 MB
-        logger.debug(f"Cover letter file size: {file_size} bytes")
+        logger.debug(f"File size of the cover letter: {file_size} bytes")
         if file_size > max_file_size:
             logger.error(
-                f"Cover letter file size exceeds 2 MB: {file_size} bytes"
+                f"The file size of the cover letter exceeds 2 MB: {file_size} bytes"
             )
             raise ValueError(
-                "Cover letter file size exceeds the maximum limit of 2 MB."
+                "The file size of the cover letter exceeds the maximum limit of 2 MB."
             )
 
         allowed_extensions = {".pdf", ".doc", ".docx"}
         file_extension = os.path.splitext(file_path_pdf)[1].lower()
-        logger.debug(f"Cover letter file extension: {file_extension}")
+        logger.debug(f"File extension of the cover letter: {file_extension}")
         if file_extension not in allowed_extensions:
             logger.error(
-                f"Invalid cover letter file format: {file_extension}"
+                f"Invalid file format for the cover letter: {file_extension}"
             )
             raise ValueError(
-                "Cover letter file format is not allowed. Only PDF, DOC, and DOCX formats are supported."
+                "The file format of the cover letter is not allowed. Only PDF, DOC, and DOCX formats are supported."
             )
 
         try:
-            logger.info(f"Uploading cover letter from path: {file_path_pdf}")
+            logger.debug(f"Uploading the cover letter from path: {file_path_pdf}")
             element.send_keys(os.path.abspath(file_path_pdf))
             job.cover_letter_path = os.path.abspath(file_path_pdf)
             try:
@@ -930,17 +911,18 @@ class AIHawkEasyApplier:
                 )
             except TimeoutException:
                 logger.warning(
-                    f"Uploaded cover letter link not found on the page: {job.cover_letter_path}"
+                    f"Link to the submitted cover letter not found on the page: {job.cover_letter_path}"
                 )
             time.sleep(2)
-            logger.info(
-                f"Cover letter uploaded successfully from: {file_path_pdf}"
+            logger.debug(
+                f"Cover letter submitted successfully from: {file_path_pdf}"
             )
         except Exception as e:
-            logger.exception("Cover letter upload failed")
-            raise Exception("Upload failed") from e
+            logger.warning("Failed to send the cover letter")
+            raise Exception("Submission failure") from e
 
-    def _fill_additional_questions(self) -> None:
+
+    def _fill_additional_questions(self, job: Job) -> None:
         logger.debug("Filling additional questions")
         try:
             form_sections = self.wait.until(
@@ -952,36 +934,36 @@ class AIHawkEasyApplier:
                 f"Found {len(form_sections)} additional form sections to process"
             )
             for section in form_sections:
-                self._process_form_section(section)
+                self._process_form_section(section, job)
         except TimeoutException:
-            logger.error(
+            logger.warning(
                 "Additional form sections not found within the timeout period",
                 exc_info=True,
             )
             raise
         except Exception as e:
-            logger.error(
+            logger.warning(
                 f"An error occurred while filling additional questions: {e}",
                 exc_info=True,
             )
             raise
 
-    def _process_form_section(self, section: WebElement) -> None:
+    def _process_form_section(self, section: WebElement, job: Job) -> None:
         logger.debug("Processing form section")
         if self._handle_terms_of_service(section):
             logger.debug("Handled terms of service")
             return
-        if self._find_and_handle_radio_question(section):
+        if self._find_and_handle_radio_question(section, job):
             logger.debug("Handled radio question")
             return
-        if self._find_and_handle_textbox_question(section):
+        if self._find_and_handle_textbox_question(section, job):
             logger.debug("Handled textbox question")
             return
-        if self._find_and_handle_date_question(section):
+        if self._find_and_handle_date_question(section, job):
             logger.debug("Handled date question")
             return
 
-        if self._find_and_handle_dropdown_question(section):
+        if self._find_and_handle_dropdown_question(section, job):
             logger.debug("Handled dropdown question")
             return
         logger.debug(
@@ -999,16 +981,16 @@ class AIHawkEasyApplier:
                 self.wait.until(
                     EC.element_to_be_clickable(labels[0])
                 ).click()
-                logger.info("Clicked terms of service checkbox")
+                logger.debug("Clicked terms of service checkbox")
                 return True
             except Exception as e:
-                logger.error(
+                logger.warning(
                     f"Failed to click terms of service checkbox: {e}",
                     exc_info=True,
                 )
         return False
 
-    def _find_and_handle_radio_question(self, section: WebElement) -> bool:
+    def _find_and_handle_radio_question(self, section: WebElement, job: Job) -> bool:
         logger.debug("Searching for radio questions in the section.")
         try:
             question = section.find_element(
@@ -1047,7 +1029,7 @@ class AIHawkEasyApplier:
                     {"type": "radio", "question": question_text, "answer": answer}
                 )
                 self._select_radio(radios, answer)
-                logger.info("Selected new radio answer from model")
+                logger.debug("Selected new radio answer from model")
                 return True
             return False
         except Exception as e:
@@ -1056,7 +1038,7 @@ class AIHawkEasyApplier:
             )
             return False
 
-    def _find_and_handle_textbox_question(self, section: WebElement) -> bool:
+    def _find_and_handle_textbox_question(self, section: WebElement, job: Job) -> bool:
         logger.debug("Searching for text fields in the section.")
         text_fields = (
             section.find_elements(By.TAG_NAME, "input")
@@ -1109,7 +1091,7 @@ class AIHawkEasyApplier:
                     logger.debug(f"Generated numeric answer: {answer}")
                 else:
                     answer = self.gpt_answerer.answer_question_textual_wide_range(
-                        question_text
+                        question_text, job=job
                     )
                     logger.debug(f"Generated textual answer: {answer}")
 
@@ -1145,7 +1127,7 @@ class AIHawkEasyApplier:
         logger.debug("No text fields found in the section.")
         return False
 
-    def _find_and_handle_date_question(self, section: WebElement) -> bool:
+    def _find_and_handle_date_question(self, section: WebElement, job: Job) -> bool:
         logger.debug("Searching for date fields in the section.")
         date_fields = section.find_elements(
             By.CLASS_NAME, "artdeco-datepicker__input "
@@ -1178,12 +1160,12 @@ class AIHawkEasyApplier:
                 {"type": "date", "question": question_text, "answer": answer_text}
             )
             self._enter_text(date_field, answer_text)
-            logger.info("Entered new date answer")
+            logger.debug("Entered new date answer")
             return True
         logger.debug("No date fields found in the section.")
         return False
 
-    def _find_and_handle_dropdown_question(self, section: WebElement) -> bool:
+    def _find_and_handle_dropdown_question(self, section: WebElement, job: Job) -> bool:
         logger.debug("Searching for dropdown or combobox questions in the section.")
         try:
             question = section.find_element(
@@ -1248,7 +1230,7 @@ class AIHawkEasyApplier:
                     {"type": "dropdown", "question": question_text, "answer": answer}
                 )
                 self._select_dropdown_option(dropdown, answer)
-                logger.info(f"Selected new dropdown answer: {answer}")
+                logger.debug(f"Selected new dropdown answer: {answer}")
                 return True
 
             else:
@@ -1292,7 +1274,7 @@ class AIHawkEasyApplier:
             element.send_keys(text)
             logger.debug("Text entered successfully")
         except Exception as e:
-            logger.error(
+            logger.warning(
                 f"Failed to enter text: {text}", exc_info=True
             )
             raise
@@ -1323,7 +1305,7 @@ class AIHawkEasyApplier:
                 f"Selected last radio option as fallback: {radios[-1].text}"
             )
         except Exception as e:
-            logger.error("Failed to select fallback radio option", exc_info=True)
+            logger.warning("Failed to select fallback radio option", exc_info=True)
             raise
 
     def _select_dropdown_option(
@@ -1337,7 +1319,7 @@ class AIHawkEasyApplier:
                 f"Dropdown option '{text}' selected successfully"
             )
         except Exception as e:
-            logger.error(
+            logger.warning(
                 f"Failed to select dropdown option '{text}': {e}",
                 exc_info=True,
             )
