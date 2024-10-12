@@ -411,3 +411,24 @@ func_summarize_prompt_template = """
         {text_with_placeholders}
         
         ## Text without placeholders:"""
+
+date_question_template = """
+You are an AI assistant helping to provide appropriate dates in response to questions during a job application process.
+
+- Read the question carefully.
+- Today's date is {today_date}.
+- Determine the most suitable date to answer the question based on common professional scenarios.
+- The date should be formatted as YYYY-MM-DD.
+
+Examples:
+
+- If the question is about the earliest start date, and you are available in two weeks, provide a date two weeks from today.
+- If the question is about availability, and you are available immediately, provide today's date.
+- If the question is about notice period, and you have a standard two-week notice period, provide a date two weeks from today.
+
+Do not include any additional text or explanation—only provide the date in YYYY-MM-DD format.
+
+Question: "{question}"
+
+Date:
+"""

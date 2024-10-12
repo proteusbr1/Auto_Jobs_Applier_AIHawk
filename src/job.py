@@ -15,6 +15,7 @@ class Job:
     description: str = ""
     summarize_job_description: str = ""
     pdf_path: str = ""
+    cover_letter_path: str = ""
     recruiter_link: str = ""
     position: str = ""
     score: Optional[float] = None

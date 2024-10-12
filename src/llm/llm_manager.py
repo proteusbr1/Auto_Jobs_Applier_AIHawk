@@ -5,9 +5,10 @@ import re
 import textwrap
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Optional
+
 
 import httpx
 from Levenshtein import distance
@@ -451,12 +452,27 @@ class GPTAnswerer:
         logger.debug(f"Setting resume: {resume}")
         self.resume = resume
 
-    def set_job(self, title: str, company: str, location: str, link: str, apply_method: str, description: str):
+    def set_job(self, title: str, company: str, location: str, link: str, apply_method: str, description: Optional[str] = ""):
         logger.debug(f"Setting job with title: {title}, company: {company}, location: {location}, link: {link}, apply_method: {apply_method}")
-        if not all([title, company, location, link, apply_method, description]):
-            logger.error("One or more Job attributes are missing.")
-            raise ValueError("All Job attributes must be provided.")
         
+        missing_attributes = []
+        if not title:
+            missing_attributes.append("title")
+        if not company:
+            missing_attributes.append("company")
+        if not location:
+            missing_attributes.append("location")
+        if not link:
+            missing_attributes.append("link")
+        if not apply_method:
+            missing_attributes.append("apply_method")
+        # if not description:
+        #     missing_attributes.append("description")
+
+        if missing_attributes:
+            logger.error(f"Missing job attributes: {', '.join(missing_attributes)}")
+            raise ValueError(f"Missing job attributes: {', '.join(missing_attributes)}")
+
         self.job = Job(
             title=title,
             company=company,
@@ -467,29 +483,29 @@ class GPTAnswerer:
         )
         logger.debug(f"Job object set: {self.job}")
         
-        if self.job.description:
-            summarized_description = self.summarize_job_description(self.job.description)
-            self.job.set_summarize_job_description(summarized_description)
-            logger.debug("Job description summarized and set.")
-        else:
-            logger.error("Job description not set. Skipping summarization.")
+        # if self.job.description:
+        #     summarized_description = self.summarize_job_description(self.job.description)
+        #     self.job.set_summarize_job_description(summarized_description)
+        #     logger.debug("Job description summarized and set.")
+        # else:
+        #     logger.error("Job description not set. Skipping summarization.")
 
     def set_job_application_profile(self, job_application_profile):
         logger.debug(f"Setting job application profile: {job_application_profile}")
         self.job_application_profile = job_application_profile
 
-    def summarize_job_description(self, text: str) -> str:
-        logger.debug("Summarizing job description.")
-        try:
-            strings.summarize_prompt_template = self._preprocess_template_string(strings.summarize_prompt_template)
-            prompt = ChatPromptTemplate.from_template(strings.summarize_prompt_template)
-            chain = prompt | self.llm_cheap | StrOutputParser()
-            output = chain.invoke({"text": text})
-            logger.debug(f"Summary generated: {output}")
-            return output
-        except Exception as e:
-            logger.error(f"Error summarizing job description: {e}")
-            raise
+    # def summarize_job_description(self, text: str) -> str:
+    #     logger.debug("Summarizing job description.")
+    #     try:
+    #         strings.summarize_prompt_template = self._preprocess_template_string(strings.summarize_prompt_template)
+    #         prompt = ChatPromptTemplate.from_template(strings.summarize_prompt_template)
+    #         chain = prompt | self.llm_cheap | StrOutputParser()
+    #         output = chain.invoke({"text": text})
+    #         logger.debug(f"Summary generated: {output}")
+    #         return output
+    #     except Exception as e:
+    #         logger.error(f"Error summarizing job description: {e}")
+    #         raise
 
     def _create_chain(self, template: str):
         logger.debug(f"Creating chain with template: {template}")
@@ -786,8 +802,6 @@ class GPTAnswerer:
             logger.error(f"Error while getting response from ChatGPT: {e}")
             raise
 
-
-
     def evaluate_job(self, job: Job, resume_prompt: str) -> float:
         """
         Sends the job description and resume to the AI system and returns a score from 0 to 10.
@@ -837,3 +851,37 @@ class GPTAnswerer:
         except Exception as e:
             logger.error(f"Error processing the score from response: {e}", exc_info=True)
             return 0.1  # Returns 0.1 in case of an error
+        
+    def answer_question_date(self, question: str) -> datetime:
+        """
+        Uses ChatGPT to generate an appropriate date based on the question.
+
+        :param question: The question text to analyze.
+        :return: A datetime object representing the date to be used.
+        """
+        logger.debug(f"Answering date question: {question}")
+        try:
+            # Prepare the prompt using the date_question_template
+            func_template = self._preprocess_template_string(strings.date_question_template)
+            prompt = ChatPromptTemplate.from_template(func_template)
+            chain = prompt | self.llm_cheap | StrOutputParser()
+            # Get today's date in YYYY-MM-DD format
+            today_date_str = datetime.now().strftime("%Y-%m-%d")
+            # Invoke the chain with the question and today's date
+            output_str = chain.invoke({"question": question, "today_date": today_date_str})
+            logger.debug(f"Raw output for date question: {output_str}")
+
+            # Extract the date from the output
+            date_str = output_str.strip()
+            try:
+                # Parse the date string into a datetime object
+                parsed_date = datetime.strptime(date_str, "%Y-%m-%d")
+                logger.debug(f"Parsed date: {parsed_date}")
+                return parsed_date
+            except ValueError:
+                logger.error(f"Failed to parse date from output: {date_str}")
+                raise ValueError(f"Could not parse date from GPT output: {date_str}")
+        except Exception as e:
+            logger.error(f"Error answering date question: {e}", exc_info=True)
+            # In case of an error, return today's date as a fallback
+            return datetime.now()

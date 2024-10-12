@@ -328,11 +328,12 @@ class AIHawkJobManager:
 
         # Initialize variables
         job_title = self._extract_job_title(job_tile)
-        company = self._extract_company(job_tile)
-        link = self._extract_link(job_tile)
-        job_location = self._extract_job_location(job_tile)
-        apply_method = self._extract_apply_method(job_tile)
-        job_state = self._extract_job_state(job_tile)
+        if job_tile:
+            company = self._extract_company(job_tile)
+            link = self._extract_link(job_tile)
+            job_location = self._extract_job_location(job_tile)
+            apply_method = self._extract_apply_method(job_tile)
+            job_state = self._extract_job_state(job_tile)
         
 
         logger.debug(
