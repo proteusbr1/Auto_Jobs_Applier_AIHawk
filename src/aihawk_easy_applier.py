@@ -1113,73 +1113,98 @@ class AIHawkEasyApplier:
 
     def _save_questions_to_json(self, question_data: dict) -> None:
         """
-        Saves the question and answer to a JSON file for future reuse only if the question is not duplicated.
+        Saves the question and answer to a JSON file for future reuse only if the question is not a duplicate.
         """
-        output_file = Path("data_folder/output") / "answers.json"
+        output_dir = Path("data_folder/output")
+        output_file = output_dir / "answers.json"
         sanitized_question = self.utils_sanitize_text(question_data["question"])
         question_data["question"] = sanitized_question
         logger.debug(f"Attempting to save question data to JSON: {question_data}")
         
         try:
+            # Ensure the directory exists
+            output_dir.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"Directory verified or created: {output_dir}")
+            
             if output_file.exists():
                 with output_file.open("r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if not isinstance(data, list):
-                        logger.error("JSON file format is incorrect. Expected a list of questions.")
-                        raise ValueError("JSON file format is incorrect. Expected a list of questions.")
+                    try:
+                        data = json.load(f)
+                        if not isinstance(data, list):
+                            logger.error("The JSON file format is incorrect. Expected a list of questions.")
+                            raise ValueError("The JSON file format is incorrect. Expected a list of questions.")
+                    except json.JSONDecodeError:
+                        logger.warning("JSON file is empty or invalid. Initializing with an empty list.")
+                        data = []
             else:
                 data = []
+                logger.info(f"JSON file not found. Creating new file: {output_file}")
             
             # Check if the question already exists
             if any(self.utils_sanitize_text(item["question"]) == sanitized_question for item in data):
-                logger.debug(f"Question already exists and will not be saved: {sanitized_question}")
+                logger.debug(f"Question already exists and will not be saved again: {sanitized_question}")
                 return  # Do not save duplicates
             
-            # Append the new question
+            # Add the new question
             data.append(question_data)
             
             with output_file.open("w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
             
-            logger.debug("Question data saved successfully to JSON")
-            
+            logger.debug("Question data successfully saved to JSON")
+        
         except Exception as e:
-            logger.error("Error saving questions data to JSON file", exc_info=True)
+            logger.error("Error saving question data to JSON file", exc_info=True)
             raise
 
     def _load_questions_from_json(self) -> List[dict]:
         """
-        Load previously answered questions from a JSON file to reuse answers.
+        Loads previously answered questions from a JSON file to reuse answers.
         """
         output_file = Path("data_folder/output") / "answers.json"
         logger.debug(f"Loading questions from JSON file: {output_file}")
         try:
-            with output_file.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-                if not isinstance(data, list):
-                    logger.error("JSON file format is incorrect. Expected a list of questions.")
-                    raise ValueError("JSON file format is incorrect. Expected a list of questions.")
+            if not output_file.exists():
+                logger.warning(f"JSON file not found: {output_file}. Creating an empty file.")
+                # Ensure the directory exists
+                output_file.parent.mkdir(parents=True, exist_ok=True)
+                # Create the file with an empty list
+                with output_file.open("w", encoding="utf-8") as f:
+                    json.dump([], f, indent=4, ensure_ascii=False)
+                return []
             
-            logger.debug("Questions loaded successfully from JSON")
+            with output_file.open("r", encoding="utf-8") as f:
+                try:
+                    content = f.read().strip()
+                    if not content:
+                        logger.debug("JSON file is empty. Returning an empty list.")
+                        return []
+                    data = json.loads(content)
+                    if not isinstance(data, list):
+                        logger.error("The JSON file format is incorrect. Expected a list of questions.")
+                        raise ValueError("The JSON file format is incorrect. Expected a list of questions.")
+                except json.JSONDecodeError:
+                    logger.warning("JSON decoding failed. Returning an empty list.")
+                    return []
+            
+            logger.debug("Questions successfully loaded from JSON")
             return data
-        except FileNotFoundError:
-            logger.warning("JSON file not found, returning empty list")
-            return []
-        except json.JSONDecodeError:
-            logger.exception("JSON decoding failed, returning empty list")
-            return []
         except Exception as e:
-            logger.exception("Error loading questions data from JSON file")
+            logger.error("Error loading question data from JSON file", exc_info=True)
             raise
 
     def _get_existing_answer(self, question_text: str, question_type: str) -> Optional[str]:
         """
-        Retrieves an existing answer from saved data based on the question text and type.
+        Retrieves an existing answer from the saved data based on the question text and type.
         """
         sanitized_question = self.utils_sanitize_text(question_text)
         return next(
-            (item.get("answer") for item in self.all_questions
-            if self.utils_sanitize_text(item.get("question", "")) == sanitized_question and item.get("type") == question_type),
+            (
+                item.get("answer") 
+                for item in self.all_questions
+                if self.utils_sanitize_text(item.get("question", "")) == sanitized_question 
+                and item.get("type") == question_type
+            ),
             None
         )
 
