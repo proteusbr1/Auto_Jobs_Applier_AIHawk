@@ -166,7 +166,7 @@ class AIHawkJobManager:
                 # Scroll otimizado para carregar todos os elementos de trabalho
                 logger.debug("Initiating optimized scroll to load all job elements.")
                 utils.scroll_slow(self.driver, job_list_container, step=500, reverse=False, max_attempts=5)
-                # utils.scroll_slow(self.driver, job_list_container, step=500, reverse=True, max_attempts=5)
+                utils.scroll_slow(self.driver, job_list_container, step=1000, reverse=True, max_attempts=5)
                 logger.debug("Scrolling completed.")
 
                 job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
@@ -242,7 +242,7 @@ class AIHawkJobManager:
                     continue
 
             try:
-                if self.easy_applier_component.job_apply(job):
+                if self.easy_applier_component.main_job_apply(job):
                     utils.write_to_file(job, "success")
                     logger.info(f"Applied: {job.link}")
 

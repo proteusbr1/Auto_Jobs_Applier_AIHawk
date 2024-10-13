@@ -452,8 +452,8 @@ class GPTAnswerer:
         logger.debug(f"Setting resume: {resume}")
         self.resume = resume
 
-    def set_job(self, title: str, company: str, location: str, link: str, apply_method: str, description: Optional[str] = ""):
-        logger.debug(f"Setting job with title: {title}, company: {company}, location: {location}, link: {link}, apply_method: {apply_method}")
+    def set_job(self, title: str, company: str, location: str, link: str, apply_method: str, description: Optional[str] = "", recruiter_link: Optional[str] = ""):
+        logger.debug(f"Setting job with title: {title}, company: {company}, location: {location}, link: {link}, apply_method: {apply_method}, recruiter_link: {recruiter_link}")
         
         missing_attributes = []
         if not title:
@@ -479,7 +479,8 @@ class GPTAnswerer:
             location=location,
             link=link,
             apply_method=apply_method,
-            description=description
+            description=description,
+            recruiter_link=recruiter_link
         )
         logger.debug(f"Job object set: {self.job}")
         
@@ -529,7 +530,8 @@ class GPTAnswerer:
                 location=job.location,
                 link=job.link,
                 apply_method=job.apply_method,
-                description=job.description
+                description=job.description,
+                recruiter_link=job.recruiter_link,
             )
         else:
             logger.error("Job parameter is None.")
@@ -853,6 +855,7 @@ class GPTAnswerer:
             return 0.1  # Returns 0.1 in case of an error
         
     def answer_question_date(self, question: str) -> datetime:
+
         """
         Uses ChatGPT to generate an appropriate date based on the question.
 
