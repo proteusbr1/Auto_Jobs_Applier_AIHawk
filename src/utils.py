@@ -208,6 +208,7 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
 
                 if current_scroll_position >= end_position:
                     logger.debug("Reached the bottom of the element.")
+                    time.sleep(random.uniform(1.0, 1.5))
                     break
 
         # Ensure the final scroll position is correct
@@ -224,7 +225,7 @@ def chrome_browser_options():
     options = webdriver.ChromeOptions()
     
     # Headless mode
-    # options.add_argument("--headless")
+    options.add_argument("--headless")
     
     # Specify the absolute path to the Chrome binary
     options.binary_location = '/usr/bin/google-chrome'

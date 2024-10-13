@@ -13,12 +13,22 @@ MINIMUM_LOG_LEVEL = "DEBUG"
 MINIMUM_WAIT_TIME = 0
 
 USE_JOB_SCORE  = True
-MINIMUM_SCORE_JOB_APPLICATION = 0
+MINIMUM_SCORE_JOB_APPLICATION = 6
 
-USER_RESUME_SUMMARY = """
+
+USER_RESUME_SUMMARY = """ 
 MÁRIO EUNIDES JUNQUEIRA GUIMARÃES JÚNIOR
-University of Pennsylvania, PA, US
-contact@drmariojunqueira.com
+  name: "Mario Eunides"
+  surname: "Junqueira Guimaraes Junior"
+  date_of_birth: "1983-09-21"
+  country: "United States"
+  city: "Philadelphia"
+  address: "19129 Philadelphia - Pennsylvania US"
+  Zip: "19129"
+  phone_prefix: "+1"
+  phone: "2673977661"
+  mario.proteus@gmail.com
+  today date: {today_date} YYYY-MM-DD
 
 PROFESSIONAL SUMMARY
 Experienced Medical Doctor and Legal Consultant with over 13 years in medical expertise, healthcare leadership, and legal medicine. Currently pursuing a Master of Law at the University of Pennsylvania, specializing in health law and policy. Expertise in medical jurisprudence and AI technologies to drive healthcare innovation and uphold ethical standards.
@@ -118,4 +128,44 @@ PUBLICATIONS & CONTRIBUTIONS
 Authored articles and advisory opinions on medical errors, legal aspects of suicide, and medical expertise in justice.
 Presented at international conferences and participated in public policy discussions.
 Selected works include presentations at Forensicamp 1.0 (India), VI Symposium on Occupational Medicine, and contributions to various publications and radio programs.
+
+github: "https://github.com/proteusbr1"
+linkedin: "https://www.linkedin.com/in/mario-junqueira/"
+
+availability for work: "Available immediately"
+
+salary_expectations: "200000", but negociable
+
+self_identification:
+  gender: "Male"
+  pronouns: "He/Him"
+  veteran: "No"
+  disability: "No"
+  ethnicity: "Latino"
+
+legal_authorization:
+  eu_work_authorization: "No"
+  us_work_authorization: "No"
+  requires_us_visa: "No"
+  requires_us_sponsorship: "Yes"
+  requires_eu_visa: "Yes"
+  legally_allowed_to_work_in_eu: "No"
+  legally_allowed_to_work_in_us: "No"
+  requires_eu_sponsorship: "Yes"
+  canada_work_authorization: "No"
+  requires_canada_visa: "Yes"
+  legally_allowed_to_work_in_canada: "No"
+  requires_canada_sponsorship: "Yes"
+  uk_work_authorization: "No"
+  requires_uk_visa: "Yes"
+  legally_allowed_to_work_in_uk: "No"
+  requires_uk_sponsorship: "Yes"
+
+work_preferences:
+  remote_work: "Yes"
+  in_person_work: "No"
+  open_to_relocation: "No"
+  willing_to_complete_assessments: "Yes"
+  willing_to_undergo_drug_tests: "No"
+  willing_to_undergo_background_checks: "Yes"
 """

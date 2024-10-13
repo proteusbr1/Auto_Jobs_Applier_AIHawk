@@ -674,7 +674,14 @@ class AIHawkEasyApplier:
         Generates a cover letter and uploads it to the application form.
         """
         logger.debug("Creating and uploading cover letter")
-        cover_letter_text = self.gpt_answerer.answer_question_textual_wide_range("Write a cover letter", job=job)
+        prompt ="""
+        Compose a brief and impactful cover letter based on the provided job description and resume. The letter should be no longer than three paragraphs and should be written in a professional, yet conversational tone. Avoid using any placeholders, and ensure that the letter flows naturally and is tailored to the job.
+
+        Analyze the job description to identify key qualifications and requirements. Introduce the candidate succinctly, aligning their career objectives with the role. Highlight relevant skills and experiences from the resume that directly match the job’s demands, using specific examples to illustrate these qualifications. Reference notable aspects of the company, such as its mission or values, that resonate with the candidate’s professional goals. Conclude with a strong statement of why the candidate is a good fit for the position, expressing a desire to discuss further.
+
+        Please write the cover letter in a way that directly addresses the job role and the company’s characteristics, ensuring it remains concise and engaging without unnecessary embellishments. The letter should be formatted into paragraphs and should not include a greeting or signature.
+        """
+        cover_letter_text = self.gpt_answerer.answer_question_simple(prompt, job, 2500)
         folder_path = "generated_cv"
         self.utils_ensure_directory(folder_path)
 
@@ -858,7 +865,7 @@ class AIHawkEasyApplier:
 
             is_cover_letter = "cover letter" in question_text.lower()
             if is_cover_letter:
-                answer = self.gpt_answerer.answer_question_textual_wide_range(question_text, job=job)
+                answer = self.gpt_answerer.answer_question_simple(question_text, job, 1000)
             else:
                 existing_answer = self._get_existing_answer(question_text, question_type)
                 if existing_answer:
@@ -867,7 +874,7 @@ class AIHawkEasyApplier:
                     if is_numeric:
                         answer = self.gpt_answerer.answer_question_numeric(question_text)
                     else:
-                        answer = self.gpt_answerer.answer_question_textual_wide_range(question_text, job=job)
+                        answer = self.gpt_answerer.answer_question_simple(question_text, job=job)
                     self._save_questions_to_json({"type": question_type, "question": question_text, "answer": answer})
 
             self._7_enter_text(text_field, answer)
@@ -999,7 +1006,7 @@ class AIHawkEasyApplier:
             else:
                 logger.debug("No existing answer found, generating answer with GPT")
                 # Generate answer using GPT
-                existing_answer = self.gpt_answerer.answer_question_textual_wide_range(question_text, job)
+                existing_answer = self.gpt_answerer.answer_question_simple(question_text, job, 50)
                 logger.debug(f"Answer generated for typeahead: {existing_answer}")
                 self._save_questions_to_json({"type": "typeahead", "question": question_text, "answer": existing_answer})
 
@@ -1007,7 +1014,7 @@ class AIHawkEasyApplier:
             logger.debug(f"Entering text in the typeahead field: {existing_answer}")
             typeahead_input.clear()
             typeahead_input.send_keys(existing_answer)
-            time.sleep(1)  # Wait a bit for the suggestions to load
+            time.sleep(1)
 
             # Wait for the suggestions to appear
             logger.debug("Waiting for suggestions after entering text in the typeahead...")
