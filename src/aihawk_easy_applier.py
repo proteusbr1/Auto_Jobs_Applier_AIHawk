@@ -228,9 +228,8 @@ class AIHawkEasyApplier:
             raise Exception("Job description element not found") from e
         except TimeoutException as te:
             logger.warning("Timed out waiting for the job description element.")
-            raise Exception(
-                "Timed out waiting for the job description element"
-            ) from te
+            utils.capture_screenshot(self.driver, "job_description_timeout")
+            raise Exception("Timed out waiting for the job description element") from te
         except Exception as e:
             logger.warning(
                 f"Unexpected error in _get_job_description: {e}", exc_info=True
@@ -430,7 +429,7 @@ class AIHawkEasyApplier:
 
             if not buttons:
                 logger.error("No primary button found on the page.")
-                self.utils_capture_screenshot("no_primary_buttons_found")
+                utils.capture_screenshot(self.driver,"no_primary_buttons_found")
                 return False
 
             # Prioritize 'Submit application'
@@ -465,12 +464,12 @@ class AIHawkEasyApplier:
                 button_text = button.text.strip().lower()
                 logger.error(f"Button text: {button_text}")
             
-            self.utils_capture_screenshot("no_submit_next_or_review_button_found")
+            utils.capture_screenshot(self.driver,"no_submit_next_or_review_button_found")
             return False
 
         except Exception as e:
             logger.error(f"Error in the _2_next_or_submit function: {e}", exc_info=True)
-            self.utils_capture_screenshot("error_in_2_next_or_submit")
+            utils.capture_screenshot(self.driver,"error_in_2_next_or_submit")
             return False
 
     def _3_unfollow_company(self) -> None:
@@ -640,13 +639,12 @@ class AIHawkEasyApplier:
         """
         logger.debug("Creating and uploading resume")
         folder_path = "generated_cv"
-        self.utils_ensure_directory(folder_path)
 
         try:
             timestamp = int(time.time())
             file_name = f"CV_{timestamp}.pdf"
             file_path_pdf = os.path.join(folder_path, file_name)
-            self.utils_ensure_directory(folder_path)
+            utils.ensure_directory(folder_path)
 
             # Generate resume PDF content
             resume_pdf_base64 = self.resume_generator_manager.pdf_base64(job_description_text=job.description)
@@ -666,7 +664,7 @@ class AIHawkEasyApplier:
             self._6_handle_http_error(e)
         except Exception as e:
             logger.error("Resume upload failed", exc_info=True)
-            self.utils_capture_screenshot(f"resume_upload_exception_{timestamp}")
+            utils.capture_screenshot(self.driver,f"resume_upload_exception_{timestamp}")
             raise Exception("Upload failed.") from e
 
     def _5_create_and_upload_cover_letter(self, element: WebElement, job: Job) -> None:
@@ -683,13 +681,13 @@ class AIHawkEasyApplier:
         """
         cover_letter_text = self.gpt_answerer.answer_question_simple(prompt, job, 2500)
         folder_path = "generated_cv"
-        self.utils_ensure_directory(folder_path)
+        utils.ensure_directory(folder_path)
 
         try:
             timestamp = int(time.time())
             file_name = f"Cover_Letter_{timestamp}.pdf"
             file_path_pdf = os.path.join(folder_path, file_name)
-            self.utils_ensure_directory(folder_path)
+            utils.ensure_directory(folder_path)
 
             # Generate cover letter PDF
             self._6_generate_pdf(file_path_pdf, cover_letter_text, "Cover Letter")
@@ -705,7 +703,7 @@ class AIHawkEasyApplier:
             self._6_handle_http_error(e)
         except Exception as e:
             logger.error("Cover letter upload failed", exc_info=True)
-            self.utils_capture_screenshot("cover_letter_upload_exception")
+            utils.capture_screenshot(self.driver,"cover_letter_upload_exception")
             raise Exception("Upload failed.") from e
 
     def _6_generate_pdf(self, file_path_pdf: str, content: str, title: str) -> None:
@@ -780,7 +778,7 @@ class AIHawkEasyApplier:
             logger.debug("All form sections processed successfully")
         except Exception as e:
             logger.warning("An error occurred while filling additional questions", exc_info=True)
-            self.utils_capture_screenshot("additional_questions_error")
+            utils.capture_screenshot(self.driver,"additional_questions_error")
             raise
 
     def _5_process_form_section(self, section: WebElement, job: Job) -> None:
@@ -1210,35 +1208,6 @@ class AIHawkEasyApplier:
 
 # Utils
 
-    def utils_ensure_directory(self, folder_path: str) -> None:
-        """
-        Ensures that the specified directory exists.
-        """
-        try:
-            os.makedirs(folder_path, exist_ok=True)
-            logger.debug(f"Directory ensured at path: {folder_path}")
-        except Exception as e:
-            logger.error(f"Failed to create directory: {folder_path}", exc_info=True)
-            raise
-
-    def utils_capture_screenshot(self, name: str) -> None:
-        """
-        Captures a screenshot of the current browser window.
-        """
-        try:
-            screenshots_dir = "screenshots"
-            self.utils_ensure_directory(screenshots_dir)
-
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            file_path = os.path.join(screenshots_dir, f"{name}_{timestamp}.png")
-            success = self.driver.save_screenshot(file_path)
-            if success:
-                logger.debug(f"Screenshot saved at: {file_path}")
-            else:
-                logger.warning("Failed to save screenshot")
-        except Exception as e:
-            logger.error("An error occurred while capturing the screenshot", exc_info=True)
-
     def utils_sanitize_text(self, text: str) -> str:
         """
         Sanitizes the input text by lowering case, stripping whitespace, and removing unwanted characters.
@@ -1251,7 +1220,7 @@ class AIHawkEasyApplier:
         # logger.debug(f"Sanitized text: {sanitized_text}")
         return sanitized_text
 
-#No Used Yet
+#Not Used Yet
 
     def navigate_date_picker(self, month_name: str, year: int) -> None:
         logger.debug(f"Navigating date picker to {month_name} {year}")
@@ -1276,59 +1245,3 @@ class AIHawkEasyApplier:
             logger.debug(f"Clicked on day {day} in date picker.")
         else:
             logger.warning(f"Day {day} not found in date picker.")
-
-    def handle_dropdown_fields(self, element: WebElement) -> None:
-        """
-        No Used Yet
-        """
-        logger.debug("Handling dropdown fields")
-
-        dropdown = element.find_element(By.TAG_NAME, "select")
-        select = Select(dropdown)
-
-        options = [option.text for option in select.options]
-        logger.debug(f"Dropdown options found: {options}")
-
-        parent_element = dropdown.find_element(By.XPATH, "../..")
-
-        label_elements = parent_element.find_elements(By.TAG_NAME, "label")
-        if label_elements:
-            question_text = label_elements[0].text.lower()
-        else:
-            question_text = "unknown"
-
-        logger.debug(f"Detected question text: {question_text}")
-
-        existing_answer = None
-        for item in self.all_questions:
-            if (
-                self.utils_sanitize_text(question_text) in item["question"]
-                and item["type"] == "dropdown"
-            ):
-                existing_answer = item["answer"]
-                break
-
-        if existing_answer:
-            logger.debug(
-                f"Found existing answer for question '{question_text}': {existing_answer}"
-            )
-        else:
-            logger.debug(
-                f"No existing answer found, querying model for: {question_text}"
-            )
-            existing_answer = self.gpt_answerer.answer_question_from_options(
-                question_text, options
-            )
-            logger.debug(f"Model provided answer: {existing_answer}")
-            self._save_questions_to_json(
-                {"type": "dropdown", "question": question_text, "answer": existing_answer}
-            )
-
-        if existing_answer in options:
-            select.select_by_visible_text(existing_answer)
-            logger.debug(f"Selected option: {existing_answer}")
-        else:
-            logger.error(
-                f"Answer '{existing_answer}' is not a valid option in the dropdown"
-            )
-            raise ValueError(f"Invalid option selected: {existing_answer}")

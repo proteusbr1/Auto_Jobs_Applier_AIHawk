@@ -18,6 +18,7 @@ from src.aihawk_job_manager import AIHawkJobManager
 from src.job_application_profile import JobApplicationProfile
 from loguru import logger
 from dotenv import load_dotenv
+import socket
 
 # Suppress other stderr outputs
 sys.stderr = open(os.devnull, 'w')
@@ -297,6 +298,19 @@ def create_and_run_bot(parameters, llm_api_key):
         logger.exception("An unexpected error occurred while running the bot.")
         raise RuntimeError(f"Error running the bot: {str(e)}")
 
+
+def check_internet(host="8.8.8.8", port=53, timeout=3):
+    """
+    Check internet connection.
+    """
+    try:
+        socket.setdefaulttimeout(timeout)
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((host, port))
+        return True
+    except socket.error as ex:
+        logger.error(f"Erro de conexão com a internet: {ex}")
+        return False
+
 @click.command()
 @click.option(
     '--resume', 
@@ -311,6 +325,11 @@ def main(resume: Path = None):
         resume (Path, optional): Path to the resume PDF file.
     """
     logger.info("Application started.")
+
+    if not check_internet():
+        logger.error("No internet connection detected. Please check your network settings.")
+        return
+
     try:
         data_folder = Path("data_folder")
         logger.debug(f"Validating data folder: {data_folder}")

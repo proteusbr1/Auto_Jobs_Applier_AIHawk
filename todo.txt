@@ -1,0 +1,2 @@
+pegar salario
+tirar informacoes sensiveis do git

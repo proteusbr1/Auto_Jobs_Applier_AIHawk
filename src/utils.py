@@ -8,9 +8,11 @@ import json
 import logging
 
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.by import By
+
 from loguru import logger
 
 from app_config import MINIMUM_LOG_LEVEL
@@ -59,7 +61,7 @@ def configure_logging():
         LOG_FILE_PATH,
         level=file_log_level,
         rotation="100 MB",
-        retention="10 days",
+        retention="1 days",
         compression="zip",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         enqueue=True
@@ -225,7 +227,7 @@ def chrome_browser_options():
     options = webdriver.ChromeOptions()
     
     # Headless mode
-    options.add_argument("--headless")
+    # options.add_argument("--headless")
     
     # Specify the absolute path to the Chrome binary
     options.binary_location = '/usr/bin/google-chrome'
@@ -277,16 +279,6 @@ def chrome_browser_options():
         logger.debug("Using Chrome in incognito mode")
 
     return options
-
-def string_width(text, font, font_size):
-    try:
-        bbox = font.getbbox(text)
-        width = bbox[2] - bbox[0]
-        logger.debug(f"Calculated string width for '{text}': {width}")
-        return width
-    except Exception as e:
-        logger.error(f"Error calculating string width: {e}", exc_info=True)
-        return 0
     
 def write_to_file(job, file_name):
     logger.debug(f"Writing job application result to file: '{file_name}'.")
@@ -307,7 +299,7 @@ def write_to_file(job, file_name):
         # "summarize_job_description": job.summarize_job_description,	
         "pdf_path": pdf_path,
         "recruiter_link": job.recruiter_link,
-        "position": job.position,
+        "search_term": job.position,
         "score": job.score,  
         "timestamp": current_time
     }
@@ -337,3 +329,32 @@ def write_to_file(job, file_name):
             logger.debug(f"Job data appended to existing file: '{file_name}'.")
         except Exception as e:
             logger.error(f"Failed to append to file '{file_name}': {e}", exc_info=True)
+
+def capture_screenshot(driver,name: str) -> None:
+    """
+    Captures a screenshot of the current browser window.
+    """
+    try:
+        screenshots_dir = "screenshots"
+        ensure_directory(screenshots_dir)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_path = os.path.join(screenshots_dir, f"{timestamp}_{name}.png")
+        success = driver.save_screenshot(file_path)
+        if success:
+            logger.debug(f"Screenshot saved at: {file_path}")
+        else:
+            logger.warning("Failed to save screenshot")
+    except Exception as e:
+        logger.error("An error occurred while capturing the screenshot", exc_info=True)
+
+def ensure_directory(folder_path: str) -> None:
+    """
+    Ensures that the specified directory exists.
+    """
+    try:
+        os.makedirs(folder_path, exist_ok=True)
+        logger.debug(f"Directory ensured at path: {folder_path}")
+    except Exception as e:
+        logger.error(f"Failed to create directory: {folder_path}", exc_info=True)
+        raise

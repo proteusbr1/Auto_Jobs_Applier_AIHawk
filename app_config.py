@@ -15,11 +15,11 @@ MINIMUM_WAIT_TIME = 0
 USE_JOB_SCORE  = True
 MINIMUM_SCORE_JOB_APPLICATION = 6
 
-
 USER_RESUME_SUMMARY = """ 
 MÁRIO EUNIDES JUNQUEIRA GUIMARÃES JÚNIOR
   name: "Mario Eunides"
-  surname: "Junqueira Guimaraes Junior"
+  middle_name: "Junqueira"
+  surname: "Guimaraes Junior"
   date_of_birth: "1983-09-21"
   country: "United States"
   city: "Philadelphia"
@@ -31,7 +31,7 @@ MÁRIO EUNIDES JUNQUEIRA GUIMARÃES JÚNIOR
   today date: {today_date} YYYY-MM-DD
 
 PROFESSIONAL SUMMARY
-Experienced Medical Doctor and Legal Consultant with over 13 years in medical expertise, healthcare leadership, and legal medicine. Currently pursuing a Master of Law at the University of Pennsylvania, specializing in health law and policy. Expertise in medical jurisprudence and AI technologies to drive healthcare innovation and uphold ethical standards.
+Experienced Medical Doctor, Legal Consultant with over 13 years in medical expertise, healthcare leadership, and legal medicine. Currently pursuing a Master of Law at the University of Pennsylvania, specializing in health law and policy. Expertise in medical jurisprudence and AI technologies to drive healthcare innovation and uphold ethical standards.
 Se atentar para o fato de não ser advogado e não ter licença para exercer medicina nos EUA.
 
 EDUCATION
@@ -59,13 +59,15 @@ União Brasileira de Faculdades, Brasília, DF, Brazil (2018-2021)
 PROFESSIONAL EXPERIENCE
 Founder & CEO, PericialMed, Brasília, DF, Brazil
 2017 – Present
+Established and Lead a Premier Medical-Legal Consulting Firm: Founded PericialMed to provide expert medical testimony and consultancy services for complex legal cases, catering to a diverse range of medical specialties.
+Expert Medical Reporting and Testimony: Authored comprehensive medical reports and served as a technical expert witness in court proceedings involving medical malpractice, workers’ compensation, disability claims, retirement disputes, and other medical-legal matters.
+Consultation and Collaboration with Legal Professionals: Partnered with attorneys to develop case strategies, offering specialized medical insights and ensuring accurate representation of medical issues in legal contexts.
+Client Success and Compensation: Assisted over 800 clients in navigating medical-legal cases, successfully securing millions in compensations through expert analysis and strategic consultancy.
+Leadership in Medical Jurisprudence: Positioned PericialMed as a leader in the field of medical jurisprudence by advocating for justice and maintaining high ethical standards, contributing to national healthcare reforms and advancing industry practices.
 
-Established a leading legal medical consultancy, assisting over 800 clients in complex medical-legal cases.
-Led national healthcare reforms, securing millions in client compensations.
-Positioned PericialMed as a leader in medical jurisprudence with a focus on justice and ethical standards.
+
 President, Board of Medical Expertise and Legal Medicine of Federal District, Brasília, DF, Brazil
 2022 – Present
-
 Direct strategic vision and influence policy-making at national forums.
 Collaborate with board members to align priorities with forensic medical community needs.
 Chief Legal Officer, State Board of Medicine of the Federal District, Brasília, DF, Brazil
@@ -142,24 +144,6 @@ self_identification:
   veteran: "No"
   disability: "No"
   ethnicity: "Latino"
-
-legal_authorization:
-  eu_work_authorization: "No"
-  us_work_authorization: "No"
-  requires_us_visa: "No"
-  requires_us_sponsorship: "Yes"
-  requires_eu_visa: "Yes"
-  legally_allowed_to_work_in_eu: "No"
-  legally_allowed_to_work_in_us: "No"
-  requires_eu_sponsorship: "Yes"
-  canada_work_authorization: "No"
-  requires_canada_visa: "Yes"
-  legally_allowed_to_work_in_canada: "No"
-  requires_canada_sponsorship: "Yes"
-  uk_work_authorization: "No"
-  requires_uk_visa: "Yes"
-  legally_allowed_to_work_in_uk: "No"
-  requires_uk_sponsorship: "Yes"
 
 work_preferences:
   remote_work: "Yes"

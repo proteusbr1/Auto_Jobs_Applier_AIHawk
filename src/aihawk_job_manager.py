@@ -3,8 +3,9 @@ import os
 import random
 from itertools import product
 from pathlib import Path
+import time
 
-from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException 
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -144,6 +145,7 @@ class AIHawkJobManager:
                 logger.debug("Elements condition met.")
             except TimeoutException:
                 logger.warning("Timed out waiting for the 'no results' banner or the job elements.")
+                utils.capture_screenshot(self.driver, "job_elements_timeout")
                 return []
 
             # Verificar se o banner de "sem resultados" está presente
@@ -158,15 +160,15 @@ class AIHawkJobManager:
 
             # Caso contrário, assumir que os resultados de empregos estão presentes
             try:
+                locator = (By.CLASS_NAME, 'jobs-search-results-list')
                 job_list_container = self.wait.until(
-                    EC.presence_of_element_located((By.CLASS_NAME, 'jobs-search-results-list'))
+                    EC.presence_of_element_located(locator)
                 )
                 logger.debug("Job list container found.")
 
                 # Scroll otimizado para carregar todos os elementos de trabalho
                 logger.debug("Initiating optimized scroll to load all job elements.")
-                utils.scroll_slow(self.driver, job_list_container, step=500, reverse=False, max_attempts=5)
-                utils.scroll_slow(self.driver, job_list_container, step=1000, reverse=True, max_attempts=5)
+                self.scroll_jobs(self.driver)
                 logger.debug("Scrolling completed.")
 
                 job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
@@ -202,6 +204,8 @@ class AIHawkJobManager:
             return []
         except Exception as e:
             logger.error(f"Error while fetching job elements. {e}", exc_info=True)
+            # Take a screenshot for debugging
+            utils.capture_screenshot(self.driver, "job_elements_error")
             return []
 
     def apply_jobs(self, position):
@@ -257,6 +261,114 @@ class AIHawkJobManager:
             # Add job link to seen jobs set
             self.seen_jobs.append(job.link)
 
+    def scroll_jobs(
+        self,
+        driver, 
+        locator=(By.CLASS_NAME, 'jobs-search-results-list'), 
+        step=300, 
+        reverse=False, 
+        max_attempts=10, 
+        wait_time=10
+    ):
+        """
+        Function to slowly scroll a scrollable element on the page until all job listings are loaded.
+
+        Parameters:
+        - driver: WebDriver instance.
+        - locator: Tuple with method and value to locate the scrollable container.
+        - step: Number of pixels to scroll at each step.
+        - reverse: If True, scrolls up; otherwise, scrolls down.
+        - max_attempts: Maximum number of attempts without new items before stopping.
+        - wait_time: Maximum wait time to locate elements.
+
+        Returns:
+        - True if scrolling was completed successfully.
+        - False if scrolling failed.
+        """
+        logger.debug("Starting scroll_jobs.")
+        
+        if step <= 0:
+            logger.error("The step value must be positive.")
+            raise ValueError("Step must be positive.")
+
+        try:
+            wait = WebDriverWait(driver, wait_time)
+            try:
+                scrollable_element = wait.until(
+                    EC.visibility_of_element_located(locator)
+                )
+                logger.debug("Scrollable element found and is visible on the page.")
+            except TimeoutException:
+                logger.warning(f"Element with locator {locator} not found after {wait_time} seconds.")
+                return False  # Exit the function if the element is not found
+
+            # Check if the element is scrollable
+            try:
+                scroll_height = int(scrollable_element.get_attribute("scrollHeight"))
+                client_height = int(scrollable_element.get_attribute("clientHeight"))
+                if scroll_height <= client_height:
+                    logger.info("The located element is not scrollable.")
+                    utils.capture_screenshot(driver, "element_not_scrollable")
+                    return False
+                logger.debug(f"Scrollability check: scrollHeight={scroll_height}, clientHeight={client_height}, scrollable=True")
+            except Exception as e:
+                logger.error(f"Error determining if the element is scrollable: {e}", exc_info=True)
+                return False
+
+            if not scrollable_element.is_displayed():
+                logger.warning("The element is not visible. Trying to bring it into view.")
+                try:
+                    driver.execute_script("arguments[0].scrollIntoView(true);", scrollable_element)
+                    time.sleep(1)  # Wait for the element to become visible
+                    if not scrollable_element.is_displayed():
+                        logger.warning("The element is still not visible after trying to bring it into view.")
+                        utils.capture_screenshot(driver, "element_not_visible_after_scroll")
+                        return False
+                    else:
+                        logger.debug("Element is now visible after bringing it into view.")
+                except WebDriverException as e:
+                    logger.error(f"Failed to bring the element into view: {e}", exc_info=True)
+                    utils.capture_screenshot(driver, "scroll_into_view_failed")
+                    return False
+
+            # Initialize counters
+            previous_job_count = 0
+            attempts = 0
+            job_title_locator = (By.XPATH, ".//a[contains(@class, 'job-card-list__title')]")
+
+            while attempts < max_attempts:
+                # Get current scroll position
+                current_scroll_position = scrollable_element.get_attribute("scrollTop")
+                new_scroll_position = int(current_scroll_position) + step if not reverse else int(current_scroll_position) - step
+                driver.execute_script("arguments[0].scrollTop = arguments[1];", scrollable_element, new_scroll_position)
+                logger.debug(f"Scrolled to position: {new_scroll_position}")
+                time.sleep(random.uniform(0.5, 1.0))  # Wait for new content to load
+
+                # Count the current number of job items
+                job_items = driver.find_elements(*job_title_locator)
+                current_job_count = len(job_items)
+                logger.debug(f"Current number of job items: {current_job_count}")
+
+                # Check if the end of the scroll has been reached
+                if current_job_count >= 25:
+                    logger.debug("25 job items detected.")
+                    time.sleep(random.uniform(1.0, 2.0))
+                    break
+
+                if current_job_count > previous_job_count:
+                    logger.debug("New job items detected.")
+                    previous_job_count = current_job_count
+                    attempts = 0  # Reset attempts if new items are found
+                else:
+                    attempts += 1
+                    logger.debug(f"No new items detected. Attempt {attempts}/{max_attempts}.")
+
+            logger.debug("Scrolling completed. All job items have been loaded.")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error during job scrolling: {e}", exc_info=True)
+            return False
 
     def get_existing_score(self, job):
         """
@@ -357,21 +469,22 @@ class AIHawkJobManager:
         job_title = ""
         try:
             job_title_element = WebDriverWait(job_tile, 10).until(
-            EC.presence_of_element_located(
-                (By.XPATH, ".//a[contains(@class, 'job-card-list__title')]")
-            )
-        )
+            EC.presence_of_element_located((By.XPATH, ".//a[contains(@class, 'job-card-list__title')]")))
             job_title = job_title_element.text.strip()
             logger.debug(f"Extracted Job Title: '{job_title}'")
         except NoSuchElementException:
             logger.error("Job title element not found.")
             logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            utils.capture_screenshot(self.driver, "job_title_error")
         except TimeoutException:
             logger.error("Timed out waiting for the job title element.")
             logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            utils.capture_screenshot(self.driver, "job_title_error")
+
         except Exception as e:
             logger.error(f"Unexpected error in _extract_job_title: {e}", exc_info=True)
             logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            utils.capture_screenshot(self.driver, "job_title_error")
         return job_title
 
 
