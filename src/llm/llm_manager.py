@@ -22,7 +22,7 @@ from langchain_core.prompts import ChatPromptTemplate
 import src.strings as strings
 from src.job import Job
 from loguru import logger
-from app_config import USER_RESUME_SUMMARY
+from data_folder.personal_info import USER_RESUME_SUMMARY
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -702,8 +702,15 @@ class GPTAnswerer:
         logger.debug(f"Setting resume: {resume}")
         self.resume = resume
 
-    def set_job(self, title: str, company: str, location: str, link: str, apply_method: str,
-                description: Optional[str] = "", recruiter_link: Optional[str] = ""):
+    def set_job(self, 
+                title: str, 
+                company: str, 
+                location: str, 
+                link: str, 
+                apply_method: str,
+                salary: Optional[str] = "",
+                description: Optional[str] = "", 
+                recruiter_link: Optional[str] = ""):
         """
         Set the job details for the GPTAnswerer.
 
@@ -744,6 +751,7 @@ class GPTAnswerer:
             location=location,
             link=link,
             apply_method=apply_method,
+            salary=salary,
             description=description,
             recruiter_link=recruiter_link
         )
@@ -1161,6 +1169,7 @@ Provide only the exact name of the section from the list above with no additiona
         """
         job_description = job.description
         job_title = job.title
+        job_salary = job.salary
 
         # Create the prompt for evaluating the job and resume
         prompt = f"""
@@ -1170,6 +1179,9 @@ The assessment should consider HR-specific criteria for the American job market,
 
 Job Title: 
 {job_title}
+
+Job Salary:
+{job_salary}
 
 Job Description:
 {job_description}

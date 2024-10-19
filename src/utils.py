@@ -295,6 +295,7 @@ def write_to_file(job, file_name):
         "link": job.link,
         "apply_method": job.apply_method,
         "state": job.state,
+        "salary": job.salary,
         # "description": job.description,
         # "summarize_job_description": job.summarize_job_description,	
         "pdf_path": pdf_path,

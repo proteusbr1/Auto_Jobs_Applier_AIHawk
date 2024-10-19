@@ -11,7 +11,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 import src.utils as utils
-from app_config import MINIMUM_WAIT_TIME, MINIMUM_SCORE_JOB_APPLICATION, USER_RESUME_SUMMARY, USE_JOB_SCORE
+from app_config import MINIMUM_WAIT_TIME, MINIMUM_SCORE_JOB_APPLICATION, USE_JOB_SCORE
+from data_folder.personal_info import USER_RESUME_SUMMARY
 from src.job import Job
 from src.aihawk_easy_applier import AIHawkEasyApplier
 from loguru import logger

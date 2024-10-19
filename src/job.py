@@ -12,6 +12,7 @@ class Job:
     link: str
     apply_method: str
     state: str = ""
+    salary: str = ""
     description: str = ""
     summarize_job_description: str = ""
     pdf_path: str = ""

@@ -163,3 +163,4 @@ job_score.json
 
 *.zip
 *.png
+data_folder/plain_text_resume.yaml

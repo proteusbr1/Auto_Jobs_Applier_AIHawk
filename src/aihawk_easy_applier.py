@@ -30,9 +30,9 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 
 from app_config import (
     MINIMUM_SCORE_JOB_APPLICATION,
-    USER_RESUME_SUMMARY,
     USE_JOB_SCORE,
 )
+from data_folder.personal_info import USER_RESUME_SUMMARY
 import src.utils as utils
 from src.llm.llm_manager import GPTAnswerer
 from loguru import logger
@@ -89,6 +89,7 @@ class AIHawkEasyApplier:
             location=job.location,
             link=job.link,
             apply_method=job.apply_method,
+            salary=job.salary,
             description=job.description,
             recruiter_link=job.recruiter_link,
         )
@@ -98,6 +99,7 @@ class AIHawkEasyApplier:
             self.driver.get(job.link)
             self._check_for_premium_redirect(job)
             job.description = self._get_job_description()
+            job.salary = self._get_job_salary()
             # job.recruiter_link = self._get_job_recruiter()
 
             if USE_JOB_SCORE:
@@ -183,6 +185,7 @@ class AIHawkEasyApplier:
                 f"Redirected to LinkedIn Premium page and failed to return after {max_attempts} attempts. Job application aborted."
             )
 
+
     def _get_job_description(self) -> str:
         """
         Retrieves the job description from the job page.
@@ -193,14 +196,7 @@ class AIHawkEasyApplier:
         try:
             try:
                 # Wait until the 'See more description' button is clickable
-                see_more_button = self.wait.until(
-                    EC.element_to_be_clickable(
-                        (
-                            By.XPATH,
-                            '//button[@aria-label="Click to see more description"]',
-                        )
-                    )
-                )
+                see_more_button = self.wait.until(EC.element_to_be_clickable((By.XPATH,'//button[@aria-label="Click to see more description"]',)))
                 actions = ActionChains(self.driver)
                 actions.move_to_element(see_more_button).click().perform()
                 logger.debug(
@@ -235,6 +231,29 @@ class AIHawkEasyApplier:
                 f"Unexpected error in _get_job_description: {e}", exc_info=True
             )
             raise Exception("Error getting job description") from e
+
+    def _get_job_salary(self) -> str:
+        """
+        Retrieves the job salary from the job page.
+
+        :return: The job salary text.
+        """
+        logger.debug("Getting job salary")
+        try:
+            salary_element = self.driver.find_element(By.XPATH,"//li[contains(@class, 'job-insight--highlight')]//span[@dir='ltr']")
+            salary = salary_element.text.strip()
+            if salary:
+                logger.info(f"Job salary retrieved successfully: {salary}")
+                return salary
+            else:
+                logger.warning("Salary element found but text is empty")
+                return ""
+        except NoSuchElementException:
+            logger.warning("Salary element not found.")
+            return ""
+        except Exception as e:
+            logger.warning(f"Unexpected error in _get_job_salary: {e}", exc_info=True)
+            return ""
 
     def _get_job_recruiter(self):
         """
