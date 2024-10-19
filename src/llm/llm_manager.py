@@ -22,7 +22,7 @@ from langchain_core.prompts import ChatPromptTemplate
 import src.strings as strings
 from src.job import Job
 from loguru import logger
-from data_folder.personal_info import USER_RESUME_SUMMARY
+from data_folder.personal_info import USER_RESUME_SUMMARY, SALARY_EXPECTATIONS
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -645,6 +645,7 @@ class GPTAnswerer:
         self.ai_adapter = AIAdapter(config, llm_api_key)
         self.llm_cheap = LoggerChatModel(self.ai_adapter)
         self.job = None
+        self.resume = self.format_resume(USER_RESUME_SUMMARY)
         logger.debug("GPTAnswerer initialized.")
 
     @property
@@ -710,7 +711,9 @@ class GPTAnswerer:
                 apply_method: str,
                 salary: Optional[str] = "",
                 description: Optional[str] = "", 
-                recruiter_link: Optional[str] = ""):
+                recruiter_link: Optional[str] = "",
+                gpt_salary: Optional[float] = None
+                ):
         """
         Set the job details for the GPTAnswerer.
 
@@ -753,7 +756,8 @@ class GPTAnswerer:
             apply_method=apply_method,
             salary=salary,
             description=description,
-            recruiter_link=recruiter_link
+            recruiter_link=recruiter_link,
+            gpt_salary=gpt_salary,
         )
         logger.debug(f"Job object set: {self.job}")
 
@@ -1150,7 +1154,7 @@ Provide only the exact name of the section from the list above with no additiona
             logger.error(f"Error while getting response from ChatGPT: {e}")
             raise
 
-    def evaluate_job(self, job: Job, resume_prompt: str) -> float:
+    def evaluate_job(self, job: Job) -> float:
         """
         Evaluate the compatibility between a job description and a resume.
 
@@ -1170,27 +1174,28 @@ Provide only the exact name of the section from the list above with no additiona
         job_description = job.description
         job_title = job.title
         job_salary = job.salary
+        resume_summary = self.resume
 
         # Create the prompt for evaluating the job and resume
         prompt = f"""
-You are a Human Resources expert specializing in evaluating job applications for the American job market. Your task is to assess the compatibility between the following job description and a provided resume. 
-Return only a score from 0 to 10 representing the candidate's likelihood of securing the position, with 0 being the lowest probability and 10 being the highest. 
-The assessment should consider HR-specific criteria for the American job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
+        You are a Human Resources expert specializing in evaluating job applications for the American job market. Your task is to assess the compatibility between the following job description and a provided resume. 
+        Return only a score from 0 to 10 representing the candidate's likelihood of securing the position, with 0 being the lowest probability and 10 being the highest. 
+        The assessment should consider HR-specific criteria for the American job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
 
-Job Title: 
-{job_title}
+        Job Title: 
+        ({job_title})
 
-Job Salary:
-{job_salary}
+        Job Salary:
+        ({job_salary})
 
-Job Description:
-{job_description}
+        Job Description:
+        ({job_description})
 
-Resume:
-{resume_prompt}
+        My Resume:
+        ({resume_summary})
 
-Score (0 to 10):
-"""
+        Score (0 to 10):
+        """
 
         logger.debug("Sending job description and resume to GPT for evaluation")
 
@@ -1208,7 +1213,7 @@ Score (0 to 10):
                     return score
                 else:
                     logger.error(f"Score out of expected range (0-10): {score}")
-                    return 0.0  # Returns 0.0 if the score is out of the expected range
+                    return 0.1  # Returns 0.0 if the score is out of the expected range
             else:
                 logger.error(f"Could not find a valid score in response: {response}")
                 return 0.1  # Returns 0.1 if no valid score is found
@@ -1216,6 +1221,72 @@ Score (0 to 10):
         except Exception as e:
             logger.error(f"Error processing the score from response: {e}", exc_info=True)
             return 0.1  # Returns 0.1 in case of an error
+
+    def estimate_salary(self, job: Job) -> float:
+        """
+        Estimate the salary that might be offered to the user for a given job, based on the job description and resume.
+        
+        Args:
+            job (Job): The job object containing the job description.
+            resume_summary (str): The user's resume summary.
+        
+        Returns:
+            float: The estimated salary.
+        """
+        logger.debug("Estimating salary based on job description and resume.")
+        try:
+            resume_summary = self.resume
+            salary_expectation_line = f"salary expectation: {SALARY_EXPECTATIONS}\n"
+            resume_summary = f"{salary_expectation_line}{resume_summary}"
+            
+            # Create the prompt to ask ChatGPT
+            prompt = f"""
+             You are a Human Resources expert specializing in evaluating job applications for the American job market.
+             Given the job description and the candidate's resume below, estimate the annual salary in US dollars that the employer is likely to offer to this candidate. 
+             Provide your answer as a single number, representing the annual salary in US dollars, without any additional text, units, currency symbols, or ranges. 
+             If the salary is given as a range, return only the highest value in the range. Do not include any explanations.
+
+            Job Title:
+            ({job.title})
+
+            Job Salary:
+            ({job.salary})
+
+            Job Description:
+            ({job.description})
+
+            My Resume:
+            ({resume_summary})
+
+            Estimated annual Salary (in US dollars):
+            """
+
+            # Use the function ask_chatgpt to get the estimated salary
+            response = self.ask_chatgpt(prompt)
+            logger.debug(f"Received salary estimation from GPT: {response}")
+
+            # Process the response to extract the salary
+            # Remove any non-digit characters except for periods and commas
+            salary_str = re.sub(r'[^\d.,]', '', response)
+            # Replace commas with nothing
+            salary_str = salary_str.replace(',', '')
+
+            # If the salary_str contains a range (e.g., "70000-90000"), split and take the highest value
+            if '-' in salary_str:
+                parts = salary_str.split('-')
+                # Take the highest value
+                highest_salary = max(float(part.strip()) for part in parts if part.strip())
+                logger.debug(f"Extracted highest salary from range: {highest_salary}")
+                return highest_salary
+            else:
+                # Convert to float
+                salary = float(salary_str)
+                logger.debug(f"Extracted salary: {salary}")
+                return salary
+
+        except Exception as e:
+            logger.error(f"Error estimating salary: {e}", exc_info=True)
+            return 0.1  # Return 0.0 in case of an error
 
     def answer_question_date(self, question: str) -> datetime:
         """
@@ -1280,6 +1351,7 @@ Score (0 to 10):
                     location=job.location,
                     link=job.link,
                     apply_method=job.apply_method,
+                    salary=job.salary,
                     description=job.description,
                     recruiter_link=job.recruiter_link,
                 )
@@ -1301,6 +1373,9 @@ Score (0 to 10):
             Job Title:
             ({job_title})
 
+            Job Salary:
+            ({job_salary})
+
             Job Description:
             ({job_description})
 
@@ -1314,14 +1389,14 @@ Score (0 to 10):
             """
             
             # Prepare the prompt USER_RESUME_SUMMARY
-            today_date = datetime.now().strftime("%Y-%m-%d")  # Formato YYYY-MM-DD
-            formatted_resume = USER_RESUME_SUMMARY.replace("{today_date}", today_date)
+            formatted_resume = self.resume
 
             # Prepare the prompt with the necessary information
             prompt = ChatPromptTemplate.from_template(prompt_template)
             formatted_prompt = prompt.format(
                 limit_caractere=limit_caractere,
                 job_title=self.job.title,
+                job_salary=self.job.salary,
                 job_description=self.job.description,
                 resume=formatted_resume,
                 question=question
@@ -1350,3 +1425,15 @@ Score (0 to 10):
         except Exception as e:
             logger.error(f"Error answering the simple question: {e}", exc_info=True)
             raise
+
+    def format_resume(self, resume_summary: str) -> str:
+        """
+        Prepends today's date to the resume summary.
+
+        :param resume_summary: The original resume summary.
+        :return: The updated resume summary with today's date at the beginning.
+        """
+        today_date = datetime.now().strftime("%Y-%m-%d")
+        date_line = f"today date: {today_date} YYYY-MM-DD\n"
+        updated_resume = f"{date_line}{resume_summary}"
+        return updated_resume

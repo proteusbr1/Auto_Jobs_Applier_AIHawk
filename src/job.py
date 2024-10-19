@@ -20,6 +20,7 @@ class Job:
     recruiter_link: str = ""
     position: str = ""
     score: Optional[float] = None
+    gpt_salary: Optional[float] = None
 
     def set_summarize_job_description(self, summarize_job_description: str) -> None:
         logger.debug("Setting summarized job description.")

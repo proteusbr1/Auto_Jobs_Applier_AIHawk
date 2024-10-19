@@ -29,10 +29,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
 from app_config import (
-    MINIMUM_SCORE_JOB_APPLICATION,
+    MIN_SCORE_APPLY,
     USE_JOB_SCORE,
+    USE_SALARY_EXPECTATIONS,
 )
-from data_folder.personal_info import USER_RESUME_SUMMARY
+from data_folder.personal_info import USER_RESUME_SUMMARY, SALARY_EXPECTATIONS
 import src.utils as utils
 from src.llm.llm_manager import GPTAnswerer
 from loguru import logger
@@ -92,6 +93,7 @@ class AIHawkEasyApplier:
             salary=job.salary,
             description=job.description,
             recruiter_link=job.recruiter_link,
+            gpt_salary=job.gpt_salary,
         )
         logger.debug("Job set in GPTAnswerer successfully.")
 
@@ -105,15 +107,26 @@ class AIHawkEasyApplier:
             if USE_JOB_SCORE:
                 logger.debug("Evaluating job score using GPT.")
                 if job.score is None:
-                    job.score = self.gpt_answerer.evaluate_job(job, USER_RESUME_SUMMARY)
+                    job.score = self.gpt_answerer.evaluate_job(job)
                     logger.debug(f"Job score is: {job.score}")
                     utils.write_to_file(job, "job_score")
 
-                if job.score < MINIMUM_SCORE_JOB_APPLICATION:
-                    logger.info(f"Score is {job.score}. Skipping application.")
-                    return False
+                if job.score >= MIN_SCORE_APPLY:
+                    logger.info(f"Job score is {job.score}. Proceeding with the application.")
+                    if USE_SALARY_EXPECTATIONS:
+                        job.gpt_salary = self.gpt_answerer.estimate_salary(job)
+                        if SALARY_EXPECTATIONS > job.gpt_salary:
+                            logger.info(f"Estimated salary {job.gpt_salary} is below desired salary {SALARY_EXPECTATIONS}. Skipping application.")
+                            utils.write_to_file(job, "skipped_low_salary.json")
+                            return False
+                        else:
+                            logger.info(f"Estimated salary {job.gpt_salary} is within desired salary {SALARY_EXPECTATIONS}. Proceeding with the application.")
+                    else:
+                        logger.info(f"Estimated salary {job.gpt_salary} is not checked. Proceeding with the application")
                 else:
-                    logger.info(f"Score is {job.score}. Proceeding with the application.")
+                    logger.info(f"Score is {job.score}. Skipping application.")
+                    utils.write_to_file(job, "skipped_low_score.json")
+                    return False
 
             try:
                 easy_apply_button = self._find_easy_apply_button(job)
@@ -247,7 +260,7 @@ class AIHawkEasyApplier:
                 return salary
             else:
                 logger.warning("Salary element found but text is empty")
-                return ""
+                return "Not specified"
         except NoSuchElementException:
             logger.warning("Salary element not found.")
             return ""

@@ -302,6 +302,7 @@ def write_to_file(job, file_name):
         "recruiter_link": job.recruiter_link,
         "search_term": job.position,
         "score": job.score,  
+        "gpt_salary": job.gpt_salary,
         "timestamp": current_time
     }
     

@@ -11,7 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 import src.utils as utils
-from app_config import MINIMUM_WAIT_TIME, MINIMUM_SCORE_JOB_APPLICATION, USE_JOB_SCORE
+from app_config import MINIMUM_WAIT_TIME, MIN_SCORE_APPLY , USE_JOB_SCORE
 from data_folder.personal_info import USER_RESUME_SUMMARY
 from src.job import Job
 from src.aihawk_easy_applier import AIHawkEasyApplier
@@ -242,7 +242,7 @@ class AIHawkJobManager:
                     logger.debug(f"Job already scored: '{job.title}' at '{job.company}'.")
                     job.score = self.get_existing_score(job)
                 
-                if job.score is not None and job.score < MINIMUM_SCORE_JOB_APPLICATION:
+                if job.score is not None and job.score < MIN_SCORE_APPLY :
                     logger.debug(f"Skipping by low score: {job.score}")
                     continue
 
