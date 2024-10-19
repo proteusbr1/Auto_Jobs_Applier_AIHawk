@@ -1,9 +1,11 @@
+# aihawk_job_manager.py
 import json
 import os
 import random
 from itertools import product
 from pathlib import Path
 import time
+from typing import Set
 
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, WebDriverException
 from selenium.webdriver.common.by import By
@@ -13,7 +15,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import src.utils as utils
 from app_config import MINIMUM_WAIT_TIME, MIN_SCORE_APPLY , USE_JOB_SCORE
 from data_folder.personal_info import USER_RESUME_SUMMARY
-from src.job import Job
+from src.job import Job, JobCache
 from src.aihawk_easy_applier import AIHawkEasyApplier
 from loguru import logger
 
@@ -48,8 +50,6 @@ class AIHawkJobManager:
         self.seen_jobs = []
         self.title_blacklist_set = set()
         self.company_blacklist_set = set()
-        self.output_files_cache = {}
-        self.applied_companies_cache = set()
         logger.debug("AIHawkJobManager initialized successfully")
 
     def set_parameters(self, parameters):
@@ -72,7 +72,11 @@ class AIHawkJobManager:
         self.resume_path = Path(resume_path) if resume_path and Path(resume_path).exists() else None
         self.output_file_directory = Path(parameters["outputFileDirectory"])
         self.env_config = EnvironmentKeys()
+
+        self.cache = JobCache(self.output_file_directory)
+
         logger.debug("Parameters set successfully")
+
     def set_gpt_answerer(self, gpt_answerer):
         logger.debug("Setting GPT answerer")
         self.gpt_answerer = gpt_answerer
@@ -88,7 +92,8 @@ class AIHawkJobManager:
             self.resume_path,
             self.set_old_answers,
             self.gpt_answerer,
-            self.resume_generator_manager
+            self.resume_generator_manager,
+            cache=self.cache,
         )
         searches = list(product(self.positions, self.locations))
         random.shuffle(searches)
@@ -233,22 +238,19 @@ class AIHawkJobManager:
 
             # Check if the job must be skipped
             if self.must_be_skipped(job):
-                logger.debug(f"Skipping job blacklisted: {job.link}")
+                logger.debug(f"Skipping job based on blacklist: {job.link}")
                 continue 
-            
+
             # Check if the job has already been scored
             if USE_JOB_SCORE:
-                if self.is_already_scored(job):
+                if self.cache.is_in_job_score(job.link):
                     logger.debug(f"Job already scored: '{job.title}' at '{job.company}'.")
                     job.score = self.get_existing_score(job)
                 
-                if job.score is not None and job.score < MIN_SCORE_APPLY :
-                    logger.debug(f"Skipping by low score: {job.score}")
-                    continue
-
             try:
                 if self.easy_applier_component.main_job_apply(job):
-                    utils.write_to_file(job, "success")
+                    self.cache.write_to_file(job, "success")
+                    self.cache.add_to_cache(job, 'success')
                     logger.info(f"Applied: {job.link}")
 
             except Exception as e:
@@ -695,13 +697,23 @@ class AIHawkJobManager:
             return True
 
         # Check if the link has already been seen
-        if self._is_link_seen(link):
+        if self.cache.is_seen(link):
             logger.debug(f"Skipping by seen link: {link}")
             return True
-
-        # Check if the job has already been applied to the company
-        if self._is_already_applied_to_company(company):
-            logger.debug(f"Skipping by company application policy: {company}")
+       
+        # Check if the job has already been skipped
+        if self.cache.is_in_skipped_low_salary(job.link):
+            logger.info(f"Job has already been skipped for low salary: {job.link}")
+            return True
+        
+        # Check if the job has already been skipped
+        if self.cache.is_in_skipped_low_score(job.link):
+            logger.info(f"Job has already been skipped for low score: {job.link}")
+            return True
+        
+        # Check if the job has already been applied
+        if self.cache.is_in_success(job.link):
+            logger.info(f"Job has already been applied: {job.link}")
             return True
 
         logger.debug("Job does not meet any skip conditions.")
@@ -786,106 +798,3 @@ class AIHawkJobManager:
             logger.debug(f"Job link '{link}' has already been processed.")
 
         return is_seen
-
-    def _is_already_applied_to_company(self, company: str) -> bool:
-        """
-        Determines if an application has already been submitted to the company's jobs,
-        based on a one-application-per-company policy.
-
-        Args:
-            company (str): The company name to evaluate.
-
-        Returns:
-            bool: True if already applied to the company, False otherwise.
-        """
-        logger.debug("Checking if job has already been applied at the company.")
-        company = company.strip().lower()
-
-        if not self.apply_once_at_company:
-            logger.debug("apply_once_at_company is disabled. Skipping check.")
-            return False
-
-        # Check cache first
-        if company in self.applied_companies_cache:
-            logger.debug(
-                f"Company '{company}' is already in the applied companies cache. Skipping."
-            )
-            return True
-
-        output_files = ["success.json"]
-        for file_name in output_files:
-            file_path = self.output_file_directory / file_name
-            if not file_path.exists():
-                logger.debug(f"Output file '{file_path}' does not exist. Skipping.")
-                continue
-
-            try:
-                if file_path in self.output_files_cache:
-                    existing_data = self.output_files_cache[file_path]
-                else:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        existing_data = json.load(f)
-                        self.output_files_cache[file_path] = existing_data
-
-                if not isinstance(existing_data, list):
-                    logger.warning(f"Unexpected data format in '{file_path}'. Expected a list.")
-                    continue
-
-                for applied_job in existing_data:
-                    if not isinstance(applied_job, dict):
-                        logger.warning(f"Invalid job entry format in '{file_path}': {applied_job}. Skipping entry.")
-                        continue
-                    applied_company = applied_job.get("company", "").strip().lower()
-                    if not applied_company:
-                        logger.warning(f"Missing 'company' key in job entry: {applied_job}. Skipping entry.")
-                        continue
-                    if applied_company == company:
-                        logger.debug(
-                            f"Already applied at '{company}' (once per company policy). Skipping."
-                        )
-                        self.applied_companies_cache.add(company)
-                        return True
-            except json.JSONDecodeError:
-                logger.error(f"JSON decode error in file: {file_path}. Skipping file.")
-                continue
-            except Exception as e:
-                logger.error(f"Error reading file '{file_path}': {e}", exc_info=True)
-                continue
-
-        logger.debug(f"No previous applications found for company '{company}'.")
-        return False
-    
-    def is_already_scored(self, job):
-        """
-        Checks if the job has already been scored (skipped previously) and is in the job_score.json file.
-        """
-        logger.debug(f"Checking if job is already scored.")
-        job_title = job.title 
-        company = job.company
-        link = job.link
-        file_path = self.output_file_directory / 'job_score.json'
-
-        # Early exit if the file doesn't exist
-        if not file_path.exists():
-            logger.debug("job_score.json does not exist. Job has not been scored.")
-            return False
-
-        # Load the scored jobs from the file
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                scored_jobs = json.load(f)
-        except json.JSONDecodeError:
-            logger.warning("job_score.json is corrupted. Considering job as not scored.")
-            return False
-        except Exception as e:
-            logger.error(f"Error reading job_score.json: {e}", exc_info=True)
-            return False
-
-        # Check if the current job's link matches any scored job
-        for scored_job in scored_jobs:
-            if scored_job.get('link') == link:
-                logger.debug(f"Job already scored: Title='{job_title}', Company='{company}'.")
-                return True
-
-        logger.debug(f"Job not scored: Title='{job_title}', Company='{company}'.")
-        return False

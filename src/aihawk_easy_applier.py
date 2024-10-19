@@ -1,5 +1,4 @@
 # aihawk_easy_applier.py
-
 import base64
 import json
 import os
@@ -37,7 +36,7 @@ from data_folder.personal_info import USER_RESUME_SUMMARY, SALARY_EXPECTATIONS
 import src.utils as utils
 from src.llm.llm_manager import GPTAnswerer
 from loguru import logger
-from src.job import Job
+from src.job import Job, JobCache
 
 
 class AIHawkEasyApplier:
@@ -53,6 +52,7 @@ class AIHawkEasyApplier:
         gpt_answerer: GPTAnswerer,
         resume_generator_manager,
         wait_time: int = 10,
+        cache: JobCache = None,
     ):
         logger.debug("Initializing AIHawkEasyApplier")
         if resume_dir is None or not os.path.exists(resume_dir):
@@ -66,6 +66,7 @@ class AIHawkEasyApplier:
         self.set_old_answers = set_old_answers
         self.gpt_answerer = gpt_answerer
         self.resume_generator_manager = resume_generator_manager
+        self.cache = cache
         self.all_questions = self._load_questions_from_json()
 
         logger.debug("AIHawkEasyApplier initialized successfully")
@@ -109,7 +110,8 @@ class AIHawkEasyApplier:
                 if job.score is None:
                     job.score = self.gpt_answerer.evaluate_job(job)
                     logger.debug(f"Job score is: {job.score}")
-                    utils.write_to_file(job, "job_score")
+                    self.cache.add_to_cache(job, "job_score")
+                    self.cache.write_to_file(job, "job_score")
 
                 if job.score >= MIN_SCORE_APPLY:
                     logger.info(f"Job score is {job.score}. Proceeding with the application.")
@@ -117,7 +119,8 @@ class AIHawkEasyApplier:
                         job.gpt_salary = self.gpt_answerer.estimate_salary(job)
                         if SALARY_EXPECTATIONS > job.gpt_salary:
                             logger.info(f"Estimated salary {job.gpt_salary} is below desired salary {SALARY_EXPECTATIONS}. Skipping application.")
-                            utils.write_to_file(job, "skipped_low_salary.json")
+                            self.cache.add_to_cache(job, "skipped_low_salary")
+                            self.cache.write_to_file(job, "skipped_low_salary")
                             return False
                         else:
                             logger.info(f"Estimated salary {job.gpt_salary} is within desired salary {SALARY_EXPECTATIONS}. Proceeding with the application.")
@@ -125,7 +128,8 @@ class AIHawkEasyApplier:
                         logger.info(f"Estimated salary {job.gpt_salary} is not checked. Proceeding with the application")
                 else:
                     logger.info(f"Score is {job.score}. Skipping application.")
-                    utils.write_to_file(job, "skipped_low_score.json")
+                    self.cache.add_to_cache(job, "skipped_low_score")
+                    self.cache.write_to_file(job, "skipped_low_score")
                     return False
 
             try:

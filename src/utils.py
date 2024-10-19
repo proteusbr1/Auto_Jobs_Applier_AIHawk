@@ -279,58 +279,6 @@ def chrome_browser_options():
         logger.debug("Using Chrome in incognito mode")
 
     return options
-    
-def write_to_file(job, file_name):
-    logger.debug(f"Writing job application result to file: '{file_name}'.")
-    pdf_path = Path(job.pdf_path).resolve()
-    pdf_path = pdf_path.as_uri()
-    
-    # Get current date and time
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    data = {
-        "title": job.title,
-        "company": job.company,
-        "location": job.location,
-        "link": job.link,
-        "apply_method": job.apply_method,
-        "state": job.state,
-        "salary": job.salary,
-        # "description": job.description,
-        # "summarize_job_description": job.summarize_job_description,	
-        "pdf_path": pdf_path,
-        "recruiter_link": job.recruiter_link,
-        "search_term": job.position,
-        "score": job.score,  
-        "gpt_salary": job.gpt_salary,
-        "timestamp": current_time
-    }
-    
-    file_path = Path("data_folder") / "output" / f"{file_name}.json"
-    
-    if not file_path.exists():
-        try:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump([data], f, indent=4)
-            logger.debug(f"Job data written to new file: '{file_name}'.")
-        except Exception as e:
-            logger.error(f"Failed to write to new file '{file_name}': {e}", exc_info=True)
-    else:
-        try:
-            with open(file_path, 'r+', encoding='utf-8') as f:
-                try:
-                    existing_data = json.load(f)
-                except json.JSONDecodeError:
-                    logger.error(f"JSON decode error in file: {file_path}. Initializing with empty list.")
-                    existing_data = []
-                
-                existing_data.append(data)
-                f.seek(0)
-                json.dump(existing_data, f, indent=4)
-                f.truncate()
-            logger.debug(f"Job data appended to existing file: '{file_name}'.")
-        except Exception as e:
-            logger.error(f"Failed to append to file '{file_name}': {e}", exc_info=True)
 
 def capture_screenshot(driver,name: str) -> None:
     """
