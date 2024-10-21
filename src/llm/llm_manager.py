@@ -645,7 +645,7 @@ class GPTAnswerer:
         self.ai_adapter = AIAdapter(config, llm_api_key)
         self.llm_cheap = LoggerChatModel(self.ai_adapter)
         self.job = None
-        self.resume = self.format_resume(USER_RESUME_SUMMARY)
+        self.resume_summary = self.format_resume(USER_RESUME_SUMMARY)
         logger.debug("GPTAnswerer initialized.")
 
     @property
@@ -1174,7 +1174,7 @@ Provide only the exact name of the section from the list above with no additiona
         job_description = job.description
         job_title = job.title
         job_salary = job.salary
-        resume_summary = self.resume
+        resume_summary = self.resume_summary
 
         # Create the prompt for evaluating the job and resume
         prompt = f"""
@@ -1235,7 +1235,7 @@ Provide only the exact name of the section from the list above with no additiona
         """
         logger.debug("Estimating salary based on job description and resume.")
         try:
-            resume_summary = self.resume
+            resume_summary = self.resume_summary
             salary_expectation_line = f"salary expectation: {SALARY_EXPECTATIONS}\n"
             resume_summary = f"{salary_expectation_line}{resume_summary}"
             
@@ -1388,9 +1388,6 @@ Provide only the exact name of the section from the list above with no additiona
             Answer:
             """
             
-            # Prepare the prompt USER_RESUME_SUMMARY
-            formatted_resume = self.resume
-
             # Prepare the prompt with the necessary information
             prompt = ChatPromptTemplate.from_template(prompt_template)
             formatted_prompt = prompt.format(
@@ -1398,7 +1395,7 @@ Provide only the exact name of the section from the list above with no additiona
                 job_title=self.job.title,
                 job_salary=self.job.salary,
                 job_description=self.job.description,
-                resume=formatted_resume,
+                resume=self.resume_summary,
                 question=question
             )
             

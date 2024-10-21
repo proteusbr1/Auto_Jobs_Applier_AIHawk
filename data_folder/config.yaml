@@ -158,6 +158,8 @@ company_blacklist:
   - TORKLAW
   - Mindrift
   - Impact HealthCare
+  - AO Globe Life
+  - Tubre Family Financial
 
 title_blacklist:
   - Attorney
@@ -190,6 +192,9 @@ title_blacklist:
   - Registered
   - Therapist
   - Therapists
+  - Sales
+  - Telesales
+  - Sales-
 
 job_applicants_threshold:
   min_applicants: 0

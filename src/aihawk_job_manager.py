@@ -161,7 +161,7 @@ class AIHawkJobManager:
                 banner_text = no_results_banner.text.lower()
                 logger.debug(f"No results banner text: '{banner_text}'.")
                 if 'no matching jobs found' in banner_text or "unfortunately, things aren't" in banner_text:
-                    logger.debug("No matching jobs found on this search.")
+                    logger.info("No matching jobs found on this search.")
                     return []
 
             # Caso contrário, assumir que os resultados de empregos estão presentes
@@ -174,11 +174,11 @@ class AIHawkJobManager:
 
                 # Scroll otimizado para carregar todos os elementos de trabalho
                 logger.debug("Initiating optimized scroll to load all job elements.")
-                self.scroll_jobs(self.driver)
+                self.scroll_jobs()
                 logger.debug("Scrolling completed.")
 
                 job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
-                logger.debug(f"Found {len(job_list_elements)} job elements on the page.")
+                logger.info(f"Found {len(job_list_elements)} job elements on the page.")
 
                 if not job_list_elements:
                     logger.error("No job elements found on the page, skipping.")
@@ -259,51 +259,58 @@ class AIHawkJobManager:
                         f"Location='{job.location}', Link='{job.link}', Job State='{job.state}', Apply Method='{job.apply_method}', "
                         f"Error: {e}"
                     )
-                utils.write_to_file(job, "failed")
 
             # Add job link to seen jobs set
-            self.seen_jobs.append(job.link)
+            # self.seen_jobs.append(job.link)
+            self.cache.add_to_cache(job, "is_seen")
 
     def scroll_jobs(
         self,
-        driver, 
-        locator=(By.CLASS_NAME, 'jobs-search-results-list'), 
         step=300, 
         reverse=False, 
-        max_attempts=10, 
-        wait_time=10
+        max_attempts=10,
     ):
         """
         Function to slowly scroll a scrollable element on the page until all job listings are loaded.
 
         Parameters:
-        - driver: WebDriver instance.
-        - locator: Tuple with method and value to locate the scrollable container.
         - step: Number of pixels to scroll at each step.
         - reverse: If True, scrolls up; otherwise, scrolls down.
         - max_attempts: Maximum number of attempts without new items before stopping.
-        - wait_time: Maximum wait time to locate elements.
 
         Returns:
         - True if scrolling was completed successfully.
         - False if scrolling failed.
         """
         logger.debug("Starting scroll_jobs.")
-        
+
+        # Define locators
+        locator = (By.CLASS_NAME, 'jobs-search-results-list')
+        loader_locator = (By.CLASS_NAME, 'artdeco-loader')
+        job_title_locator = (By.XPATH, ".//a[contains(@class, 'job-card-list__title')]")
+
         if step <= 0:
             logger.error("The step value must be positive.")
             raise ValueError("Step must be positive.")
 
         try:
-            wait = WebDriverWait(driver, wait_time)
+            # Wait for the initial loader to disappear before searching for the scrollable element
+            if not self.wait_for_loader(loader_locator):
+                logger.debug("Proceeding even though the initial loader did not disappear.")
+
+            # Use the pre-configured self.wait to locate the scrollable element
             try:
-                scrollable_element = wait.until(
+                scrollable_element = self.wait.until(
                     EC.visibility_of_element_located(locator)
                 )
                 logger.debug("Scrollable element found and is visible on the page.")
             except TimeoutException:
-                logger.warning(f"Element with locator {locator} not found after {wait_time} seconds.")
+                logger.warning(f"Element with locator {locator} not found within the wait time.")
                 return False  # Exit the function if the element is not found
+
+            # Wait for the loader to disappear after locating the scrollable element
+            if not self.wait_for_loader(loader_locator):
+                logger.debug("Proceeding even though the loader did not disappear after locating the scrollable element.")
 
             # Check if the element is scrollable
             try:
@@ -311,7 +318,7 @@ class AIHawkJobManager:
                 client_height = int(scrollable_element.get_attribute("clientHeight"))
                 if scroll_height <= client_height:
                     logger.info("The located element is not scrollable.")
-                    utils.capture_screenshot(driver, "element_not_scrollable")
+                    utils.capture_screenshot("element_not_scrollable")
                     return False
                 logger.debug(f"Scrollability check: scrollHeight={scroll_height}, clientHeight={client_height}, scrollable=True")
             except Exception as e:
@@ -321,41 +328,47 @@ class AIHawkJobManager:
             if not scrollable_element.is_displayed():
                 logger.warning("The element is not visible. Trying to bring it into view.")
                 try:
-                    driver.execute_script("arguments[0].scrollIntoView(true);", scrollable_element)
+                    self.driver.execute_script("arguments[0].scrollIntoView(true);", scrollable_element)
                     time.sleep(1)  # Wait for the element to become visible
                     if not scrollable_element.is_displayed():
                         logger.warning("The element is still not visible after trying to bring it into view.")
-                        utils.capture_screenshot(driver, "element_not_visible_after_scroll")
+                        utils.capture_screenshot("element_not_visible_after_scroll")
                         return False
                     else:
                         logger.debug("Element is now visible after bringing it into view.")
                 except WebDriverException as e:
                     logger.error(f"Failed to bring the element into view: {e}", exc_info=True)
-                    utils.capture_screenshot(driver, "scroll_into_view_failed")
+                    utils.capture_screenshot("scroll_into_view_failed")
                     return False
 
             # Initialize counters
             previous_job_count = 0
             attempts = 0
-            job_title_locator = (By.XPATH, ".//a[contains(@class, 'job-card-list__title')]")
+            
 
             while attempts < max_attempts:
+                # Wait for the loader to disappear before scrolling
+                if not self.wait_for_loader(loader_locator):
+                    logger.debug("Proceeding even though the loader did not disappear before scrolling.")
+
                 # Get current scroll position
                 current_scroll_position = scrollable_element.get_attribute("scrollTop")
                 new_scroll_position = int(current_scroll_position) + step if not reverse else int(current_scroll_position) - step
-                driver.execute_script("arguments[0].scrollTop = arguments[1];", scrollable_element, new_scroll_position)
+                self.driver.execute_script("arguments[0].scrollTop = arguments[1];", scrollable_element, new_scroll_position)
                 logger.debug(f"Scrolled to position: {new_scroll_position}")
-                time.sleep(random.uniform(0.5, 1.0))  # Wait for new content to load
 
-                # Count the current number of job items
-                job_items = driver.find_elements(*job_title_locator)
+                # Wait for the loader to disappear after scrolling
+                if not self.wait_for_loader(loader_locator):
+                    logger.debug("Proceeding even though the loader is still visible after scrolling.")
+
+                # Count the current number of job items within the scrollable element
+                job_items = self.driver.find_elements(*job_title_locator)
                 current_job_count = len(job_items)
                 logger.debug(f"Current number of job items: {current_job_count}")
 
-                # Check if the end of the scroll has been reached
+                # Check if the desired number of job items has been reached
                 if current_job_count >= 25:
                     logger.debug("25 job items detected.")
-                    time.sleep(random.uniform(1.0, 2.0))
                     break
 
                 if current_job_count > previous_job_count:
@@ -364,6 +377,7 @@ class AIHawkJobManager:
                     attempts = 0  # Reset attempts if new items are found
                 else:
                     attempts += 1
+                    time.sleep(0.5)
                     logger.debug(f"No new items detected. Attempt {attempts}/{max_attempts}.")
 
             logger.debug("Scrolling completed. All job items have been loaded.")
@@ -371,6 +385,27 @@ class AIHawkJobManager:
 
         except Exception as e:
             logger.error(f"Error during job scrolling: {e}", exc_info=True)
+            return False
+
+    def wait_for_loader(self, loader_locator, timeout=10):
+        """
+        Helper method to wait for the loader element to disappear.
+
+        Parameters:
+        - loader_locator: Tuple with method and value to locate the loader element.
+        - timeout: Maximum time to wait for the loader to disappear.
+
+        Returns:
+        - True if the loader disappeared within the timeout.
+        - False otherwise.
+        """
+        try:
+            local_wait = WebDriverWait(self.driver, timeout)
+            local_wait.until(EC.invisibility_of_element_located(loader_locator))
+            logger.debug("Loader has disappeared.")
+            return True
+        except TimeoutException:
+            logger.warning("Loader did not disappear within the wait time.")
             return False
 
     def get_existing_score(self, job):
@@ -676,6 +711,26 @@ class AIHawkJobManager:
         company = job.company
         link = job.link
 
+        # Check if the link has already been seen
+        if self.cache.is_in_is_seen(link):
+            logger.debug(f"Skipping by seen link: {link}")
+            return True
+       
+        # Check if the job has already been skipped
+        if self.cache.is_in_skipped_low_salary(job.link):
+            logger.debug(f"Job has already been skipped for low salary: {job.link}")
+            return True
+        
+        # Check if the job has already been skipped
+        if self.cache.is_in_skipped_low_score(job.link):
+            logger.debug(f"Job has already been skipped for low score: {job.link}")
+            return True
+        
+        # Check if the job has already been applied
+        if self.cache.is_in_success(job.link):
+            logger.debug(f"Job has already been applied: {job.link}")
+            return True
+        
         # Check if job state is Applied, Continue, or Apply
         if self._is_job_state_invalid(job):
             logger.debug(f"Skipping by state: {job.state}")
@@ -694,26 +749,6 @@ class AIHawkJobManager:
         # Check Company Blacklist
         if self._is_company_blacklisted(company):
             logger.debug(f"Skipping by company blacklist: {company}")
-            return True
-
-        # Check if the link has already been seen
-        if self.cache.is_seen(link):
-            logger.debug(f"Skipping by seen link: {link}")
-            return True
-       
-        # Check if the job has already been skipped
-        if self.cache.is_in_skipped_low_salary(job.link):
-            logger.info(f"Job has already been skipped for low salary: {job.link}")
-            return True
-        
-        # Check if the job has already been skipped
-        if self.cache.is_in_skipped_low_score(job.link):
-            logger.info(f"Job has already been skipped for low score: {job.link}")
-            return True
-        
-        # Check if the job has already been applied
-        if self.cache.is_in_success(job.link):
-            logger.info(f"Job has already been applied: {job.link}")
             return True
 
         logger.debug("Job does not meet any skip conditions.")

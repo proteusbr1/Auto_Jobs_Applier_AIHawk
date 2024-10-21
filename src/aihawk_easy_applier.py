@@ -72,19 +72,19 @@ class AIHawkEasyApplier:
         logger.debug("AIHawkEasyApplier initialized successfully")
 
     def main_job_apply(self, job: Job) -> bool:
-        """
+        """ 
         Main method to apply for a job.
-
+        
         :param job: The job object containing job details.
-        :return: True if application is successful, False otherwise.
+        :return: True if the application is successful, False otherwise.
         """
-        logger.debug(f"Open job: {job.link}")
-
+        logger.debug(f"Opening job: {job.link}")
+        
         if job is None:
             logger.error("Job object is None. Cannot apply.")
             return False
-
-        # Set up the job in GPTAnswerer before any evaluation or form filling
+        
+        # Set up the job in the GPTAnswerer before any evaluation or form filling
         self.gpt_answerer.set_job(
             title=job.title,
             company=job.company,
@@ -96,77 +96,69 @@ class AIHawkEasyApplier:
             recruiter_link=job.recruiter_link,
             gpt_salary=job.gpt_salary,
         )
-        logger.debug("Job set in GPTAnswerer successfully.")
-
+        logger.debug("Job successfully set up in GPTAnswerer.")
+        
         try:
             self.driver.get(job.link)
             self._check_for_premium_redirect(job)
             job.description = self._get_job_description()
             job.salary = self._get_job_salary()
             # job.recruiter_link = self._get_job_recruiter()
-
+            
             if USE_JOB_SCORE:
                 logger.debug("Evaluating job score using GPT.")
                 if job.score is None:
                     job.score = self.gpt_answerer.evaluate_job(job)
-                    logger.debug(f"Job score is: {job.score}")
+                    logger.debug(f"Job Score: {job.score}")
                     self.cache.add_to_cache(job, "job_score")
                     self.cache.write_to_file(job, "job_score")
-
+                
                 if job.score >= MIN_SCORE_APPLY:
                     logger.info(f"Job score is {job.score}. Proceeding with the application.")
                     if USE_SALARY_EXPECTATIONS:
                         job.gpt_salary = self.gpt_answerer.estimate_salary(job)
                         if SALARY_EXPECTATIONS > job.gpt_salary:
-                            logger.info(f"Estimated salary {job.gpt_salary} is below desired salary {SALARY_EXPECTATIONS}. Skipping application.")
+                            logger.info(f"Estimated salary {job.gpt_salary} is below expected {SALARY_EXPECTATIONS}. Skipping application.")
                             self.cache.add_to_cache(job, "skipped_low_salary")
                             self.cache.write_to_file(job, "skipped_low_salary")
                             return False
                         else:
-                            logger.info(f"Estimated salary {job.gpt_salary} is within desired salary {SALARY_EXPECTATIONS}. Proceeding with the application.")
+                            logger.info(f"Estimated salary {job.gpt_salary} is within expected {SALARY_EXPECTATIONS}. Proceeding with the application.")
                     else:
-                        logger.info(f"Estimated salary {job.gpt_salary} is not checked. Proceeding with the application")
+                        logger.info(f"Salary is not being verified. Proceeding with the application.")
                 else:
-                    logger.info(f"Score is {job.score}. Skipping application.")
+                    logger.info(f"Job score is {job.score}. Skipping application: {job.link}")
                     self.cache.add_to_cache(job, "skipped_low_score")
                     self.cache.write_to_file(job, "skipped_low_score")
                     return False
-
-            try:
-                easy_apply_button = self._find_easy_apply_button(job)
-            except Exception as e:
-                logger.error(f"Failed to find 'Easy Apply' button: {e}", exc_info=True)
-                return False
-
-            if easy_apply_button:
-                # Click the 'Easy Apply' button
-                ActionChains(self.driver).move_to_element(easy_apply_button).click().perform()
-                logger.debug("'Easy Apply' button clicked successfully")
-
-                # Handle potential modals that may obstruct the button
+            
+            self._check_for_premium_redirect(job)
+            self._scroll_page()
+            
+            # Attempt to click the 'Easy Apply' buttons sequentially
+            success = self._click_easy_apply_buttons_sequentially(job)
+            
+            if success:
+                # If clicked successfully and the modal was displayed, continue with the filling
                 self._handle_job_search_safety_reminder()
-
-                # Apply for the job
                 success = self._fill_application_form(job)
                 if success:
-                    logger.debug(
-                        f"Job application process completed successfully for job: {job.title} at {job.company}"
-                    )
+                    logger.debug(f"Application process completed successfully for job: {job.title} at company {job.company}")
                     return True
                 else:
-                    logger.warning(
-                        f"Job application process failed for job: {job.title} at {job.company}"
-                    )
+                    logger.warning(f"Application process failed for job: {job.title} at company {job.company}")
+                    # self.cache.write_to_file(job, "failed")
                     return False
             else:
-                logger.warning(
-                    f"'Easy Apply' button not found for job: {job.title} at {job.company}"
-                )
+                logger.warning(f"Clicked 'Easy Apply' buttons failed for job: {job.title} at company {job.company}")
+                # self.cache.write_to_file(job, "failed")
                 return False
-
+        
         except Exception as e:
-            logger.error(f"Failed to apply for the job: {e}")
+            logger.error(f"Failed to apply for the job: {e}", exc_info=True)
+            # self.cache.write_to_file(job, "failed")
             return False
+
 
     def _check_for_premium_redirect(self, job: Any, max_attempts=3):
         """
@@ -201,7 +193,6 @@ class AIHawkEasyApplier:
             raise Exception(
                 f"Redirected to LinkedIn Premium page and failed to return after {max_attempts} attempts. Job application aborted."
             )
-
 
     def _get_job_description(self) -> str:
         """
@@ -260,13 +251,13 @@ class AIHawkEasyApplier:
             salary_element = self.driver.find_element(By.XPATH,"//li[contains(@class, 'job-insight--highlight')]//span[@dir='ltr']")
             salary = salary_element.text.strip()
             if salary:
-                logger.info(f"Job salary retrieved successfully: {salary}")
+                logger.debug(f"Job salary retrieved successfully: {salary}")
                 return salary
             else:
                 logger.warning("Salary element found but text is empty")
                 return "Not specified"
         except NoSuchElementException:
-            logger.warning("Salary element not found.")
+            logger.debug("Salary element not found.")
             return ""
         except Exception as e:
             logger.warning(f"Unexpected error in _get_job_salary: {e}", exc_info=True)
@@ -298,6 +289,135 @@ class AIHawkEasyApplier:
             logger.warning(f"Failed to retrieve recruiter information: {e}", exc_info=True)
             return "" 
 
+    def _handle_job_search_safety_reminder(self) -> None:
+        """
+        Handles the 'Job search safety reminder' modal if it appears.
+        """
+        try:
+            modal = self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, "artdeco-modal")))
+            logger.debug("Job search safety reminder modal detected.")
+            continue_button = modal.find_element(By.XPATH, '//button[contains(., "Continue applying")]')
+            if continue_button:
+                continue_button.click()
+                logger.debug("Clicked 'Continue applying' button in modal.")
+        except NoSuchElementException:
+            logger.debug("Job search safety reminder elements not found.")
+        except TimeoutException:
+            logger.debug("No 'Job search safety reminder' modal detected.")
+        except Exception as e:
+            logger.warning(f"Unexpected error while handling safety reminder modal: {e}",exc_info=True,)
+            
+    def _scroll_page(self) -> None:
+        """
+        Scrolls the page up and down to ensure all elements are loaded.
+        """
+        logger.debug("Scrolling the page")
+        try:
+            scrollable_element = self.driver.find_element(By.TAG_NAME, "html")
+            utils.scroll_slow(self.driver, scrollable_element, step=300, reverse=False)
+            utils.scroll_slow(self.driver, scrollable_element, step=300, reverse=True)
+            logger.debug("Page scrolled successfully")
+        except Exception as e:
+            logger.warning(f"Failed to scroll the page: {e}", exc_info=True)            
+
+    def _click_easy_apply_buttons_sequentially(self, job: Job) -> bool:
+        """
+        Attempts to click each 'Easy Apply' button found sequentially.
+        
+        :param job: The job object containing job details.
+        :return: True if the application is successful, False otherwise.
+        """
+        buttons = self._2_find_easy_apply_buttons(job)
+        
+        if not buttons:
+            logger.error("No 'Easy Apply' button found.")
+            # self.cache.write_to_file(job, "failed")
+            return False
+        
+        for index, button in enumerate(buttons, start=1):
+            try:
+                logger.debug(f"Trying to click 'Easy Apply' button number {index}.")
+
+                if not self._2_is_element_clickable(button):
+                    logger.debug(f"'Easy Apply' button number {index} is not clickable.")
+                    continue
+
+                ActionChains(self.driver).move_to_element(button).click().perform()
+                logger.debug(f"Successfully clicked 'Easy Apply' button number {index}.")
+                
+                # Check if the modal opened correctly
+                if self._2_is_modal_displayed():
+                    logger.debug("The 'Easy Apply' modal displayed successfully.")
+                    return True
+                else:
+                    logger.debug("The 'Easy Apply' modal did not display after clicking.")
+                    self.driver.refresh()
+                    continue  # Try the next button
+                    
+            except (NoSuchElementException, ElementNotInteractableException, TimeoutException) as e:
+                self.driver.refresh()
+                continue  # Try the next button
+        
+        logger.error("All 'Easy Apply' buttons clicked failed.")
+        # self.cache.write_to_file(job, "failed")
+        return False
+
+
+    def _2_find_easy_apply_buttons(self, job: Job) -> List[WebElement]:
+        """
+        Finds all 'Easy Apply' buttons corresponding to the specific job.
+        
+        :param job: The job object containing job details.
+        :return: List of WebElements of the found 'Easy Apply' buttons.
+        """
+        logger.debug(f"Searching for 'Easy Apply' buttons for job ID: {job.link}")
+        
+        # More specific XPath using data-job-id
+        # xpath = f'//button[@data-job-id="{job.link}" and contains(@aria-label, "Easy Apply")]'
+        xpath = '//button[contains(@aria-label, "Easy Apply") and contains(@class, "jobs-apply-button")]'
+        
+        try:
+            buttons = self.wait.until(lambda d: d.find_elements(By.XPATH, xpath))
+            logger.debug(f"Number of 'Easy Apply' buttons found: {len(buttons)}")
+            return buttons
+        except TimeoutException:
+            logger.warning(f"No 'Easy Apply' button found for job ID: {job.link}")
+            return []
+
+    def _2_is_element_clickable(self, element: WebElement) -> bool:
+        """
+        Checks if a given WebElement is clickable.
+
+        :param element: The WebElement to check.
+        :return: True if the element is clickable, False otherwise.
+        """
+        try:
+            self.wait.until(EC.visibility_of(element))
+            self.wait.until(EC.element_to_be_clickable(element))
+            logger.debug("Element is visible and clickable.")
+            return True
+        except Exception as e:
+            logger.debug(f"Element is not clickable: {e}")
+            return False
+
+    def _2_is_modal_displayed(self) -> bool:
+        """
+        Checks if the '.artdeco-modal' is displayed.
+        
+        :return: True if the modal is visible, False otherwise.
+        """
+        try:
+            modal = self.wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, ".artdeco-modal")))
+            logger.debug("Modal found and visible.")
+            return modal.is_displayed()
+        except TimeoutException:
+            logger.debug("The '.artdeco-modal' not found or is not visible.")
+            return False
+        except Exception as e:
+            logger.error(f"Error checking the modal: {e}", exc_info=True)
+            return False
+
+    # OLD CODE
     def _find_easy_apply_button(self, job: Any) -> Optional[WebElement]:
         """
         Find the 'Easy Apply' button on the job page.
@@ -359,19 +479,6 @@ class AIHawkEasyApplier:
         logger.error("No clickable 'Easy Apply' button found after multiple attempts.")
         raise Exception("No clickable 'Easy Apply' button found.")
 
-    def _2_scroll_page(self) -> None:
-        """
-        Scrolls the page up and down to ensure all elements are loaded.
-        """
-        logger.debug("Scrolling the page")
-        try:
-            scrollable_element = self.driver.find_element(By.TAG_NAME, "html")
-            utils.scroll_slow(self.driver, scrollable_element, step=300, reverse=False)
-            utils.scroll_slow(self.driver, scrollable_element, step=300, reverse=True)
-            logger.debug("Page scrolled successfully")
-        except Exception as e:
-            logger.warning(f"Failed to scroll the page: {e}", exc_info=True)
-
     def _2_find_buttons_by_xpath(self, xpath: str) -> List[WebElement]:
         """
         Finds multiple buttons based on the provided XPath.
@@ -382,48 +489,9 @@ class AIHawkEasyApplier:
         logger.debug(f"Searching for buttons with XPath: {xpath}")
         return self.wait.until(lambda d: d.find_elements(By.XPATH, xpath))
 
-    def _2_is_element_clickable(self, element: WebElement) -> bool:
-        """
-        Checks if a given WebElement is clickable.
 
-        :param element: The WebElement to check.
-        :return: True if the element is clickable, False otherwise.
-        """
-        try:
-            self.wait.until(EC.visibility_of(element))
-            self.wait.until(EC.element_to_be_clickable(element))
-            logger.debug("Element is visible and clickable.")
-            return True
-        except Exception as e:
-            logger.debug(f"Element is not clickable: {e}")
-            return False
 
-    def _handle_job_search_safety_reminder(self) -> None:
-        """
-        Handles the 'Job search safety reminder' modal if it appears.
-        """
-        try:
-            modal = self.wait.until(
-                EC.presence_of_element_located((By.CLASS_NAME, "artdeco-modal"))
-            )
-            logger.debug("Job search safety reminder modal detected.")
-            continue_button = modal.find_element(
-                By.XPATH, '//button[contains(., "Continue applying")]'
-            )
-            if continue_button:
-                continue_button.click()
-                logger.debug("Clicked 'Continue applying' button in modal.")
-        except NoSuchElementException:
-            logger.debug("Job search safety reminder elements not found.")
-        except TimeoutException:
-            logger.debug("No 'Job search safety reminder' modal detected.")
-        except Exception as e:
-            logger.warning(
-                f"Unexpected error while handling safety reminder modal: {e}",
-                exc_info=True,
-            )
-
-    def _fill_application_form(self, job: Job, max_attempts: int = 5) -> bool:
+    def _fill_application_form(self, job: Job, max_attempts: int = 10) -> bool:
         """
         Fills out the application form step by step.
 
@@ -444,11 +512,12 @@ class AIHawkEasyApplier:
                 logger.debug(f"Page {attempts} complete. Netx page.")
 
             logger.warning("Maximum attempts reached. Aborting application process.")
+            utils.capture_screenshot(self.driver,"max_attempts_reached")
             return False  # Return false if the max attempts are reached
 
         except Exception as e:
             logger.error(f"An error occurred while filling the application form: {e}", exc_info=True)
-            # self._2_discard_application()
+            utils.capture_screenshot(self.driver,"error_in_fill_application_form")	
             return False
 
     def _2_next_or_submit(self) -> bool:
@@ -519,6 +588,7 @@ class AIHawkEasyApplier:
             logger.debug("Unfollowed company successfully")
         except TimeoutException:
             logger.warning("Unfollow checkbox not found within the timeout period, possibly already unfollowed")
+            utils.capture_screenshot(self.driver,"unfollow_checkbox_timeout")
         except Exception as e:
             logger.warning(f"Failed to unfollow company: {e}", exc_info=True)
 
@@ -569,7 +639,7 @@ class AIHawkEasyApplier:
 
         :param job: The job object.
         """
-        logger.debug(f"Starting to fill up form sections for job: {job.title} at {job.company}")
+        logger.debug(f"Starting to fill up form sections for job: {job.link}")
 
         try:
             # Find the Easy Apply content section
@@ -912,7 +982,7 @@ class AIHawkEasyApplier:
                     self._save_questions_to_json({"type": question_type, "question": question_text, "answer": answer})
 
             self._7_enter_text(text_field, answer)
-            logger.debug("Entered answer into the textbox")
+            logger.debug(f"Entered answer into the textbox:{text_field}, {answer}")
             return True
 
         logger.debug("No textbox questions found")
@@ -932,13 +1002,18 @@ class AIHawkEasyApplier:
             label_elements = section.find_elements(By.TAG_NAME, "label")
             question_text = label_elements[0].text.strip() if label_elements else "unknown"
 
-            existing_answer = self._get_existing_answer(question_text, "date")
-            if existing_answer:
-                answer_text = existing_answer
+            # Check if the question is about Today's Date
+            if "today's date" in question_text.lower():
+                answer_text = datetime.today().strftime("%m/%d/%Y")
+                logger.debug(f"Detected 'Today's Date' question. Using current date: {answer_text}")
             else:
-                answer_date = self.gpt_answerer.answer_question_date(question_text)
-                answer_text = answer_date.strftime("%m/%d/%Y")
-                self._save_questions_to_json({"type": "date", "question": question_text, "answer": answer_text})
+                existing_answer = self._get_existing_answer(question_text, "date")
+                if existing_answer:
+                    answer_text = existing_answer
+                else:
+                    answer_date = self.gpt_answerer.answer_question_date(question_text)
+                    answer_text = answer_date.strftime("%m/%d/%Y")
+                    self._save_questions_to_json({"type": "date", "question": question_text, "answer": answer_text})
 
             self._7_enter_text(date_field, answer_text)
             logger.debug("Entered date answer")

@@ -1,6 +1,6 @@
 # job.py
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Set
 from loguru import logger
 import json
 from pathlib import Path
@@ -38,6 +38,7 @@ class JobCache:
         self.skipped_low_salary_cache: Set[str] = set()
         self.skipped_low_score_cache: Set[str] = set()
         self.success_cache: Set[str] = set()
+        self.is_seen_cache: Set[str] = set()
         self._load_all_jsons()
         logger.debug("JobCache initialized successfully")
 
@@ -59,7 +60,7 @@ class JobCache:
                         if isinstance(jobs, list):
                             links = {job.get('link') for job in jobs if 'link' in job}
                             getattr(self, cache_attr).update(links)
-                            logger.debug(f"Loaded {len(links)} links from {file_name} into {cache_attr}")
+                            logger.info(f"Loaded {len(links)} links from {file_name} into {cache_attr}")
                         else:
                             logger.warning(f"Unexpected format in {file_name}. Expected a list.")
                 except json.JSONDecodeError:
@@ -89,15 +90,10 @@ class JobCache:
         logger.debug(f"Checking if link '{link}' is in success_cache: {in_cache}")
         return in_cache
 
-    def is_seen(self, link: str) -> bool:
-        seen = any([
-            # self.is_in_job_score(link),
-            self.is_in_skipped_low_salary(link),
-            self.is_in_skipped_low_score(link),
-            self.is_in_success(link)
-        ])
-        logger.debug(f"Checking if link '{link}' has been seen in any cache: {seen}")
-        return seen
+    def is_in_is_seen(self, link: str) -> bool:
+        in_cache = link in self.is_seen_cache
+        logger.debug(f"Checking if link '{link}' is in is_seen_cache: {in_cache}")
+        return in_cache
 
     def add_to_cache(self, job, cache_type: str):
         logger.debug(f"Adding link '{job.link}' to cache type '{cache_type}'")
@@ -105,7 +101,8 @@ class JobCache:
             'job_score': ('job_score_cache', 'job_score.json'),
             'skipped_low_salary': ('skipped_low_salary_cache', 'skipped_low_salary.json'),
             'skipped_low_score': ('skipped_low_score_cache', 'skipped_low_score.json'),
-            'success': ('success_cache', 'success.json')
+            'success': ('success_cache', 'success.json'),
+            'is_seen': ('is_seen_cache', 'is_seen.json'),
         }
 
         if cache_type not in cache_mapping:
