@@ -133,7 +133,7 @@ class AIHawkEasyApplier:
                     return False
             
             self._check_for_premium_redirect(job)
-            self._scroll_page()
+            # self._scroll_page()
             
             # Attempt to click the 'Easy Apply' buttons sequentially
             success = self._click_easy_apply_buttons_sequentially(job)

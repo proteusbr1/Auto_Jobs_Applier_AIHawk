@@ -161,7 +161,7 @@ class AIHawkJobManager:
                 banner_text = no_results_banner.text.lower()
                 logger.debug(f"No results banner text: '{banner_text}'.")
                 if 'no matching jobs found' in banner_text or "unfortunately, things aren't" in banner_text:
-                    logger.info("No matching jobs found on this search.")
+                    logger.debug("No matching jobs found on this search.")
                     return []
 
             # Caso contrário, assumir que os resultados de empregos estão presentes
@@ -178,7 +178,7 @@ class AIHawkJobManager:
                 logger.debug("Scrolling completed.")
 
                 job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
-                logger.info(f"Found {len(job_list_elements)} job elements on the page.")
+                logger.debug(f"Found {len(job_list_elements)} job elements on the page.")
 
                 if not job_list_elements:
                     logger.error("No job elements found on the page, skipping.")
@@ -271,21 +271,20 @@ class AIHawkJobManager:
         max_attempts=10,
     ):
         """
-        Function to slowly scroll a scrollable element on the page until all job listings are loaded.
+        Scrolls a scrollable job listings element on the page to load all job postings.
 
         Parameters:
-        - step: Number of pixels to scroll at each step.
-        - reverse: If True, scrolls up; otherwise, scrolls down.
-        - max_attempts: Maximum number of attempts without new items before stopping.
+        - step (int): Number of pixels to scroll at each step. Must be positive.
+        - reverse (bool): If True, scrolls up; otherwise, scrolls down.
+        - max_attempts (int): Maximum number of attempts without new items before stopping.
 
         Returns:
-        - True if scrolling was completed successfully.
-        - False if scrolling failed.
+        - bool: True if scrolling completed successfully, False otherwise.
         """
         logger.debug("Starting scroll_jobs.")
 
         # Define locators
-        locator = (By.CLASS_NAME, 'jobs-search-results-list')
+        jobs_list_locator = (By.CLASS_NAME, 'jobs-search-results-list')
         loader_locator = (By.CLASS_NAME, 'artdeco-loader')
         job_title_locator = (By.XPATH, ".//a[contains(@class, 'job-card-list__title')]")
 
@@ -294,119 +293,128 @@ class AIHawkJobManager:
             raise ValueError("Step must be positive.")
 
         try:
-            # Wait for the initial loader to disappear before searching for the scrollable element
-            if not self.wait_for_loader(loader_locator):
-                logger.debug("Proceeding even though the initial loader did not disappear.")
+            # Wait for the initial loader to disappear
+            loader_disappeared = self.wait_for_loader(loader_locator)
+            if not loader_disappeared:
+                logger.debug("Initial loader did not disappear. Proceeding anyway.")
 
-            # Use the pre-configured self.wait to locate the scrollable element
+            # Locate the scrollable jobs list
             try:
                 scrollable_element = self.wait.until(
-                    EC.visibility_of_element_located(locator)
+                    EC.visibility_of_element_located(jobs_list_locator)
                 )
-                logger.debug("Scrollable element found and is visible on the page.")
+                logger.debug("Scrollable jobs list is visible.")
             except TimeoutException:
-                logger.warning(f"Element with locator {locator} not found within the wait time.")
-                return False  # Exit the function if the element is not found
+                logger.warning(f"Jobs list with locator {jobs_list_locator} not found within the wait time.")
+                return False
 
-            # Wait for the loader to disappear after locating the scrollable element
-            if not self.wait_for_loader(loader_locator):
-                logger.debug("Proceeding even though the loader did not disappear after locating the scrollable element.")
+            # Wait for loader to disappear after locating the jobs list
+            loader_disappeared = self.wait_for_loader(loader_locator)
+            if not loader_disappeared:
+                logger.debug("Loader did not disappear after locating jobs list. Proceeding.")
 
-            # Check if the element is scrollable
+            # Check if the jobs list is scrollable
             try:
                 scroll_height = int(scrollable_element.get_attribute("scrollHeight"))
                 client_height = int(scrollable_element.get_attribute("clientHeight"))
                 if scroll_height <= client_height:
-                    logger.info("The located element is not scrollable.")
-                    utils.capture_screenshot("element_not_scrollable")
+                    logger.info("Jobs list is not scrollable.")
+                    utils.capture_screenshot("jobs_list_not_scrollable")
                     return False
-                logger.debug(f"Scrollability check: scrollHeight={scroll_height}, clientHeight={client_height}, scrollable=True")
+                logger.debug(f"Jobs list is scrollable (scrollHeight: {scroll_height}, clientHeight: {client_height}).")
             except Exception as e:
-                logger.error(f"Error determining if the element is scrollable: {e}", exc_info=True)
+                logger.error(f"Failed to determine if jobs list is scrollable: {e}", exc_info=True)
                 return False
 
+            # Ensure the jobs list is visible
             if not scrollable_element.is_displayed():
-                logger.warning("The element is not visible. Trying to bring it into view.")
+                logger.warning("Jobs list is not visible. Attempting to bring it into view.")
                 try:
                     self.driver.execute_script("arguments[0].scrollIntoView(true);", scrollable_element)
-                    time.sleep(1)  # Wait for the element to become visible
+                    time.sleep(1)  # Allow time for the element to become visible
                     if not scrollable_element.is_displayed():
-                        logger.warning("The element is still not visible after trying to bring it into view.")
-                        utils.capture_screenshot("element_not_visible_after_scroll")
+                        logger.warning("Jobs list is still not visible after scrolling into view.")
+                        utils.capture_screenshot("jobs_list_not_visible_after_scroll")
                         return False
-                    else:
-                        logger.debug("Element is now visible after bringing it into view.")
+                    logger.debug("Jobs list is now visible after scrolling into view.")
                 except WebDriverException as e:
-                    logger.error(f"Failed to bring the element into view: {e}", exc_info=True)
+                    logger.error(f"Failed to scroll jobs list into view: {e}", exc_info=True)
                     utils.capture_screenshot("scroll_into_view_failed")
                     return False
 
-            # Initialize counters
+            # Initialize counters for tracking job items and attempts
             previous_job_count = 0
             attempts = 0
-            
 
             while attempts < max_attempts:
-                # Wait for the loader to disappear before scrolling
-                if not self.wait_for_loader(loader_locator):
-                    logger.debug("Proceeding even though the loader did not disappear before scrolling.")
+                # Wait for loader to disappear before scrolling
+                loader_disappeared = self.wait_for_loader(loader_locator)
+                if not loader_disappeared:
+                    logger.debug("Loader did not disappear before scrolling. Proceeding.")
 
-                # Get current scroll position
-                current_scroll_position = scrollable_element.get_attribute("scrollTop")
-                new_scroll_position = int(current_scroll_position) + step if not reverse else int(current_scroll_position) - step
+                # Calculate new scroll position
+                try:
+                    current_scroll_position = int(scrollable_element.get_attribute("scrollTop"))
+                except (TypeError, ValueError) as e:
+                    logger.error(f"Invalid scroll position value: {e}", exc_info=True)
+                    return False
+
+                new_scroll_position = current_scroll_position + step if not reverse else current_scroll_position - step
                 self.driver.execute_script("arguments[0].scrollTop = arguments[1];", scrollable_element, new_scroll_position)
                 logger.debug(f"Scrolled to position: {new_scroll_position}")
 
-                # Wait for the loader to disappear after scrolling
-                if not self.wait_for_loader(loader_locator):
-                    logger.debug("Proceeding even though the loader is still visible after scrolling.")
+                # Wait for loader to disappear after scrolling
+                loader_disappeared = self.wait_for_loader(loader_locator)
+                if not loader_disappeared:
+                    logger.debug("Loader is still visible after scrolling. Proceeding.")
 
-                # Count the current number of job items within the scrollable element
+                # Retrieve current number of job items
                 job_items = self.driver.find_elements(*job_title_locator)
                 current_job_count = len(job_items)
                 logger.debug(f"Current number of job items: {current_job_count}")
 
-                # Check if the desired number of job items has been reached
+                # Check if enough job items are loaded
                 if current_job_count >= 25:
-                    logger.debug("25 job items detected.")
+                    logger.debug("Reached 25 job items.")
                     break
 
                 if current_job_count > previous_job_count:
-                    logger.debug("New job items detected.")
+                    logger.debug("New job items loaded.")
                     previous_job_count = current_job_count
-                    attempts = 0  # Reset attempts if new items are found
+                    attempts = 0  # Reset attempts since new items were found
                 else:
                     attempts += 1
-                    time.sleep(0.5)
-                    logger.debug(f"No new items detected. Attempt {attempts}/{max_attempts}.")
+                    logger.debug(f"No new job items detected. Attempt {attempts}/{max_attempts}.")
+                    time.sleep(0.5)  # Wait before the next attempt
 
-            logger.debug("Scrolling completed. All job items have been loaded.")
+            logger.debug("Completed scrolling. All job items have been loaded.")
             return True
 
         except Exception as e:
-            logger.error(f"Error during job scrolling: {e}", exc_info=True)
+            logger.error(f"An error occurred during scrolling jobs: {e}", exc_info=True)
             return False
 
     def wait_for_loader(self, loader_locator, timeout=10):
         """
-        Helper method to wait for the loader element to disappear.
+        Waits for the loader element to disappear.
 
         Parameters:
-        - loader_locator: Tuple with method and value to locate the loader element.
-        - timeout: Maximum time to wait for the loader to disappear.
+        - loader_locator (tuple): Locator for the loader element.
+        - timeout (int): Maximum time to wait in seconds.
 
         Returns:
-        - True if the loader disappeared within the timeout.
-        - False otherwise.
+        - bool: True if the loader disappeared, False otherwise.
         """
         try:
-            local_wait = WebDriverWait(self.driver, timeout)
-            local_wait.until(EC.invisibility_of_element_located(loader_locator))
+            WebDriverWait(self.driver, timeout).until(
+                EC.invisibility_of_element_located(loader_locator)
+            )
             logger.debug("Loader has disappeared.")
             return True
         except TimeoutException:
-            logger.warning("Loader did not disappear within the wait time.")
+            logger.warning("Loader did not disappear within the specified timeout.")
             return False
+
 
     def get_existing_score(self, job):
         """
