@@ -22,7 +22,7 @@ from langchain_core.prompts import ChatPromptTemplate
 import src.strings as strings
 from src.job import Job
 from loguru import logger
-from data_folder.personal_info import USER_RESUME_SUMMARY, SALARY_EXPECTATIONS
+from data_folder.personal_info import USER_RESUME_CHATGPT, SALARY_EXPECTATIONS
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -645,7 +645,7 @@ class GPTAnswerer:
         self.ai_adapter = AIAdapter(config, llm_api_key)
         self.llm_cheap = LoggerChatModel(self.ai_adapter)
         self.job = None
-        self.resume_summary = self.format_resume(USER_RESUME_SUMMARY)
+        self.resume_summary = self.format_resume(USER_RESUME_CHATGPT)
         logger.debug("GPTAnswerer initialized.")
 
     @property
@@ -1434,3 +1434,189 @@ Provide only the exact name of the section from the list above with no additiona
         date_line = f"today date: {today_date} YYYY-MM-DD\n"
         updated_resume = f"{date_line}{resume_summary}"
         return updated_resume
+    
+    def generate_personalized_summary(self, job_description: str) -> str:
+        """
+        Generates a personalized resume summary based on the job description.
+
+        Args:
+            job_description (str): The job description.
+
+        Returns:
+            str: The generated personalized summary.
+        """
+        logger.debug("Generating personalized summary for the resume.")
+        try:
+            prompt = f"""
+            Based on the following job description and my resume summary, create a personalized summary that highlights the most relevant skills and experiences for this position.
+
+            Job Description:
+            ({job_description})
+
+            Resume Summary:
+            ({USER_RESUME_CHATGPT})
+
+            Personalized Summary:
+            """
+
+            personalized_summary = self.ask_chatgpt(prompt)
+            logger.debug("Personalized summary generated successfully.")
+            return personalized_summary.strip()
+        except Exception as e:
+            logger.error(f"Error generating personalized summary: {e}", exc_info=True)
+            raise
+
+    def extract_keywords_from_job_description(self, job_description: str) -> List[str]:
+        """
+        Extracts key keywords from the given job description that HR programs or bots would use to evaluate resumes.
+        
+        Args:
+            job_description (str): The job description text.
+        
+        Returns:
+            List[str]: A list of extracted keywords.
+        
+        Raises:
+            ValueError: If the extracted keywords are not in the expected format.
+            Exception: For any other unforeseen errors.
+        """
+        logger.info("Extracting keywords from job description.")
+        try:
+            prompt = (
+                "Extract the most important keywords from the following job description that HR systems "
+                "or automated bots would use to evaluate and rank resumes. Return the keywords as a JSON list. Return de JSON list and noting else."
+                "\n\nJob Description:\n"
+                f"({job_description})"
+                "\n\nKeywords:"
+            )
+            
+            response = self.ask_chatgpt(prompt)
+            logger.debug(f"Raw response from GPT: {response}")
+            
+            # Use regex to find JSON-like list in the response
+            keywords_match = re.search(r'\[.*?\]', response, re.DOTALL)
+            if not keywords_match:
+                logger.error("Failed to extract keywords list from GPT response.")
+                raise ValueError("GPT response does not contain a valid keywords list.")
+            
+            keywords_str = keywords_match.group(0)
+            logger.debug(f"Extracted keywords string: {keywords_str}")
+            
+            # Clean and parse the keywords string
+            # Remove any surrounding quotes or unwanted characters
+            keywords = re.findall(r"'(.*?)'|\"(.*?)\"", keywords_str)
+            # Flatten the list and remove empty strings
+            keywords = [kw for pair in keywords for kw in pair if kw]
+            logger.debug(f"Parsed keywords list: {keywords}")
+            
+            if not isinstance(keywords, list) or not all(isinstance(kw, str) for kw in keywords):
+                logger.error("Extracted keywords are not in the expected list of strings format.")
+                raise ValueError("Extracted keywords are not in the expected list of strings format.")
+            
+            logger.info(f"Successfully extracted {len(keywords)} keywords.")
+            return keywords
+        
+        except ValueError as ve:
+            logger.exception(f"Value error during keyword extraction: {ve}")
+            raise
+        except Exception as e:
+            logger.exception(f"Unexpected error during keyword extraction: {e}")
+            raise
+
+    def generate_summary_based_on_keywords(self, resume: str, resume_summary: str, keywords: List[str]) -> str:
+        """
+        Generates a tailored resume summary based on the provided resume, resume summary, and extracted keywords.
+        
+        Args:
+            resume (str): The full resume content.
+            resume_summary (str): The original resume summary.
+            keywords (List[str]): The list of keywords extracted from the job description.
+        
+        Returns:
+            str: The tailored resume summary.
+        
+        Raises:
+            ValueError: If inputs are invalid.
+            Exception: For any other unforeseen errors.
+        """
+        logger.info("Generating tailored resume summary based on extracted keywords.")
+        try:
+            # Join the keywords into a comma-separated string
+            keywords_str = ', '.join(keywords)
+            
+            # Refined prompt without the "Tailored Resume Summary:" label
+            prompt = (
+                "Using the following resume, resume summary, and keywords extracted from a job description, "
+                "create a concise and professional tailored resume summary that highlights the most relevant skills and experiences "
+                "to increase the likelihood of passing through HR evaluation systems. Ensure the summary is truthful "
+                "and only includes information provided. Incorporate the keywords appropriately without fabricating or exaggerating any information."
+                "\n\nOld Resume Summary:\n"
+                f"({resume_summary})"
+                "\n\nResume:\n"
+                f"({resume})"
+                "\n\nKeywords:\n"
+                f"({keywords_str})"
+                "\n\nPlease provide the tailored resume summary below without any headings or labels:"
+            )
+            
+            # Send the prompt to ChatGPT
+            response = self.ask_chatgpt(prompt)
+            logger.debug(f"Raw response from GPT for tailored summary: {response}")
+            
+            # Clean the response by stripping leading/trailing whitespace
+            tailored_summary = response.strip()
+            
+            # Validate the response
+            if not tailored_summary:
+                logger.error("GPT did not return a tailored summary.")
+                raise ValueError("GPT did not return a tailored summary.")
+            
+            logger.info("Tailored resume summary generated successfully.")
+            return tailored_summary
+        
+        except ValueError as ve:
+            logger.exception(f"Value error during summary generation: {ve}")
+            raise
+        except Exception as e:
+            logger.exception(f"Unexpected error during summary generation: {e}")
+            raise
+
+    def generate_cover_letter_based_on_keywords(self, job_description: str, resume: str, keywords: List[str]) -> str:
+        """
+        Generates a tailored cover letter based on the job description, resume, and extracted keywords.
+        
+        Args:
+            job_description (str): The job description text.
+            resume (str): The full resume content.
+            keywords (List[str]): The list of keywords extracted from the job description.
+        
+        Returns:
+            str: The tailored cover letter.
+        
+        Raises:
+            ValueError: If inputs are invalid.
+            Exception: For any other unforeseen errors.
+        """
+        logger.info("Generating tailored cover letter.")
+        try:
+            keywords_str = ', '.join(keywords)
+            prompt = (
+                "Using the following job description, resume, and keywords, compose a concise and professional cover letter that emphasizes the most relevant skills and experiences. "
+                "Ensure the cover letter is truthful and only includes information provided. Incorporate the keywords appropriately without fabricating or exaggerating any information. "
+                "The cover letter should not exceed 300 words and should be written in paragraph form."
+                "\n\nJob Description:\n"
+                f"({job_description})"
+                "\n\nResume:\n"
+                f"({resume})"
+                "\n\nKeywords:\n"
+                f"({keywords_str})"
+                "\n\nPlease provide the Cover Letter: below without any headings or labels:"
+            )
+            
+            cover_letter = self.ask_chatgpt(prompt)
+            logger.debug(f"Tailored Cover Letter: {cover_letter}")
+            return cover_letter.strip()
+        
+        except Exception as e:
+            logger.error(f"Error generating tailored cover letter: {e}", exc_info=True)
+            raise        

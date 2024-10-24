@@ -1,3 +1,4 @@
+# job_application_profile.py
 from dataclasses import dataclass
 
 import yaml

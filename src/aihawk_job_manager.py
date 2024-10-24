@@ -5,7 +5,6 @@ import random
 from itertools import product
 from pathlib import Path
 import time
-from typing import Set
 
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, WebDriverException
 from selenium.webdriver.common.by import By
@@ -13,8 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 import src.utils as utils
-from app_config import MINIMUM_WAIT_TIME, MIN_SCORE_APPLY , USE_JOB_SCORE
-from data_folder.personal_info import USER_RESUME_SUMMARY
+from app_config import USE_JOB_SCORE
 from src.job import Job, JobCache
 from src.aihawk_easy_applier import AIHawkEasyApplier
 from loguru import logger

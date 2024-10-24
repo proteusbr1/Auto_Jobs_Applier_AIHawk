@@ -4,9 +4,12 @@ import json
 import os
 import re
 import time
-from typing import List, Optional, Any, Tuple, Dict
+from typing import List, Optional, Any, Tuple
 from datetime import datetime
 from pathlib import Path
+from weasyprint import HTML
+from jinja2 import Template
+import sys
 
 from httpx import HTTPStatusError
 from reportlab.lib.enums import TA_JUSTIFY
@@ -32,12 +35,69 @@ from app_config import (
     USE_JOB_SCORE,
     USE_SALARY_EXPECTATIONS,
 )
-from data_folder.personal_info import USER_RESUME_SUMMARY, SALARY_EXPECTATIONS
+from data_folder.personal_info import SALARY_EXPECTATIONS, USER_RESUME_SUMMARY, USER_RESUME_CHATGPT
 import src.utils as utils
 from src.llm.llm_manager import GPTAnswerer
 from loguru import logger
 from src.job import Job, JobCache
 
+
+# @staticmethod
+def load_resume_template() -> Optional[str]:
+    """
+    Loads the resume HTML template from the specified file path.
+
+    Args:
+        file_path (str): The path to the HTML resume template file.
+
+    Returns:
+        Optional[str]: The content of the resume HTML template if loaded successfully; otherwise, None.
+
+    Raises:
+        FileNotFoundError: If the specified file does not exist.
+        PermissionError: If there is a permission issue accessing the file.
+        IOError: If an I/O error occurs while reading the file.
+        Exception: For any other unforeseen errors.
+    """
+    file_path = "resumes/resume.html"
+    try:
+        path = Path(file_path).resolve(strict=True)
+        logger.debug(f"Attempting to load resume template from: {path}")
+
+        if not path.is_file():
+            logger.error(f"The path provided is not a file: {path}")
+            raise FileNotFoundError(f"The path provided is not a file: {path}")
+
+        if not os.access(path, os.R_OK):
+            logger.error(f"Permission denied while trying to read the file: {path}")
+            raise PermissionError(f"Permission denied while trying to read the file: {path}")
+
+        with path.open('r', encoding='utf-8') as file:
+            content = file.read()
+            logger.debug("Resume template loaded successfully.")
+            return content
+
+    except FileNotFoundError as fnf_error:
+        logger.exception(f"File not found error: {fnf_error}")
+        raise
+
+    except PermissionError as perm_error:
+        logger.exception(f"Permission error: {perm_error}")
+        raise
+
+    except IOError as io_error:
+        logger.exception(f"I/O error occurred while reading the resume template: {io_error}")
+        raise
+
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred while loading the resume template: {e}")
+        raise
+
+logger.debug("Loading resume template.")
+USER_RESUME_HTML = load_resume_template()  
+if USER_RESUME_HTML is None:
+    logger.error("Failed to load the resume template. Exiting application.")
+    sys.exit(1)
 
 class AIHawkEasyApplier:
     """
@@ -56,7 +116,7 @@ class AIHawkEasyApplier:
     ):
         logger.debug("Initializing AIHawkEasyApplier")
         if resume_dir is None or not os.path.exists(resume_dir):
-            logger.warning(
+            logger.info(
                 "Provided resume_dir is None or does not exist. Setting resume_path to None."
             )
             resume_dir = None
@@ -68,6 +128,7 @@ class AIHawkEasyApplier:
         self.resume_generator_manager = resume_generator_manager
         self.cache = cache
         self.all_questions = self._load_questions_from_json()
+        # self.pdfkit_config = pdfkit.configuration(wkhtmltopdf='virtual/lib64/python3.10/site-packages/wkhtmltopdf')
 
         logger.debug("AIHawkEasyApplier initialized successfully")
 
@@ -158,7 +219,6 @@ class AIHawkEasyApplier:
             logger.error(f"Failed to apply for the job: {e}", exc_info=True)
             # self.cache.write_to_file(job, "failed")
             return False
-
 
     def _check_for_premium_redirect(self, job: Any, max_attempts=3):
         """
@@ -362,7 +422,6 @@ class AIHawkEasyApplier:
         # self.cache.write_to_file(job, "failed")
         return False
 
-
     def _2_find_easy_apply_buttons(self, job: Job) -> List[WebElement]:
         """
         Finds all 'Easy Apply' buttons corresponding to the specific job.
@@ -416,80 +475,6 @@ class AIHawkEasyApplier:
         except Exception as e:
             logger.error(f"Error checking the modal: {e}", exc_info=True)
             return False
-
-    # OLD CODE
-    def _find_easy_apply_button(self, job: Any) -> Optional[WebElement]:
-        """
-        Find the 'Easy Apply' button on the job page.
-
-        :param job: The job object.
-        :return: The 'Easy Apply' button element if found.
-        """
-        logger.debug("Starting search for 'Easy Apply' button.")
-        search_methods = [
-            {
-                "description": "Unique attribute 'Easy Apply' button",
-                "xpath": '//button[contains(@aria-label, "Easy Apply")]',
-            },
-            {
-                "description": "Button with specific class",
-                "xpath": '//button[contains(@class, "jobs-apply-button") and contains(text(), "Easy Apply")]',
-            },
-            {
-                "description": "Button by alternate text",
-                "xpath": '//button[text()="Easy Apply" or text()="Apply Now"]',
-            },
-            {
-                "description": "'Easy Apply' button with data-test",
-                "xpath": '//button[@data-test="easy-apply-button"]',
-            },
-        ]
-
-        max_attempts = 1
-        for attempt in range(max_attempts):
-            logger.debug(f"Attempt {attempt + 1} to find the 'Easy Apply' button.")
-            self._check_for_premium_redirect(job)
-            self._2_scroll_page()
-
-            for method in search_methods:
-                try:
-                    logger.debug(f"Using search method: {method['description']}")
-                    buttons = self._2_find_buttons_by_xpath(method["xpath"])
-                    for button in buttons:
-                        if self._2_is_element_clickable(button):
-                            logger.debug(
-                                f"'Easy Apply' button found using {method['description']}."
-                            )
-                            return button
-                except Exception as e:
-                    logger.warning(
-                        f"Error using search method {method['description']}: {e}",
-                        exc_info=True,
-                    )
-
-            if attempt < max_attempts - 1:
-                logger.debug("Refreshing the page to try to find the 'Easy Apply' button again.")
-                self.driver.refresh()
-                try:
-                    self.wait.until(EC.presence_of_element_located((By.XPATH, "//button")))
-                    logger.debug("Page refreshed and buttons reloaded.")
-                except TimeoutException as te:
-                    logger.warning("Timeout waiting for buttons to load after refresh.")
-
-        logger.error("No clickable 'Easy Apply' button found after multiple attempts.")
-        raise Exception("No clickable 'Easy Apply' button found.")
-
-    def _2_find_buttons_by_xpath(self, xpath: str) -> List[WebElement]:
-        """
-        Finds multiple buttons based on the provided XPath.
-
-        :param xpath: The XPath to locate buttons.
-        :return: A list of WebElements found.
-        """
-        logger.debug(f"Searching for buttons with XPath: {xpath}")
-        return self.wait.until(lambda d: d.find_elements(By.XPATH, xpath))
-
-
 
     def _fill_application_form(self, job: Job, max_attempts: int = 10) -> bool:
         """
@@ -729,7 +714,7 @@ class AIHawkEasyApplier:
                         logger.error(f"Failed to upload resume from path: {self.resume_path}", exc_info=True)
                         raise
                 else:
-                    logger.warning("Resume path is invalid or not found; generating new resume")
+                    logger.info("Resume path is invalid or not found; generating new resume")
                     self._5_create_and_upload_resume(file_element, job)
             elif "cover" in upload_type:
                 logger.debug("Uploading cover letter")
@@ -739,78 +724,134 @@ class AIHawkEasyApplier:
 
         logger.debug("Finished handling upload fields")
 
+
+    def render_resume_html(self, html_template: str, summary: str) -> str:
+        """
+        Renders the HTML resume template by replacing the placeholder {{summary}} with the personalized summary.
+
+        Args:
+            html_template (str): The HTML template of the resume.
+            summary (str): The personalized summary to be inserted into the resume.
+
+        Returns:
+            str: The rendered HTML with the personalized summary.
+        """
+        template = Template(html_template)
+        rendered_html = template.render(summary=summary)
+        return rendered_html
+
+
+    def generate_pdf_from_html(self, rendered_html: str, output_path: str) -> str:
+        """
+        Gera um PDF a partir do HTML renderizado usando WeasyPrint.
+
+        Args:
+            rendered_html (str): O HTML renderizado com o resumo personalizado.
+            output_path (str): O caminho onde o PDF será salvo.
+
+        Returns:
+            str: O caminho absoluto do PDF gerado.
+        """
+        try:
+            # Cria o objeto HTML a partir da string HTML
+            html = HTML(string=rendered_html)
+            
+            # Gera o PDF e salva no caminho especificado
+            html.write_pdf(target=output_path)
+            
+            logger.debug(f"PDF gerado e salvo em: {output_path}")
+            return os.path.abspath(output_path)
+        except Exception as e:
+            logger.error(f"Erro ao gerar PDF: {e}", exc_info=True)
+            raise
+
+
     def _5_create_and_upload_resume(self, element: WebElement, job: Job) -> None:
         """
-        Generates a resume and uploads it to the application form.
+        Generates a personalized resume and uploads it to the application form.
+
+        :param element: The WebElement of the upload field.
+        :param job: The job object.
         """
-        logger.debug("Creating and uploading resume")
-        folder_path = "generated_cv"
-
+        logger.debug("Creating and uploading personalized resume.")
         try:
-            timestamp = int(time.time())
-            file_name = f"CV_{timestamp}.pdf"
-            file_path_pdf = os.path.join(folder_path, file_name)
+            # 0. Generate keywords from the job description
+            keywords = self.gpt_answerer.extract_keywords_from_job_description(job.description)
+            logger.debug(f"Keywords generated: {keywords}")
+            
+            # 1. Generate the personalized summary
+            personalized_summary = self.gpt_answerer.generate_summary_based_on_keywords(USER_RESUME_CHATGPT, USER_RESUME_SUMMARY, keywords) 
+            logger.debug(f"Personalized summary: {personalized_summary}")
+
+            # 2. Render the HTML with the personalized summary
+            rendered_html = self.render_resume_html(USER_RESUME_HTML, personalized_summary)
+            logger.debug("Resume HTML rendered with the personalized summary.")
+
+            # 3. Set the path to save the PDF
+            folder_path = "generated_cv"
             utils.ensure_directory(folder_path)
+            timestamp = int(time.time())
+            file_name = f"Personalized_Resume_{timestamp}.pdf"
+            file_path_pdf = os.path.join(folder_path, file_name)
 
-            # Generate resume PDF content
-            resume_pdf_base64 = self.resume_generator_manager.pdf_base64(job_description_text=job.description)
-            with open(file_path_pdf, "wb") as f:
-                f.write(base64.b64decode(resume_pdf_base64))
+            # 4. Generate the PDF from the rendered HTML
+            self.generate_pdf_from_html(rendered_html, file_path_pdf)
 
-            # Check file size
+            # 5. Check the file size
             self._6_check_file_size(file_path_pdf, 2 * 1024 * 1024)  # 2 MB
-            logger.debug(f"Uploading resume from path: {file_path_pdf}")
+            logger.debug(f"File size checked: {file_path_pdf}")
 
-            # Upload the resume
+            # 6. Upload the PDF
             element.send_keys(os.path.abspath(file_path_pdf))
             job.pdf_path = os.path.abspath(file_path_pdf)
             time.sleep(2)
-            logger.debug(f"Resume uploaded successfully from: {file_path_pdf}")
-        except HTTPStatusError as e:
-            self._6_handle_http_error(e)
+            logger.debug("Personalized resume uploaded successfully.")
         except Exception as e:
-            logger.error("Resume upload failed", exc_info=True)
-            utils.capture_screenshot(self.driver,f"resume_upload_exception_{timestamp}")
-            raise Exception("Upload failed.") from e
+            logger.error("Failed to create and upload the personalized resume.", exc_info=True)
+            utils.capture_screenshot(self.driver, "create_and_upload_resume_exception")
+            raise
 
     def _5_create_and_upload_cover_letter(self, element: WebElement, job: Job) -> None:
         """
-        Generates a cover letter and uploads it to the application form.
+        Generates a personalized cover letter and uploads it to the application form.
+        
+        :param element: The WebElement of the upload field.
+        :param job: The job object.
         """
-        logger.debug("Creating and uploading cover letter")
-        prompt ="""
-        Compose a brief and impactful cover letter based on the provided job description and resume. The letter should be no longer than three paragraphs and should be written in a professional, yet conversational tone. Avoid using any placeholders, and ensure that the letter flows naturally and is tailored to the job.
-
-        Analyze the job description to identify key qualifications and requirements. Introduce the candidate succinctly, aligning their career objectives with the role. Highlight relevant skills and experiences from the resume that directly match the job’s demands, using specific examples to illustrate these qualifications. Reference notable aspects of the company, such as its mission or values, that resonate with the candidate’s professional goals. Conclude with a strong statement of why the candidate is a good fit for the position, expressing a desire to discuss further.
-
-        Please write the cover letter in a way that directly addresses the job role and the company’s characteristics, ensuring it remains concise and engaging without unnecessary embellishments. The letter should be formatted into paragraphs and should not include a greeting or signature.
-        """
-        cover_letter_text = self.gpt_answerer.answer_question_simple(prompt, job, 2500)
-        folder_path = "generated_cv"
-        utils.ensure_directory(folder_path)
-
+        logger.debug("Creating and uploading personalized cover letter.")
         try:
+            # 0. Extract keywords from the job description
+            keywords = self.gpt_answerer.extract_keywords_from_job_description(job.description)
+            logger.debug(f"Keywords extracted for cover letter: {keywords}")
+            
+            # 1. Generate the tailored cover letter using keywords
+            cover_letter = self.gpt_answerer.generate_cover_letter_based_on_keywords(job.description, USER_RESUME_HTML, keywords)
+            logger.debug(f"Generated cover letter: {cover_letter}")
+            
+            # 2. Generate PDF for the cover letter
+            folder_path = "generated_cv"
+            utils.ensure_directory(folder_path)
             timestamp = int(time.time())
             file_name = f"Cover_Letter_{timestamp}.pdf"
             file_path_pdf = os.path.join(folder_path, file_name)
-            utils.ensure_directory(folder_path)
-
-            # Generate cover letter PDF
-            self._6_generate_pdf(file_path_pdf, cover_letter_text, "Cover Letter")
+    
+            self._6_generate_pdf(file_path_pdf, cover_letter, "Cover Letter")
+            logger.debug(f"Cover letter PDF generated at: {file_path_pdf}")
+    
+            # 3. Check the file size
             self._6_check_file_size(file_path_pdf, 2 * 1024 * 1024)  # 2 MB
-            logger.debug(f"Uploading cover letter from: {file_path_pdf}")
-
-            # Upload the cover letter
+            logger.debug(f"Cover letter file size is within the allowed limit.")
+    
+            # 4. Upload the PDF
             element.send_keys(os.path.abspath(file_path_pdf))
             job.cover_letter_path = os.path.abspath(file_path_pdf)
             time.sleep(2)
-            logger.debug("Cover letter uploaded successfully")
-        except HTTPStatusError as e:
-            self._6_handle_http_error(e)
+            logger.debug("Personalized cover letter uploaded successfully.")
+    
         except Exception as e:
-            logger.error("Cover letter upload failed", exc_info=True)
-            utils.capture_screenshot(self.driver,"cover_letter_upload_exception")
-            raise Exception("Upload failed.") from e
+            logger.error("Failed to create and upload the personalized cover letter.", exc_info=True)
+            utils.capture_screenshot(self.driver, "create_and_upload_cover_letter_exception")
+            raise
 
     def _6_generate_pdf(self, file_path_pdf: str, content: str, title: str) -> None:
         """
@@ -837,13 +878,23 @@ class AIHawkEasyApplier:
 
     def _6_check_file_size(self, file_path: str, max_size: int) -> None:
         """
-        Checks if the file size is within the specified limit.
+        Checks if the file size exceeds the maximum allowed size.
+        
+        Args:
+            file_path (str): The path to the file.
+            max_size (int): The maximum allowed size in bytes.
+        
+        Raises:
+            ValueError: If the file size exceeds the maximum allowed size.
         """
         file_size = os.path.getsize(file_path)
-        logger.debug(f"File size: {file_size} bytes")
+        logger.debug(f"Checking file size for {file_path}: {file_size} bytes")
         if file_size > max_size:
-            logger.error(f"File size exceeds limit of {max_size} bytes: {file_size} bytes")
-            raise ValueError("File size exceeds the maximum limit.")
+            logger.error(f"File size for {file_path} exceeds the maximum allowed size of {max_size} bytes.")
+            raise ValueError(f"File size for {file_path} exceeds the maximum allowed size of {max_size} bytes.")
+        logger.debug(f"File size for {file_path} is within the allowed limit.")
+
+
 
     def _6_handle_http_error(self, error: HTTPStatusError) -> None:
         """
@@ -1022,57 +1073,100 @@ class AIHawkEasyApplier:
         logger.debug("No date questions found")
         return False
 
+    def _extract_question_text(self, section: WebElement) -> str:
+        """
+        Extracts the question text from a specific section of the form.
+
+        The function attempts to retrieve the question text by searching for <label>
+        elements, spans with a specific class, or using the section's full text as a fallback.
+
+        Args:
+            section (WebElement): The form section where the question is located.
+
+        Returns:
+            str: The question text or 'unknown' if extraction fails.
+        """
+        # Attempt to get text from <label> elements
+        label_elements = section.find_elements(By.TAG_NAME, "label")
+        if label_elements:
+            return label_elements[0].text.strip()
+
+        # Attempt to get text from spans with a specific class
+        span_elements = section.find_elements(By.CLASS_NAME, "jobs-easy-apply-form-section__group-title")
+        if span_elements:
+            return span_elements[0].text.strip()
+
+        # Fallback: use the section's full text
+        section_text = section.text.strip()
+        if section_text:
+            return section_text
+
+        # Return 'unknown' if none of the above options work
+        return 'unknown'
+
+
     def _6_find_and_handle_dropdown_question(self, section: WebElement, job: Job) -> bool:
         """
-        Finds and handles dropdown questions in the form section.
+        Searches for and handles dropdown questions within a form section.
+
+        The function looks for <select> elements, ensures they are visible and clickable,
+        extracts available options, checks for existing answers or generates new ones
+        using the GPT assistant, and finally selects the appropriate option.
+
+        Args:
+            section (WebElement): The form section to be analyzed.
+            job (Job): Object representing the current job posting.
+
+        Returns:
+            bool: True if a dropdown was found and handled successfully, False otherwise.
         """
         logger.debug("Starting search for dropdown questions in the section")
 
         try:
-            # Look for the <select> element
+            # Search for <select> elements in the section
             dropdowns = section.find_elements(By.TAG_NAME, "select")
             if not dropdowns:
                 logger.debug("No dropdown found in this section")
                 return False
 
-            if dropdowns:
-                dropdown = dropdowns[0]
-                logger.debug("Dropdown found")
+            dropdown = dropdowns[0]
+            logger.debug("Dropdown found")
 
-                # Ensure the dropdown is visible and enabled
-                self.wait.until(EC.visibility_of(dropdown))
-                self.wait.until(EC.element_to_be_clickable(dropdown))
+            # Ensure the dropdown is visible and clickable
+            self.wait.until(EC.visibility_of(dropdown))
+            self.wait.until(EC.element_to_be_clickable(dropdown))
 
-                # Get the options from the dropdown
-                select = Select(dropdown)
-                options = [option.text.strip() for option in select.options]
-                logger.debug(f"Dropdown options obtained: {options}")
+            # Extract available options from the dropdown
+            select = Select(dropdown)
+            options = [option.text.strip() for option in select.options]
+            logger.debug(f"Dropdown options obtained: {options}")
 
-                # Get the question text
-                label_elements = section.find_elements(By.TAG_NAME, "label")
-                question_text = label_elements[0].text.strip() if label_elements else "unknown"
-                logger.debug(f"Question text identified: {question_text}")
+            # Extract the question text using the helper method
+            question_text = self._extract_question_text(section)
+            logger.debug(f"Question text identified: {question_text}")
 
-                # Check if there is already a saved answer
-                existing_answer = self._get_existing_answer(question_text, "dropdown")
-                if existing_answer:
-                    logger.debug(f"Existing answer found: {existing_answer}")
-                    if existing_answer in options:
-                        self._7_select_dropdown_option(dropdown, existing_answer)
-                    else:
-                        logger.error(f"The answer '{existing_answer}' is not a valid option.")
-                        raise ValueError(f"Invalid option selected: {existing_answer}")
+            # Check if there is an existing answer stored for this question
+            existing_answer = self._get_existing_answer(question_text, "dropdown")
+            if existing_answer:
+                logger.debug(f"Existing answer found: {existing_answer}")
+                if existing_answer in options:
+                    self._7_select_dropdown_option(dropdown, existing_answer)
                 else:
-                    logger.debug("No existing answer found, generating answer with GPT")
-                    answer = self.gpt_answerer.answer_question_from_options(question_text, options)
-                    logger.debug(f"Answer generated: {answer}")
-                    self._save_questions_to_json({"type": "dropdown", "question": question_text, "answer": answer})
-                    self._7_select_dropdown_option(dropdown, answer)
-
-                return True
+                    logger.error(f"The answer '{existing_answer}' is not a valid option.")
+                    raise ValueError(f"Invalid option selected: {existing_answer}")
             else:
-                logger.debug("No dropdown found in the section.")
-                return False
+                logger.debug("No existing answer found, generating answer with GPT")
+                answer = self.gpt_answerer.answer_question_from_options(question_text, options)
+                logger.debug(f"Answer generated: {answer}")
+                self._save_questions_to_json({
+                    "type": "dropdown",
+                    "question": question_text,
+                    "answer": answer
+                })
+                self._7_select_dropdown_option(dropdown, answer)
+
+            logger.debug("Dropdown handled successfully")
+            return True
 
         except Exception as e:
             logger.error(f"An error occurred while handling dropdown questions: {e}", exc_info=True)
@@ -1330,29 +1424,3 @@ class AIHawkEasyApplier:
         sanitized_text = re.sub(r'\s+', ' ', sanitized_text)
         # logger.debug(f"Sanitized text: {sanitized_text}")
         return sanitized_text
-
-#Not Used Yet
-
-    def navigate_date_picker(self, month_name: str, year: int) -> None:
-        logger.debug(f"Navigating date picker to {month_name} {year}")
-        # Locate the calendar header elements
-        while True:
-            calendar_header = self.driver.find_element(By.CLASS_NAME, 'artdeco-calendar__month')
-            current_month_year = calendar_header.text
-            if current_month_year == f"{month_name} {year}":
-                logger.debug("Reached the desired month and year in the date picker.")
-                break
-            else:
-                # Click the next month button
-                next_month_button = self.driver.find_element(By.XPATH, "//button[@data-calendar-next-month='']")
-                next_month_button.click()
-                time.sleep(0.5)  # Wait for the calendar to update
-
-    def select_date_in_picker(self, day: int) -> None:
-        logger.debug(f"Selecting day {day} in date picker.")
-        day_buttons = self.driver.find_elements(By.XPATH, f"//button[@data-calendar-day='' and text()='{day}']")
-        if day_buttons:
-            day_buttons[0].click()
-            logger.debug(f"Clicked on day {day} in date picker.")
-        else:
-            logger.warning(f"Day {day} not found in date picker.")
