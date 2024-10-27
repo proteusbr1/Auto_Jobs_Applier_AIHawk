@@ -56,24 +56,26 @@ class AIHawkJobManager:
         self.title_blacklist = parameters.get("title_blacklist", [])
         self.title_blacklist_set = set(word.lower().strip() for word in self.title_blacklist)
         self.company_blacklist_set = set(word.lower().strip() for word in self.company_blacklist)
-        self.positions = parameters.get("positions", [])
-        self.locations = parameters.get("locations", [])
+        
+        # Set the positions and locations
+        self.searches = parameters.get("searches", [])
+        
         self.apply_once_at_company = parameters.get("apply_once_at_company", False)
         self.base_search_url = self.get_base_search_url(parameters)
         self.seen_jobs = []
-
+        
         job_applicants_threshold = parameters.get("job_applicants_threshold", {})
         self.min_applicants = job_applicants_threshold.get("min_applicants", 0)
         self.max_applicants = job_applicants_threshold.get("max_applicants", float("inf"))
-
+        
         # Use resume_manager to get the resume path
         self.resume_manager = resume_manager
         self.resume_path = self.resume_manager.get_resume()
         self.output_file_directory = Path(parameters["outputFileDirectory"])
         self.env_config = EnvironmentKeys()
-
+        
         self.cache = JobCache(self.output_file_directory)
-
+        
         logger.debug("Parameters set successfully")
 
     def set_gpt_answerer(self, gpt_answerer):
@@ -94,43 +96,42 @@ class AIHawkJobManager:
             self.resume_generator_manager,
             cache=self.cache,
         )
-        searches = list(product(self.positions, self.locations))
-        random.shuffle(searches)
-        page_sleep = 0
-
-        for position, location in searches:
-            location_url = "&location=" + location
-            job_page_number = -1
-            logger.debug(f"Starting the search for '{position}' in '{location}'.")
-
-            try:
-                while True:
-                    page_sleep += 1
-                    job_page_number += 1
-                    logger.info(f"Navigating to job page {job_page_number} for position '{position}' in '{location}'.")
-                    self.next_job_page(position, location_url, job_page_number)
-                    logger.debug("Initiating the application process for this page.")
-
-                    try:
-                        jobs = self.get_jobs_from_page()
-                        if not jobs:
-                            logger.debug("No more jobs found on this page. Exiting loop.")
+        
+        for search in self.searches:
+            search_country = search['location']
+            search_terms = search['positions']
+            
+            for search_term in search_terms:
+                job_page_number = -1
+                logger.debug(f"Starting the search for '{search_term}' in '{search_country}'.")
+        
+                try:
+                    while True:
+                        job_page_number += 1
+                        logger.info(f"Navigating to job page {job_page_number} for position '{search_term}' in '{search_country}'.")
+                        self.next_job_page(search_term, search_country, job_page_number)
+                        logger.debug("Initiating the application process for this page.")
+        
+                        try:
+                            jobs = self.get_jobs_from_page()
+                            if not jobs:
+                                logger.debug("No more jobs found on this page. Exiting loop.")
+                                break
+                        except Exception as e:
+                            logger.error("Failed to retrieve jobs.", exc_info=True)
                             break
-                    except Exception as e:
-                        logger.error("Failed to retrieve jobs.", exc_info=True)
-                        break
-
-                    try:
-                        self.apply_jobs(position)
-                    except Exception as e:
-                        logger.error(f"Error during job application: {e}", exc_info=True)
-                        continue
-
-                    logger.debug("Completed applying to jobs on this page.")
-
-            except Exception as e:
-                logger.error("Unexpected error during job search.", exc_info=True)
-                continue
+        
+                        try:
+                            self.apply_jobs(search_term, search_country)
+                        except Exception as e:
+                            logger.error(f"Error during job application: {e}", exc_info=True)
+                            continue
+        
+                        logger.debug("Completed applying to jobs on this page.")
+        
+                except Exception as e:
+                    logger.error("Unexpected error during job search.", exc_info=True)
+                    continue
 
     def get_jobs_from_page(self):
         logger.debug("Starting get_jobs_from_page.")
@@ -214,7 +215,7 @@ class AIHawkJobManager:
             utils.capture_screenshot(self.driver, "job_elements_error")
             return []
 
-    def apply_jobs(self, position):
+    def apply_jobs(self, search_term, search_country):
         try:
             job_list_container = self.wait.until(
                 EC.presence_of_element_located((By.CLASS_NAME, 'scaffold-layout__list-container'))
@@ -229,7 +230,7 @@ class AIHawkJobManager:
             return
 
         job_list = [
-            Job(*self.extract_job_information_from_tile(job_element), position=position)
+            Job(*self.extract_job_information_from_tile(job_element), search_term=search_term, search_country=search_country)
             for job_element in job_list_elements
         ]
 
@@ -466,11 +467,59 @@ class AIHawkJobManager:
         logger.debug(f"Base search URL constructed: {full_url}")
         return full_url
 
-    def next_job_page(self, position, location, job_page):
-        logger.debug(f"Navigating to next job page: Position='{position}', Location='{location}', Page={job_page}.")
-        self.driver.get(
-            f"https://www.linkedin.com/jobs/search/{self.base_search_url}&keywords={position}{location}&start={job_page * 25}"
-        )
+    def next_job_page(self, position: str, search_country: str, job_page: int):
+        """
+        Navigates to the specified job page based on the job position and location.
+
+        Args:
+            position (str): The job position to search for.
+            search_country (str): The location/country to search in.
+            job_page (int): The page number to navigate to.
+        """
+        try:
+            # Construct query parameters
+            start = job_page * 25  # Assuming 25 jobs per page
+
+            #location 
+            if search_country == "Worldwide":
+                location_url = "&geoId=92000000"
+            elif search_country == "United States":
+                location_url = "&geoId=103644278"
+            else:
+                location_url = f"&location=" + search_country
+            
+            # Build the full URL using base_search_url and query parameters
+            url = (
+                f"https://www.linkedin.com/jobs/search/{self.base_search_url}"
+                f"&keywords={position}{location_url}&start={start}"
+            )
+
+            # Log the navigation details for debugging
+            logger.debug(
+                f"Navigating to job page: Position='{position}', "
+                f"Location='{search_country}', Page={job_page}, URL='{url}'."
+            )
+
+            # Navigate to the constructed URL
+            self.driver.get(url)
+
+        except WebDriverException as wd_exc:
+            # Handle Selenium-specific exceptions
+            logger.error(
+                f"Selenium WebDriverException occurred while navigating to page {job_page} "
+                f"for position '{position}' in '{search_country}': {wd_exc}",
+                exc_info=True
+            )
+            utils.capture_screenshot(self.driver, f"webdriver_error_page_{job_page}")
+
+        except Exception as exc:
+            # Handle any other unexpected exceptions
+            logger.error(
+                f"Unexpected error occurred while navigating to page {job_page} "
+                f"for position '{position}' in '{search_country}': {exc}",
+                exc_info=True
+            )
+            utils.capture_screenshot(self.driver, f"unexpected_error_page_{job_page}")
 
     def extract_job_information_from_tile(self, job_tile):
         """

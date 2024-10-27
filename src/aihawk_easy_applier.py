@@ -157,6 +157,7 @@ class AIHawkEasyApplier:
             description=job.description,
             recruiter_link=job.recruiter_link,
             gpt_salary=job.gpt_salary,
+            search_country=job.search_country,
         )
         logger.debug("Job successfully set up in GPTAnswerer.")
         

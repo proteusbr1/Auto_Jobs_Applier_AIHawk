@@ -74,7 +74,11 @@ class OpenAIModel(AIModel):
             llm_model (str): The name of the OpenAI model to use.
         """
         from langchain_openai import ChatOpenAI
-        self.model = ChatOpenAI(model_name=llm_model, openai_api_key=api_key, temperature=0.4)
+        self.model_name = llm_model.lower()
+        if llm_model == "o1-mini":
+            self.model = ChatOpenAI(model_name=llm_model, openai_api_key=api_key)
+        else:
+            self.model = ChatOpenAI(model_name=llm_model, openai_api_key=api_key, temperature=0.4)
         logger.debug(f"OpenAIModel initialized with model: {llm_model}")
 
     def invoke(self, prompt: str) -> BaseMessage:
@@ -352,6 +356,53 @@ class AIAdapter:
             logger.error(f"Error invoking model through AIAdapter: {e}")
             raise
 
+# https://openai.com/api/pricing/
+MODEL_PRICING = {
+    "gpt-4o": {
+        "input_token_price": 2.50 / 1_000_000, 
+        "output_token_price": 10.00 / 1_000_000, 
+    },
+    "gpt-4o-2024-08-06": {
+        "input_token_price": 2.50 / 1_000_000,
+        "output_token_price": 10.00 / 1_000_000,
+    },
+    "gpt-4o-audio-preview": {
+        "input_token_price": 2.50 / 1_000_000,
+        "output_token_price": 10.00 / 1_000_000,
+    },
+    "gpt-4o-audio-preview-2024-10-01": {
+        "input_token_price": 2.50 / 1_000_000,
+        "output_token_price": 10.00 / 1_000_000,
+    },
+    "gpt-4o-2024-05-13": {
+        "input_token_price": 5.00 / 1_000_000,
+        "output_token_price": 15.00 / 1_000_000,
+    },
+    "gpt-4o-mini": {
+        "input_token_price": 0.150 / 1_000_000,
+        "output_token_price": 0.600 / 1_000_000,
+    },
+    "gpt-4o-mini-2024-07-18": {
+        "input_token_price": 0.150 / 1_000_000,
+        "output_token_price": 0.600 / 1_000_000,
+    },
+    "o1-preview": {
+        "input_token_price": 15.00 / 1_000_000,
+        "output_token_price": 60.00 / 1_000_000,
+    },
+    "o1-preview-2024-09-12": {
+        "input_token_price": 15.00 / 1_000_000,
+        "output_token_price": 60.00 / 1_000_000,
+    },
+    "o1-mini": {
+        "input_token_price": 3.00 / 1_000_000,
+        "output_token_price": 12.00 / 1_000_000,
+    },
+    "o1-mini-2024-09-12": {
+        "input_token_price": 3.00 / 1_000_000,
+        "output_token_price": 12.00 / 1_000_000,
+    },
+}
 
 class LLMLogger:
     """
@@ -367,15 +418,32 @@ class LLMLogger:
         """
         self.llm = llm
         logger.debug(f"LLMLogger initialized with LLM: {self.llm}")
+        self.model_name = self._get_model_name()
+
+    def _get_model_name(self) -> str:
+        """
+        Retrieve the model name from the LLM instance.
+
+        Returns:
+            str: The name of the model.
+        """
+        try:
+            model_name = self.llm.model.model_name  # Ajuste conforme a estrutura do objeto LLM
+            logger.debug(f"Detected model name: {model_name}")
+            return model_name
+        except AttributeError:
+            logger.error("Unable to retrieve the model name from the LLM instance.")
+            return "unknown_model"
 
     @staticmethod
-    def log_request(prompts: Union[List[BaseMessage], StringPromptValue, Dict], parsed_reply: Dict[str, Dict]):
+    def log_request(prompts: Union[List[BaseMessage], StringPromptValue, Dict], parsed_reply: Dict[str, Dict], model_name: str):
         """
         Log the details of an AI model request and its response.
 
         Args:
             prompts (Union[List[BaseMessage], StringPromptValue, Dict]): The prompts sent to the AI model.
             parsed_reply (Dict[str, Dict]): The parsed response from the AI model.
+            model_name (str): The name of the AI model used.
 
         Raises:
             Exception: If an error occurs during logging.
@@ -383,6 +451,7 @@ class LLMLogger:
         logger.debug("Starting log_request method.")
         logger.debug(f"Prompts received: {prompts}")
         logger.debug(f"Parsed reply received: {parsed_reply}")
+        logger.debug(f"Model used: {model_name}")
 
         if isinstance(prompts, ChatPromptValue):
             logger.debug("Prompts are of type ChatPromptValue.")
@@ -450,14 +519,23 @@ class LLMLogger:
         try:
             response_metadata = parsed_reply.get("response_metadata", {})
             model_name = response_metadata.get("model_name", "unknown_model")
-            logger.debug(f"Model name: {model_name}")
+            logger.debug(f"Model name from response_metadata: {model_name}")
         except AttributeError as e:
             logger.error(f"AttributeError in response_metadata: {e}")
             raise
 
+        pricing = MODEL_PRICING.get(model_name.lower(), None)
+        if pricing is None:
+            logger.warning(f"Prices not defined for model '{model_name}'. Using default prices.")
+            prompt_price_per_token = 0.00000015  # Default price
+            completion_price_per_token = 0.0000006  # Default price
+        else:
+            prompt_price_per_token = pricing["input_token_price"]
+            completion_price_per_token = pricing["output_token_price"]
+            logger.debug(f"Applying prices for model '{model_name}': "
+                        f"Input Token: {prompt_price_per_token}, Output Token: {completion_price_per_token}")
+            
         try:
-            prompt_price_per_token = 0.00000015
-            completion_price_per_token = 0.0000006
             total_cost = (input_tokens * prompt_price_per_token) + (output_tokens * completion_price_per_token)
             logger.debug(f"Total cost calculated: {total_cost}")
         except Exception as e:
@@ -530,7 +608,10 @@ class LoggerChatModel:
                 parsed_reply = self.parse_llmresult(reply)
                 logger.debug(f"Parsed LLM reply: {parsed_reply}")
 
-                LLMLogger.log_request(prompts=messages, parsed_reply=parsed_reply)
+                # Log the request and response
+                model_name = self.llm.model.model_name if hasattr(self.llm.model, 'model_name') else "unknown_model"
+
+                LLMLogger.log_request(prompts=messages, parsed_reply=parsed_reply, model_name=model_name)
                 logger.debug("Request successfully logged.")
 
                 # Ensure that reply is an instance of AIMessage
@@ -724,7 +805,8 @@ class GPTAnswerer:
                 salary: Optional[str] = "",
                 description: Optional[str] = "", 
                 recruiter_link: Optional[str] = "",
-                gpt_salary: Optional[float] = None
+                gpt_salary: Optional[float] = None,
+                search_country: Optional[str] = None,
                 ):
         """
         Set the job details for the GPTAnswerer.
@@ -770,6 +852,7 @@ class GPTAnswerer:
             description=description,
             recruiter_link=recruiter_link,
             gpt_salary=gpt_salary,
+            search_country=search_country,
         )
         logger.debug(f"Job object set: {self.job}")
 
@@ -827,6 +910,7 @@ class GPTAnswerer:
                 apply_method=job.apply_method,
                 description=job.description,
                 recruiter_link=job.recruiter_link,
+                search_country=job.search_country,
             )
         else:
             logger.error("Job parameter is None.")
@@ -1187,12 +1271,13 @@ Provide only the exact name of the section from the list above with no additiona
         job_title = job.title
         job_salary = job.salary
         resume_summary = self.resume_summary
+        location = job.location
 
         # Create the prompt for evaluating the job and resume
-        prompt = f"""
-        You are a Human Resources expert specializing in evaluating job applications for the American job market. Your task is to assess the compatibility between the following job description and a provided resume. 
+        personal_prompt = f"""
+        You are a Human Resources expert specializing in evaluating job applications for the {location} job market. Your task is to assess the compatibility between the following job description and a provided resume. 
         Return only a score from 0 to 10 representing the candidate's likelihood of securing the position, with 0 being the lowest probability and 10 being the highest. 
-        The assessment should consider HR-specific criteria for the American job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
+        The assessment should consider HR-specific criteria for the {location} job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
 
         Job Title: 
         ({job_title})
@@ -1210,7 +1295,7 @@ Provide only the exact name of the section from the list above with no additiona
         """
 
         company_prompt = f"""
-        You are a business development expert specializing in matching companies with suitable job opportunities in the American market. Your task is to assess the compatibility between the following job description and my company's capabilities.
+        You are a business development expert specializing in matching companies with suitable job opportunities in the {location} market. Your task is to assess the compatibility between the following job description and my company's capabilities.
 
         Return only a score from 0 to 10 representing my company's likelihood of successfully securing and executing the job, with 0 being the lowest probability and 10 being the highest.
 
@@ -1230,6 +1315,8 @@ Provide only the exact name of the section from the list above with no additiona
 
         Score (0 to 10):
         """     
+        
+        prompt = personal_prompt
         
         logger.debug("Sending job description and resume to GPT for evaluation")
 
@@ -1272,10 +1359,11 @@ Provide only the exact name of the section from the list above with no additiona
             resume_summary = self.resume_summary
             salary_expectation_line = f"salary expectation: {SALARY_EXPECTATIONS}\n"
             resume_summary = f"{salary_expectation_line}{resume_summary}"
+            location = job.location
             
             # Create the prompt to ask ChatGPT
             prompt = f"""
-             You are a Human Resources expert specializing in evaluating job applications for the American job market.
+             You are a Human Resources expert specializing in evaluating job applications for the {location} job market.
              Given the job description and the candidate's resume below, estimate the annual salary in US dollars that the employer is likely to offer to this candidate. 
              Provide your answer as a single number, representing the annual salary in US dollars, without any additional text, units, currency symbols, or ranges. 
              If the salary is given as a range, return only the highest value in the range. Do not include any explanations.
@@ -1388,6 +1476,7 @@ Provide only the exact name of the section from the list above with no additiona
                     salary=job.salary,
                     description=job.description,
                     recruiter_link=job.recruiter_link,
+                    search_country=job.search_country,
                 )
             else:
                 logger.error("The 'job' parameter is None.")
@@ -1399,7 +1488,7 @@ Provide only the exact name of the section from the list above with no additiona
             
             # Create the prompt following the specified rules
             prompt_template = """
-            You are an AI assistant specializing in human resources and knowledgeable about the American job market. Your role is to help me secure a job by answering questions related to my resume and a job description. Follow these rules:
+            You are an AI assistant specializing in human resources and knowledgeable about the {location} job market. Your role is to help me secure a job by answering questions related to my resume and a job description. Follow these rules:
             - Answer questions directly.
             - Keep the answer under {limit_caractere} characters.
             - If not sure, provide an approximate answer.
@@ -1430,7 +1519,8 @@ Provide only the exact name of the section from the list above with no additiona
                 job_salary=self.job.salary,
                 job_description=self.job.description,
                 resume=self.resume_summary,
-                question=question
+                question=question,
+                location = self.job.location,
             )
             
             # Invoke the model

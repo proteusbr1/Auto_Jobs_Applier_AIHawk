@@ -92,8 +92,7 @@ class ConfigValidator:
             'experienceLevel': dict,
             'jobTypes': dict,
             'date': dict,
-            'positions': list,
-            'locations': list,
+            'searches': list,
             'distance': int,
             'company_blacklist': list,
             'title_blacklist': list,
@@ -143,17 +142,36 @@ class ConfigValidator:
                 raise ConfigError(f"Date filter '{date_filter}' must be a boolean in config file {config_yaml_path}")
             logger.debug(f"Date filter '{date_filter}' is valid.")
 
-        # Validate positions list
-        if not all(isinstance(pos, str) for pos in parameters['positions']):
-            logger.error(f"'positions' must be a list of strings in config file {config_yaml_path}")
-            raise ConfigError(f"'positions' must be a list of strings in config file {config_yaml_path}")
-        logger.debug("'positions' list validated successfully.")
+        # Validate 'searches' list
+        if not isinstance(parameters['searches'], list):
+            logger.error(f"'searches' must be a list in config file {config_yaml_path}")
+            raise ConfigError(f"'searches' must be a list in config file {config_yaml_path}")
 
-        # Validate locations list
-        if not all(isinstance(loc, str) for loc in parameters['locations']):
-            logger.error(f"'locations' must be a list of strings in config file {config_yaml_path}")
-            raise ConfigError(f"'locations' must be a list of strings in config file {config_yaml_path}")
-        logger.debug("'locations' list validated successfully.")
+        for index, search in enumerate(parameters['searches'], start=1):
+            if not isinstance(search, dict):
+                logger.error(f"Each item in 'searches' must be a mapping/dictionary. Issue found at item {index}.")
+                raise ConfigError(f"Each item in 'searches' must be a mapping/dictionary. Issue found at item {index}.")
+
+            # Validate 'location'
+            if 'location' not in search:
+                logger.error(f"Missing 'location' key in 'searches' at item {index}.")
+                raise ConfigError(f"Missing 'location' key in 'searches' at item {index}.")
+            if not isinstance(search['location'], str):
+                logger.error(f"'location' must be a string in 'searches' at item {index}.")
+                raise ConfigError(f"'location' must be a string in 'searches' at item {index}.")
+
+            # Validate 'positions'
+            if 'positions' not in search:
+                logger.error(f"Missing 'positions' key in 'searches' at item {index}.")
+                raise ConfigError(f"Missing 'positions' key in 'searches' at item {index}.")
+            if not isinstance(search['positions'], list):
+                logger.error(f"'positions' must be a list in 'searches' at item {index}.")
+                raise ConfigError(f"'positions' must be a list in 'searches' at item {index}.")
+            if not all(isinstance(pos, str) for pos in search['positions']):
+                logger.error(f"All items in 'positions' must be strings in 'searches' at item {index}.")
+                raise ConfigError(f"All items in 'positions' must be strings in 'searches' at item {index}.")
+
+            logger.debug(f"'searches' item {index} validated successfully.")
 
         # Validate distance value
         approved_distances = {0, 5, 10, 25, 50, 100}

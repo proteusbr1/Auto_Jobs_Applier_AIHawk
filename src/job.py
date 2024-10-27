@@ -21,7 +21,8 @@ class Job:
     pdf_path: str = ""
     cover_letter_path: str = ""
     recruiter_link: str = ""
-    position: str = ""
+    search_term: str = ""
+    search_country: str = ""
     score: Optional[float] = None
     gpt_salary: Optional[float] = None
 
@@ -133,7 +134,8 @@ class JobCache:
             # "summarize_job_description": job.summarize_job_description,	
             "pdf_path": pdf_path,
             "recruiter_link": job.recruiter_link,
-            "search_term": job.position,
+            "search_term": job.search_term,
+            "search_country": job.search_country,
             "score": job.score,  
             "gpt_salary": job.gpt_salary,
             "timestamp": current_time
