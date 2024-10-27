@@ -1,17 +1,17 @@
 remote: true
 
 experienceLevel:
-  internship: false
-  entry: false
-  associate: false
+  internship: true
+  entry: true
+  associate: true
   mid-senior level: true
   director: true
   executive: true
 
 jobTypes:
-  full-time: true
+  full-time: false
   contract: true
-  part-time: true
+  part-time: false
   temporary: true
   internship: false
   other: true
@@ -24,123 +24,132 @@ date:
   24 hours: true
 
 positions:
-  - Health AI
-  - Health Artificial Intelligence
-  - Health Advisor
-  - Health Bioethics
-  - Health Compliance
-  - Health Consultant
-  - Health Expertise
-  - Health Ethical 
-  - Health Innovation
-  - Health Informatics
-  - Health Law
-  - Health Legal
-  - Health Malpractice
-  # - Health Practices
-  - Health Regulatory
-  - Health Strategy
-  - Health Policy
-  - Health Witness
-  - Health Technology
-  - Health Tech
-  - Health Digital
-  - Health Startup
-  - Health Software
-  - Medical AI
-  - Medical Artificial Intelligence
-  - Medical Advisor
-  - Medical Bioethics
-  - Medical Compliance
-  - Medical Consultant
-  - Medical Expertise
-  - Medical Ethical 
-  - Medical Innovation
-  - Medical Informatics
-  - Medical Law
-  - Medical Legal
-  - Medical Malpractice
-  # - Medical Practices
-  - Medical Policy
-  - Medical Regulatory
-  - Medical Strategy
-  - Medical Technology
-  - Medical Witness
-  - Medical Tech
-  - Medical Digital
-  - Medical Startup
-  - Medical Software
-  - Healthcare AI
-  - Healthcare Artificial Intelligence
-  - Healthcare Advisor
-  - Healthcare Bioethics
-  - Healthcare Compliance
-  - Healthcare Consultant
-  - Healthcare Expertise
-  - Healthcare Ethical 
-  - Healthcare Innovation
-  - Healthcare Informatics
-  - Healthcare Law
-  - Healthcare Legal
-  - Healthcare Malpractice
-  # - Healthcare Practices
-  - Healthcare Policy
-  - Healthcare Regulatory
-  - Healthcare Strategy
-  - Healthcare Technology
-  - Healthcare Witness
-  - Healthcare Tech
-  - Healthcare Digital
-  - Healthcare Startup
-  - Healthcare Software
-  - Physicians AI
-  - Physicians Artificial Intelligence
-  - Physicians Advisor
-  - Physicians Bioethics
-  - Physicians Compliance
-  - Physicians Consultant
-  - Physicians Expertise
-  - Physicians Ethical 
-  - Physicians Innovation
-  - Physicians Informatics
-  - Physicians Law
-  - Physicians Legal
-  - Physicians Malpractice
-  # - Physicians Practices
-  - Physicians Policy
-  - Physicians Regulatory
-  - Physicians Strategy
-  - Physicians Technology
-  - Physicians Witness
-  - Physicians Tech
-  - Physicians Digital
-  - Physicians Startup
-  - Physicians Software
-  # Medicine
-  - Medicine AI
-  - Medicine Artificial Intelligence
-  - Medicine Advisor
-  - Medicine Bioethics
-  - Medicine Compliance
-  - Medicine Consultant
-  - Medicine Expertise
-  - Medicine Ethical 
-  - Medicine Innovation
-  - Medicine Informatics
-  - Medicine Law
-  - Medicine Legal
-  - Medicine Malpractice
-  # - Physicians Practices
-  - Medicine Policy
-  - Medicine Regulatory
-  - Medicine Strategy
-  - Medicine Technology
-  - Medicine Witness
-  - Medicine Tech
-  - Medicine Digital
-  - Medicine Startup
-  - Medicine Software
-  - Personal Injury
+  - Health
+  # - Health AI
+  # - Health Artificial Intelligence
+  # - Health Advisor
+  # - Health Bioethics
+  # - Health Compliance
+  # - Health Consultant
+  # - Health Expertise
+  # - Health Ethical 
+  # - Health Innovation
+  # - Health Informatics
+  # - Health Law
+  # - Health Legal
+  # - Health Malpractice
+  # # - Health Practices
+  # - Health Regulatory
+  # - Health Strategy
+  # - Health Policy
+  # - Health Witness
+  # - Health Technology
+  # - Health Tech
+  # - Health Digital
+  # - Health Startup
+  # - Health Software
+  - Medical
+  # - Medical AI
+  # - Medical Artificial Intelligence
+  # - Medical Advisor
+  # - Medical Bioethics
+  # - Medical Compliance
+  # - Medical Consultant
+  # - Medical Expertise
+  # - Medical Ethical 
+  # - Medical Innovation
+  # - Medical Informatics
+  # - Medical Law
+  # - Medical Legal
+  # - Medical Malpractice
+  # # - Medical Practices
+  # - Medical Policy
+  # - Medical Regulatory
+  # - Medical Strategy
+  # - Medical Technology
+  # - Medical Witness
+  # - Medical Tech
+  # - Medical Digital
+  # - Medical Startup
+  # - Medical Software
+  - Healthcare
+  # - Healthcare AI
+  # - Healthcare Artificial Intelligence
+  # - Healthcare Advisor
+  # - Healthcare Bioethics
+  # - Healthcare Compliance
+  # - Healthcare Consultant
+  # - Healthcare Expertise
+  # - Healthcare Ethical 
+  # - Healthcare Innovation
+  # - Healthcare Informatics
+  # - Healthcare Law
+  # - Healthcare Legal
+  # - Healthcare Malpractice
+  # # - Healthcare Practices
+  # - Healthcare Policy
+  # - Healthcare Regulatory
+  # - Healthcare Strategy
+  # - Healthcare Technology
+  # - Healthcare Witness
+  # - Healthcare Tech
+  # - Healthcare Digital
+  # - Healthcare Startup
+  # - Healthcare Software
+  - HealthTech
+  - Physicians
+  # - Physicians AI
+  # - Physicians Artificial Intelligence
+  # - Physicians Advisor
+  # - Physicians Bioethics
+  # - Physicians Compliance
+  # - Physicians Consultant
+  # - Physicians Expertise
+  # - Physicians Ethical 
+  # - Physicians Innovation
+  # - Physicians Informatics
+  # - Physicians Law
+  # - Physicians Legal
+  # - Physicians Malpractice
+  # # - Physicians Practices
+  # - Physicians Policy
+  # - Physicians Regulatory
+  # - Physicians Strategy
+  # - Physicians Technology
+  # - Physicians Witness
+  # - Physicians Tech
+  # - Physicians Digital
+  # - Physicians Startup
+  # - Physicians Software
+  - Medicine
+  # # Medicine
+  # - Medicine AI
+  # - Medicine Artificial Intelligence
+  # - Medicine Advisor
+  # - Medicine Bioethics
+  # - Medicine Compliance
+  # - Medicine Consultant
+  # - Medicine Expertise
+  # - Medicine Ethical 
+  # - Medicine Innovation
+  # - Medicine Informatics
+  # - Medicine Law
+  # - Medicine Legal
+  # - Medicine Malpractice
+  # # - Physicians Practices
+  # - Medicine Policy
+  # - Medicine Regulatory
+  # - Medicine Strategy
+  # - Medicine Technology
+  # - Medicine Witness
+  # - Medicine Tech
+  # - Medicine Digital
+  # - Medicine Startup
+  # - Medicine Software
+  - Injury
+  # - Personal Injury
+  - Witness
+  - Paralegal
   
 locations:
   - United States
@@ -201,7 +210,7 @@ job_applicants_threshold:
   max_applicants: 30
 
 llm_model_type: openai
-llm_model: 'gpt-4o-mini'
+llm_model: 'o1-mini'
 # llm_api_url: https://api.pawan.krd/cosmosrp/v1'
 
 # llm_model_type: "ollama"

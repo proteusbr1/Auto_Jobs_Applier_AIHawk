@@ -21,7 +21,9 @@ from dotenv import load_dotenv
 import socket
 from typing import Optional
 
+from src.resume_manager import ResumeManager
 
+from app_config import TRYING_DEGUB
 
 
 # Suppress other stderr outputs
@@ -301,8 +303,6 @@ class FileManager:
         return result
 
 
-
-
 def init_browser() -> webdriver.Chrome:
     """
     Initializes the Selenium Chrome WebDriver with appropriate options and logging.
@@ -324,11 +324,10 @@ def init_browser() -> webdriver.Chrome:
             logger.debug(f"Created log directory at: {log_dir}")
 
         # Configure the ChromeDriver service with reduced log level
-        service = ChromeService(
-            executable_path=ChromeDriverManager().install(),
-            log_path=os.path.join(log_dir, "chromedriver.log"),
-            log_level='WARNING'  # Adjust to 'INFO' or 'SEVERE' as needed
-        )
+        if TRYING_DEGUB:
+            service = ChromeService(executable_path=ChromeDriverManager().install(),log_path=os.path.join(log_dir, "chromedriver.log"),log_level='WARNING')
+        else:
+            service = ChromeService(executable_path=ChromeDriverManager().install())
 
         browser = webdriver.Chrome(service=service, options=options)
         logger.debug("Browser initialized successfully.")
@@ -338,13 +337,14 @@ def init_browser() -> webdriver.Chrome:
         raise RuntimeError(f"Failed to initialize browser: {str(e)}")
 
 
-def create_and_run_bot(parameters: dict, llm_api_key: str):
+def create_and_run_bot(parameters: dict, llm_api_key: str, resume_manager: ResumeManager):
     """
     Creates and runs the AIHawk bot with the provided parameters and API key.
 
     Args:
         parameters (dict): Configuration parameters.
         llm_api_key (str): API key for the language model.
+        resume_manager (ResumeManager): Instance of ResumeManager containing resume information.
 
     Raises:
         WebDriverException: If a WebDriver error occurs.
@@ -357,6 +357,7 @@ def create_and_run_bot(parameters: dict, llm_api_key: str):
         style_manager = StyleManager()
         resume_generator = ResumeGenerator()
 
+        # Access plainTextResume from parameters['uploads']
         plain_text_path = parameters['uploads']['plainTextResume']
         logger.debug(f"Reading plain text resume from: {plain_text_path}")
         with open(plain_text_resume_file := plain_text_path, "r", encoding='utf-8') as file:
@@ -398,8 +399,11 @@ def create_and_run_bot(parameters: dict, llm_api_key: str):
         bot = AIHawkBotFacade(login_component, apply_component)
         bot.set_job_application_profile_and_resume(job_application_profile_object, resume_object)
         bot.set_gpt_answerer_and_resume_generator(gpt_answerer_component, resume_generator_manager)
-        bot.set_parameters(parameters)
+        bot.set_parameters(parameters, resume_manager)
         logger.debug("AIHawkBotFacade setup complete.")
+
+        # Log the resume being used
+        logger.info(f"Using resume: {resume_manager.get_resume()}")
 
         logger.debug("Starting bot login process.")
         bot.start_login()
@@ -466,12 +470,20 @@ def main(resume: Optional[Path] = None):
         logger.debug("Validating secrets.")
         llm_api_key = ConfigValidator.validate_secrets(Path('.env'))
 
+        logger.debug("Initializing ResumeManager.")
+        default_html_resume = Path("resumes/resume.html")
+        resume_manager = ResumeManager(resume_option=resume, default_html_resume=default_html_resume)
+        # resume_manager.load_resume()  # <-- Removed redundant call
+
         logger.debug("Setting up file uploads and output directory.")
-        parameters['uploads'] = FileManager.file_paths_to_dict(resume, plain_text_resume_file)
+        parameters['uploads'] = {
+            'resume': resume_manager.get_resume(),
+            'plainTextResume': plain_text_resume_file
+        }
         parameters['outputFileDirectory'] = output_folder
 
         logger.debug("Starting bot creation and execution.")
-        create_and_run_bot(parameters, llm_api_key)
+        create_and_run_bot(parameters, llm_api_key, resume_manager)
 
     except ConfigError as ce:
         logger.exception("Configuration error encountered.")
@@ -500,7 +512,6 @@ def main(resume: Optional[Path] = None):
         )
     finally:
         logger.info("Application finished.")
-
 
 if __name__ == "__main__":
     main()

@@ -15,7 +15,12 @@ from selenium.webdriver.common.by import By
 
 from loguru import logger
 
-from app_config import MINIMUM_LOG_LEVEL
+from app_config import TRYING_DEGUB
+
+if TRYING_DEGUB:
+    MINIMUM_LOG_LEVEL = "DEBUG"
+else:
+    MINIMUM_LOG_LEVEL = "INFO"
 
 # Define log file path
 LOG_FILE_PATH = Path("./log/app.log")
@@ -227,7 +232,8 @@ def chrome_browser_options():
     options = webdriver.ChromeOptions()
     
     # Headless mode
-    options.add_argument("--headless")
+    if not TRYING_DEGUB:
+        options.add_argument("--headless")
     
     # Specify the absolute path to the Chrome binary
     options.binary_location = '/usr/bin/google-chrome'

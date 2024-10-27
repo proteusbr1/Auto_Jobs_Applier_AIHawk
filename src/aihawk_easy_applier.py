@@ -32,15 +32,21 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 
 from app_config import (
     MIN_SCORE_APPLY,
+    SALARY_EXPECTATIONS,
     USE_JOB_SCORE,
     USE_SALARY_EXPECTATIONS,
+    TRYING_DEGUB,
 )
-from data_folder.personal_info import SALARY_EXPECTATIONS, USER_RESUME_SUMMARY, USER_RESUME_CHATGPT
+from data_folder.personal_info import USER_RESUME_SUMMARY, USER_RESUME_CHATGPT
 import src.utils as utils
 from src.llm.llm_manager import GPTAnswerer
 from loguru import logger
 from src.job import Job, JobCache
 
+
+if TRYING_DEGUB:
+    SALARY_EXPECTATIONS = 0
+    MIN_SCORE_APPLY = 0
 
 # @staticmethod
 def load_resume_template() -> Optional[str]:
@@ -107,7 +113,7 @@ class AIHawkEasyApplier:
     def __init__(
         self,
         driver: Any,
-        resume_dir: Optional[str],
+        resume_manager,
         set_old_answers: List[Tuple[str, str, str]],
         gpt_answerer: GPTAnswerer,
         resume_generator_manager,
@@ -115,20 +121,15 @@ class AIHawkEasyApplier:
         cache: JobCache = None,
     ):
         logger.debug("Initializing AIHawkEasyApplier")
-        if resume_dir is None or not os.path.exists(resume_dir):
-            logger.info(
-                "Provided resume_dir is None or does not exist. Setting resume_path to None."
-            )
-            resume_dir = None
         self.driver = driver
         self.wait = WebDriverWait(self.driver, wait_time)
-        self.resume_path = resume_dir
+        self.resume_manager = resume_manager
+        self.resume_path = self.resume_manager.get_resume()
         self.set_old_answers = set_old_answers
         self.gpt_answerer = gpt_answerer
         self.resume_generator_manager = resume_generator_manager
         self.cache = cache
         self.all_questions = self._load_questions_from_json()
-        # self.pdfkit_config = pdfkit.configuration(wkhtmltopdf='virtual/lib64/python3.10/site-packages/wkhtmltopdf')
 
         logger.debug("AIHawkEasyApplier initialized successfully")
 
@@ -679,6 +680,11 @@ class AIHawkEasyApplier:
     def _4_handle_upload_fields(self, element: WebElement, job: Job) -> None:
         """
         Handles file upload fields in the application form, such as resumes and cover letters.
+        Differentiates between PDF and HTML resumes to handle them appropriately.
+        
+        Args:
+            element (WebElement): The WebElement representing the file upload field.
+            job (Job): The job object containing job details.
         """
         logger.debug("Handling upload fields")
 
@@ -705,34 +711,52 @@ class AIHawkEasyApplier:
             upload_type = self.gpt_answerer.resume_or_cover(parent_text)
 
             if "resume" in upload_type:
-                logger.debug("Uploading resume")
+                logger.debug("Detected upload field for resume")
                 if self.resume_path and Path(self.resume_path).is_file():
-                    try:
-                        file_element.send_keys(str(Path(self.resume_path).resolve()))
-                        logger.debug(f"Resume uploaded from path: {self.resume_path}")
-                    except Exception as e:
-                        logger.error(f"Failed to upload resume from path: {self.resume_path}", exc_info=True)
-                        raise
+                    resume_extension = Path(self.resume_path).suffix.lower()
+                    if resume_extension == '.pdf':
+                        logger.debug("Resume is a PDF. Uploading directly.")
+                        try:
+                            file_element.send_keys(str(Path(self.resume_path).resolve()))
+                            logger.info(f"Resume uploaded successfully from path: {self.resume_path}")
+                        except Exception as e:
+                            logger.error(f"Failed to upload PDF resume from path: {self.resume_path}", exc_info=True)
+                            raise
+                    elif resume_extension == '.html':
+                        logger.debug("Resume is an HTML file. Generating and uploading PDF.")
+                        try:
+                            self._5_create_and_upload_resume(file_element, job)
+                            logger.info("HTML resume converted to PDF and uploaded successfully.")
+                        except Exception as e:
+                            logger.error("Failed to create and upload the PDF from HTML resume.", exc_info=True)
+                            raise
+                    else:
+                        logger.warning(f"Unsupported resume format: {resume_extension}. Skipping upload.")
                 else:
-                    logger.info("Resume path is invalid or not found; generating new resume")
+                    logger.info("Resume path is invalid or not found; generating new resume.")
                     self._5_create_and_upload_resume(file_element, job)
             elif "cover" in upload_type:
-                logger.debug("Uploading cover letter")
-                self._5_create_and_upload_cover_letter(file_element, job)
+                logger.debug("Detected upload field for cover letter. Uploading cover letter.")
+                try:
+                    self._5_create_and_upload_cover_letter(file_element, job)
+                    logger.info("Cover letter uploaded successfully.")
+                except Exception as e:
+                    logger.error("Failed to create and upload the personalized cover letter.", exc_info=True)
+                    raise
             else:
-                logger.warning(f"Unexpected output from resume_or_cover: {upload_type}")
+                logger.warning(f"Unexpected upload type detected: {upload_type}. Skipping field.")
 
         logger.debug("Finished handling upload fields")
 
 
     def render_resume_html(self, html_template: str, summary: str) -> str:
         """
-        Renders the HTML resume template by replacing the placeholder {{summary}} with the personalized summary.
-
+        Renders the HTML resume template by replacing the placeholder with the personalized summary.
+        
         Args:
             html_template (str): The HTML template of the resume.
             summary (str): The personalized summary to be inserted into the resume.
-
+        
         Returns:
             str: The rendered HTML with the personalized summary.
         """
@@ -743,35 +767,36 @@ class AIHawkEasyApplier:
 
     def generate_pdf_from_html(self, rendered_html: str, output_path: str) -> str:
         """
-        Gera um PDF a partir do HTML renderizado usando WeasyPrint.
-
+        Generates a PDF from the rendered HTML using WeasyPrint.
+        
         Args:
-            rendered_html (str): O HTML renderizado com o resumo personalizado.
-            output_path (str): O caminho onde o PDF será salvo.
-
+            rendered_html (str): The rendered HTML content.
+            output_path (str): The path where the PDF will be saved.
+        
         Returns:
-            str: O caminho absoluto do PDF gerado.
+            str: The absolute path of the generated PDF.
         """
         try:
-            # Cria o objeto HTML a partir da string HTML
+            # Create an HTML object from the HTML string
             html = HTML(string=rendered_html)
             
-            # Gera o PDF e salva no caminho especificado
+            # Generate the PDF and save to the specified path
             html.write_pdf(target=output_path)
             
-            logger.debug(f"PDF gerado e salvo em: {output_path}")
+            logger.debug(f"PDF generated and saved at: {output_path}")
             return os.path.abspath(output_path)
         except Exception as e:
-            logger.error(f"Erro ao gerar PDF: {e}", exc_info=True)
+            logger.error(f"Error generating PDF: {e}", exc_info=True)
             raise
 
 
     def _5_create_and_upload_resume(self, element: WebElement, job: Job) -> None:
         """
         Generates a personalized resume and uploads it to the application form.
-
-        :param element: The WebElement of the upload field.
-        :param job: The job object.
+        
+        Args:
+            element (WebElement): The WebElement of the upload field for the resume.
+            job (Job): The job object containing job details.
         """
         logger.debug("Creating and uploading personalized resume.")
         try:
@@ -780,7 +805,9 @@ class AIHawkEasyApplier:
             logger.debug(f"Keywords generated: {keywords}")
             
             # 1. Generate the personalized summary
-            personalized_summary = self.gpt_answerer.generate_summary_based_on_keywords(USER_RESUME_CHATGPT, USER_RESUME_SUMMARY, keywords) 
+            personalized_summary = self.gpt_answerer.generate_summary_based_on_keywords(
+                USER_RESUME_CHATGPT, USER_RESUME_SUMMARY, keywords
+            ) 
             logger.debug(f"Personalized summary: {personalized_summary}")
 
             # 2. Render the HTML with the personalized summary
@@ -790,18 +817,25 @@ class AIHawkEasyApplier:
             # 3. Set the path to save the PDF
             folder_path = "generated_cv"
             utils.ensure_directory(folder_path)
-            timestamp = int(time.time())
-            file_name = f"Personalized_Resume_{timestamp}.pdf"
+
+            # 4. Generate a more humanized filename with size limits
+            datetime_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
+            file_name = generate_humanized_filename(
+                prefix="Resume",
+                job_title=job.title,
+                company_name=job.company,
+                datetime_str=datetime_str
+            )
             file_path_pdf = os.path.join(folder_path, file_name)
 
-            # 4. Generate the PDF from the rendered HTML
+            # 5. Generate the PDF from the rendered HTML
             self.generate_pdf_from_html(rendered_html, file_path_pdf)
 
-            # 5. Check the file size
+            # 6. Check the file size
             self._6_check_file_size(file_path_pdf, 2 * 1024 * 1024)  # 2 MB
             logger.debug(f"File size checked: {file_path_pdf}")
 
-            # 6. Upload the PDF
+            # 7. Upload the PDF
             element.send_keys(os.path.abspath(file_path_pdf))
             job.pdf_path = os.path.abspath(file_path_pdf)
             time.sleep(2)
@@ -815,8 +849,9 @@ class AIHawkEasyApplier:
         """
         Generates a personalized cover letter and uploads it to the application form.
         
-        :param element: The WebElement of the upload field.
-        :param job: The job object.
+        Args:
+            element (WebElement): The WebElement of the upload field for the cover letter.
+            job (Job): The job object containing job details.
         """
         logger.debug("Creating and uploading personalized cover letter.")
         try:
@@ -825,29 +860,39 @@ class AIHawkEasyApplier:
             logger.debug(f"Keywords extracted for cover letter: {keywords}")
             
             # 1. Generate the tailored cover letter using keywords
-            cover_letter = self.gpt_answerer.generate_cover_letter_based_on_keywords(job.description, USER_RESUME_HTML, keywords)
+            cover_letter = self.gpt_answerer.generate_cover_letter_based_on_keywords(
+                job.description, USER_RESUME_HTML, keywords
+            )
             logger.debug(f"Generated cover letter: {cover_letter}")
-            
-            # 2. Generate PDF for the cover letter
+                       
+            # 2. Set the path to save the PDF
             folder_path = "generated_cv"
             utils.ensure_directory(folder_path)
-            timestamp = int(time.time())
-            file_name = f"Cover_Letter_{timestamp}.pdf"
+
+            # 3. Generate a more humanized filename with size limits
+            datetime_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
+            file_name = generate_humanized_filename(
+                prefix="Cover_Letter",
+                job_title=job.title,
+                company_name=job.company,
+                datetime_str=datetime_str
+            )
             file_path_pdf = os.path.join(folder_path, file_name)
-    
+
+            # 4. Generate the PDF from the rendered HTML
             self._6_generate_pdf(file_path_pdf, cover_letter, "Cover Letter")
             logger.debug(f"Cover letter PDF generated at: {file_path_pdf}")
-    
-            # 3. Check the file size
+
+            # 5. Check the file size
             self._6_check_file_size(file_path_pdf, 2 * 1024 * 1024)  # 2 MB
-            logger.debug(f"Cover letter file size is within the allowed limit.")
-    
-            # 4. Upload the PDF
+            logger.debug(f"Cover letter file size is within the allowed limit: {file_path_pdf}")
+
+            # 6. Upload the PDF
             element.send_keys(os.path.abspath(file_path_pdf))
             job.cover_letter_path = os.path.abspath(file_path_pdf)
             time.sleep(2)
             logger.debug("Personalized cover letter uploaded successfully.")
-    
+        
         except Exception as e:
             logger.error("Failed to create and upload the personalized cover letter.", exc_info=True)
             utils.capture_screenshot(self.driver, "create_and_upload_cover_letter_exception")
@@ -856,6 +901,11 @@ class AIHawkEasyApplier:
     def _6_generate_pdf(self, file_path_pdf: str, content: str, title: str) -> None:
         """
         Generates a PDF file with the specified content.
+        
+        Args:
+            file_path_pdf (str): The path where the PDF will be saved.
+            content (str): The textual content to include in the PDF.
+            title (str): The title of the PDF document.
         """
         logger.debug(f"Generating PDF for: {title}")
         try:
@@ -873,7 +923,7 @@ class AIHawkEasyApplier:
             c.save()
             logger.debug(f"PDF generated and saved at: {file_path_pdf}")
         except Exception as e:
-            logger.error(f"Failed to generate PDF for {title}", exc_info=True)
+            logger.error(f"Failed to generate PDF for {title}: {e}", exc_info=True)
             raise
 
     def _6_check_file_size(self, file_path: str, max_size: int) -> None:
@@ -1424,3 +1474,85 @@ class AIHawkEasyApplier:
         sanitized_text = re.sub(r'\s+', ' ', sanitized_text)
         # logger.debug(f"Sanitized text: {sanitized_text}")
         return sanitized_text
+    
+    
+# Constants for filename limits
+MAX_TITLE_LENGTH = 50
+MAX_COMPANY_LENGTH = 50
+MAX_FILENAME_LENGTH = 255
+
+def sanitize_filename(text: str) -> str:
+    """
+    Sanitizes the text by removing invalid characters and replacing spaces with underscores.
+    
+    Args:
+        text (str): The input string to sanitize.
+    
+    Returns:
+        str: A sanitized string safe for use in filenames.
+    """
+    sanitized = re.sub(r'[^\w\-_. ]', '_', text).replace(' ', '_')
+    return sanitized
+
+def truncate_text(text: str, max_length: int) -> str:
+    """
+    Truncates the text to the specified maximum length, adding '...' if necessary.
+    
+    Args:
+        text (str): The input string to truncate.
+        max_length (int): The maximum allowed length of the string.
+    
+    Returns:
+        str: The truncated string with ellipses if truncation occurred.
+    """
+    return text if len(text) <= max_length else text[:max_length-3] + '...'
+
+def generate_humanized_filename(prefix: str, job_title: str, company_name: str, datetime_str: str) -> str:
+    """
+    Generates a humanized filename by sanitizing and truncating its components.
+    
+    Args:
+        prefix (str): The prefix for the filename (e.g., 'Resume', 'Cover_Letter').
+        job_title (str): The job title to include in the filename.
+        company_name (str): The company name to include in the filename.
+        datetime_str (str): The datetime string to include in the filename.
+    
+    Returns:
+        str: A sanitized and appropriately truncated filename.
+    """
+    # Sanitize inputs
+    job_title_sanitized = sanitize_filename(job_title)
+    company_name_sanitized = sanitize_filename(company_name)
+    
+    # Truncate if necessary
+    job_title_truncated = truncate_text(job_title_sanitized, MAX_TITLE_LENGTH)
+    company_name_truncated = truncate_text(company_name_sanitized, MAX_COMPANY_LENGTH)
+    
+    # Construct the filename
+    filename = f"{prefix}_{job_title_truncated}_{company_name_truncated}_{datetime_str}.pdf"
+    
+    # Ensure the total filename length does not exceed the maximum
+    if len(filename) > MAX_FILENAME_LENGTH:
+        excess_length = len(filename) - MAX_FILENAME_LENGTH
+        # Prioritize truncating the job title
+        if len(job_title_truncated) > 10:
+            new_title_length = max(len(job_title_truncated) - excess_length, 10)
+            job_title_truncated = truncate_text(job_title_sanitized, new_title_length)
+            filename = f"{prefix}_{job_title_truncated}_{company_name_truncated}_{datetime_str}.pdf"
+            logger.debug(f"Truncated job title to fit filename length: {job_title_truncated}")
+            excess_length = len(filename) - MAX_FILENAME_LENGTH
+        
+        # If still too long, truncate the company name
+        if len(filename) > MAX_FILENAME_LENGTH and len(company_name_truncated) > 10:
+            new_company_length = max(len(company_name_truncated) - excess_length, 10)
+            company_name_truncated = truncate_text(company_name_sanitized, new_company_length)
+            filename = f"{prefix}_{job_title_truncated}_{company_name_truncated}_{datetime_str}.pdf"
+            logger.debug(f"Truncated company name to fit filename length: {company_name_truncated}")
+            excess_length = len(filename) - MAX_FILENAME_LENGTH
+        
+        # If still exceeding, truncate the entire filename
+        if len(filename) > MAX_FILENAME_LENGTH:
+            filename = truncate_text(filename, MAX_FILENAME_LENGTH - 4) + ".pdf"
+            logger.debug(f"Truncated entire filename to fit maximum length: {filename}")
+    
+    return filename

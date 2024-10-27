@@ -50,7 +50,7 @@ class AIHawkJobManager:
         self.company_blacklist_set = set()
         logger.debug("AIHawkJobManager initialized successfully")
 
-    def set_parameters(self, parameters):
+    def set_parameters(self, parameters, resume_manager):
         logger.debug("Setting parameters for AIHawkJobManager")
         self.company_blacklist = parameters.get("company_blacklist", [])
         self.title_blacklist = parameters.get("title_blacklist", [])
@@ -66,8 +66,9 @@ class AIHawkJobManager:
         self.min_applicants = job_applicants_threshold.get("min_applicants", 0)
         self.max_applicants = job_applicants_threshold.get("max_applicants", float("inf"))
 
-        resume_path = parameters.get("uploads", {}).get("resume", None)
-        self.resume_path = Path(resume_path) if resume_path and Path(resume_path).exists() else None
+        # Use resume_manager to get the resume path
+        self.resume_manager = resume_manager
+        self.resume_path = self.resume_manager.get_resume()
         self.output_file_directory = Path(parameters["outputFileDirectory"])
         self.env_config = EnvironmentKeys()
 
@@ -87,7 +88,7 @@ class AIHawkJobManager:
         logger.debug("Starting job application process")
         self.easy_applier_component = AIHawkEasyApplier(
             self.driver,
-            self.resume_path,
+            self.resume_manager,
             self.set_old_answers,
             self.gpt_answerer,
             self.resume_generator_manager,
@@ -150,6 +151,7 @@ class AIHawkJobManager:
             except TimeoutException:
                 logger.warning("Timed out waiting for the 'no results' banner or the job elements.")
                 utils.capture_screenshot(self.driver, "job_elements_timeout")
+                logger.debug(f"HTML of the page: {self.driver.page_source}")
                 return []
 
             # Verificar se o banner de "sem resultados" está presente

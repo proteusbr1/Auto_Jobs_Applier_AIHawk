@@ -22,7 +22,19 @@ from langchain_core.prompts import ChatPromptTemplate
 import src.strings as strings
 from src.job import Job
 from loguru import logger
-from data_folder.personal_info import USER_RESUME_CHATGPT, SALARY_EXPECTATIONS
+from data_folder.personal_info import USER_RESUME_CHATGPT, COMPANY_CAPABILITIES
+from app_config import (
+    MIN_SCORE_APPLY,
+    SALARY_EXPECTATIONS,
+    USE_JOB_SCORE,
+    USE_SALARY_EXPECTATIONS,
+    TRYING_DEGUB,
+)
+
+if TRYING_DEGUB:
+    SALARY_EXPECTATIONS = 0
+    MIN_SCORE_APPLY = 0
+
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -1197,6 +1209,28 @@ Provide only the exact name of the section from the list above with no additiona
         Score (0 to 10):
         """
 
+        company_prompt = f"""
+        You are a business development expert specializing in matching companies with suitable job opportunities in the American market. Your task is to assess the compatibility between the following job description and my company's capabilities.
+
+        Return only a score from 0 to 10 representing my company's likelihood of successfully securing and executing the job, with 0 being the lowest probability and 10 being the highest.
+
+        The assessment should consider criteria such as required skills, experience, resources, certifications, and any other relevant factors mentioned in the job description.
+
+        Job Title:
+        ({job_title})
+
+        Job Salary:
+        ({job_salary})
+
+        Job Description:
+        ({job_description})
+
+        Company Capabilities:
+        ({COMPANY_CAPABILITIES})
+
+        Score (0 to 10):
+        """     
+        
         logger.debug("Sending job description and resume to GPT for evaluation")
 
         # Use the function ask_chatgpt to perform the evaluation
