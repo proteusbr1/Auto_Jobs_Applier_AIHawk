@@ -1295,9 +1295,11 @@ Provide only the exact name of the section from the list above with no additiona
         """
 
         company_prompt = f"""
-        You are a business development expert specializing in matching companies with suitable job opportunities in the {location} market. Your task is to assess the compatibility between the following job description and my company's capabilities.
+        You are a business development expert specializing in connecting companies with suitable job opportunities in the {location} market. I am searching for job listings on LinkedIn to identify opportunities to expand my company. My goal is to find promising opportunities to offer our services to the companies that are hiring.
 
-        Return only a score from 0 to 10 representing my company's likelihood of successfully securing and executing the job, with 0 being the lowest probability and 10 being the highest.
+        Your task is to assess the compatibility between the following job description and my company's capabilities.
+
+        Please return only a score from 0 to 10, representing the probability that my company can successfully secure and execute the job, where 0 is the lowest probability and 10 is the highest.
 
         The assessment should consider criteria such as required skills, experience, resources, certifications, and any other relevant factors mentioned in the job description.
 
@@ -1360,6 +1362,7 @@ Provide only the exact name of the section from the list above with no additiona
             salary_expectation_line = f"salary expectation: {SALARY_EXPECTATIONS}\n"
             resume_summary = f"{salary_expectation_line}{resume_summary}"
             location = job.location
+            job_salary = job.salary 
             
             # Create the prompt to ask ChatGPT
             prompt = f"""
@@ -1372,7 +1375,7 @@ Provide only the exact name of the section from the list above with no additiona
             ({job.title})
 
             Job Salary:
-            ({job.salary})
+            ({job_salary})
 
             Job Description:
             ({job.description})

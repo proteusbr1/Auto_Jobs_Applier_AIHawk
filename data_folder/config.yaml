@@ -9,9 +9,9 @@ experienceLevel:
   executive: true
 
 jobTypes:
-  full-time: false
+  full-time: true
   contract: true
-  part-time: false
+  part-time: true
   temporary: true
   internship: false
   other: true
