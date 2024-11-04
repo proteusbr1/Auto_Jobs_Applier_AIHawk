@@ -27,7 +27,6 @@ share/python-wheels/
 *.egg
 MANIFEST
 chrome_profile/*
-data_folder/*
 answers.json
 # PyInstaller
 # Usually these files are written by a python script from a template
@@ -164,3 +163,5 @@ job_score.json
 *.zip
 *.png
 data_folder/plain_text_resume.yaml
+data_folder/personal_info.py
+data_folder/output/
