@@ -1,5 +1,8 @@
+# Activate the virtual environment
+# source virtual/bin/activate
+
 click
-# git+https://github.com/feder-cr/lib_resume_builder_AIHawk.git
+git+https://github.com/feder-cr/lib_resume_builder_AIHawk.git
 httpx
 inputimeout
 jsonschema
