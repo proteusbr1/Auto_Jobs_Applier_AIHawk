@@ -584,31 +584,25 @@ class AIHawkJobManager:
 
 
     def _extract_company(self, job_tile):
-        """
-        Extracts the company from the job tile.
-
-        Args:
-            job_tile (WebElement): The Selenium WebElement representing the job tile.
-
-        Returns:
-            str: The company name.
-        """
-        logger.debug("Extracting company.")
+        logger.debug("Extracting company and location from primary description.") 
         company = ""
         try:
             company_element = WebDriverWait(job_tile, 2).until(
                 EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__primary-description')))
-            company = company_element.text.strip()
+            primary_description = company_element.text.strip()
+            # Split at '·' to get company and location
+            parts = primary_description.split('·')
+            company = parts[0].strip() if parts else ""
             logger.debug(f"Extracted Company: '{company}'")
         except NoSuchElementException:
             logger.error("Element not found.")
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
         except TimeoutException:
             logger.error("Timed out.")
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
         except Exception as e:
             logger.error(f"Unexpected error: {e}", exc_info=True)
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
         return company
 
     def _extract_link(self, job_tile):
@@ -640,32 +634,25 @@ class AIHawkJobManager:
         return link
 
     def _extract_job_location(self, job_tile):
-        """
-        Extracts the job location from the job tile.
-
-        Args:
-            job_tile (WebElement): The Selenium WebElement representing the job tile.
-
-        Returns:
-            str: The job location.
-        """
-        logger.debug("Extracting job location.")
+        logger.debug("Extracting job location from primary description.")
         job_location = ""
         try:
-            job_location_element = WebDriverWait(job_tile, 2).until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__metadata-item'))
-            )
-            job_location = job_location_element.text.strip()
+            company_element = WebDriverWait(job_tile, 2).until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__primary-description')))
+            primary_description = company_element.text.strip()
+            # Split at '·' to get company and location
+            parts = primary_description.split('·')
+            job_location = parts[1].strip() if len(parts) > 1 else ""
             logger.debug(f"Extracted Job Location: '{job_location}'")
         except NoSuchElementException:
             logger.error("Element not found.")
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
         except TimeoutException:
             logger.error("Timed out.")
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
         except Exception as e:
             logger.error(f"Unexpected error: {e}", exc_info=True)
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
         return job_location
 
     def _extract_apply_method(self, job_tile):
