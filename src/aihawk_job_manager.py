@@ -134,93 +134,93 @@ class AIHawkJobManager:
                     continue
 
     def get_jobs_from_page(self):
+        """
+        Fetches job elements from the current page.
+
+        Returns:
+            list: A list of job elements if found, otherwise an empty list.
+        """
         logger.debug("Starting get_jobs_from_page.")
+
+        # Define locators at the beginning of the function
+        NO_RESULTS_LOCATOR = (By.CLASS_NAME, 'jobs-search-no-results-banner')
+        JOB_LIST_CONTAINER_LOCATOR = (By.CLASS_NAME, 'scaffold-layout__list-container')
+        JOB_TILE_LOCATOR = (By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
+
         try:
-            no_results_locator = (By.CLASS_NAME, 'jobs-search-no-results-banner')
-            job_locator = (By.CSS_SELECTOR, 'ul.scaffold-layout__list-container > li.jobs-search-results__list-item[data-occludable-job-id]')
+            logger.debug(f"Waiting for either {NO_RESULTS_LOCATOR} or job tiles to be present.")
 
-            logger.debug(f"Waiting for either {no_results_locator} or {job_locator}.")
-
-            try:
-                self.wait.until(
-                    EC.any_of(
-                        EC.presence_of_element_located(no_results_locator),
-                        EC.presence_of_element_located(job_locator)
-                    )
+            # Wait until either the 'no results' banner or job elements are present
+            self.wait.until(
+                EC.any_of(
+                    EC.presence_of_element_located(NO_RESULTS_LOCATOR),
+                    EC.presence_of_element_located(JOB_TILE_LOCATOR)
                 )
-                logger.debug("Elements condition met.")
-            except TimeoutException:
-                logger.warning("Timed out waiting for the 'no results' banner or the job elements.")
-                utils.capture_screenshot(self.driver, "job_elements_timeout")
-                logger.debug(f"HTML of the page: {self.driver.page_source}")
-                return []
+            )
+            logger.debug("Elements condition met.")
 
-            # Verificar se o banner de "sem resultados" está presente
-            no_results_elements = self.driver.find_elements(*no_results_locator)
-            if no_results_elements:
-                no_results_banner = no_results_elements[0]
-                banner_text = no_results_banner.text.lower()
-                logger.debug(f"No results banner text: '{banner_text}'.")
-                if 'no matching jobs found' in banner_text or "unfortunately, things aren't" in banner_text:
-                    logger.debug("No matching jobs found on this search.")
-                    return []
-
-            # Caso contrário, assumir que os resultados de empregos estão presentes
-            try:
-                locator = (By.CLASS_NAME, 'jobs-search-results-list')
-                job_list_container = self.wait.until(
-                    EC.presence_of_element_located(locator)
-                )
-                logger.debug("Job list container found.")
-
-                # Scroll otimizado para carregar todos os elementos de trabalho
-                logger.debug("Initiating optimized scroll to load all job elements.")
-                self.scroll_jobs()
-                logger.debug("Scrolling completed.")
-
-                job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
-                logger.debug(f"Found {len(job_list_elements)} job elements on the page.")
-
-                if not job_list_elements:
-                    logger.error("No job elements found on the page, skipping.")
-                    return []
-
-                return job_list_elements
-
-            except TimeoutException:
-                logger.warning("Timed out waiting for the job list container to load.")
-                return []
-            except NoSuchElementException:
-                logger.error("Job list container element not found on the page.")
-                return []
-            except StaleElementReferenceException:
-                logger.error("StaleElementReferenceException encountered. Attempting to recapture job elements.")
-                try:
-                    job_list_container = self.driver.find_element(By.CSS_SELECTOR, 'ul.scaffold-layout__list-container')
-                    job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
-                    logger.debug(f"Recaptured {len(job_list_elements)} job elements after StaleElementReferenceException.")
-                    return job_list_elements
-                except Exception as e:
-                    logger.error(f"Failed to recapture job elements after StaleElementReferenceException: {e}", exc_info=True)
-                    return []
-            except Exception as e:
-                logger.error(f"Unexpected error while extracting job elements: {e}", exc_info=True)
-                return []
         except TimeoutException:
-            logger.warning("Timed out waiting for either 'no results' banner or job results list to load.")
+            logger.warning("Timed out waiting for the 'no results' banner or the job elements.")
+            utils.capture_screenshot(self.driver, "job_elements_timeout")
+            logger.debug(f"HTML of the page: {self.driver.page_source}")
             return []
+
+        # Check if the "no results" banner is present
+        no_results_elements = self.driver.find_elements(*NO_RESULTS_LOCATOR)
+        if no_results_elements:
+            no_results_banner = no_results_elements[0]
+            banner_text = no_results_banner.text.lower()
+            logger.debug(f"No results banner text: '{banner_text}'.")
+            if 'no matching jobs found' in banner_text or "unfortunately, things aren't" in banner_text:
+                logger.debug("No matching jobs found on this search.")
+                return []
+
+        # Proceed to fetch job elements
+        try:
+            logger.debug("Waiting for job list container to be present.")
+            job_list_container = self.wait.until(
+                EC.presence_of_element_located(JOB_LIST_CONTAINER_LOCATOR)
+            )
+            logger.debug("Job list container found.")
+
+        except (TimeoutException, NoSuchElementException) as e:
+            logger.warning(f"Exception while waiting for the job list container: {e}")
+            return []
+
+        # Scroll to load all job elements
+        logger.debug("Initiating optimized scroll to load all job elements.")
+        self.scroll_jobs()
+        logger.debug("Scrolling completed.")
+
+        try:
+            job_list_elements = job_list_container.find_elements(*JOB_TILE_LOCATOR)
+            logger.debug(f"Found {len(job_list_elements)} job elements on the page.")
+
+            if not job_list_elements:
+                logger.warning("No job elements found on the page.")
+                return []
+
+            return job_list_elements
+
+        except StaleElementReferenceException:
+            logger.error("StaleElementReferenceException encountered. Attempting to recapture job elements.")
+            try:
+                # Re-fetch the job list container and job elements
+                job_list_container = self.driver.find_element(*JOB_LIST_CONTAINER_LOCATOR)
+                job_list_elements = job_list_container.find_elements(*JOB_TILE_LOCATOR)
+                logger.debug(f"Recaptured {len(job_list_elements)} job elements after StaleElementReferenceException.")
+                return job_list_elements
+            except Exception as e:
+                logger.error(f"Failed to recapture job elements after StaleElementReferenceException: {e}", exc_info=True)
+                return []
         except Exception as e:
-            logger.error(f"Error while fetching job elements. {e}", exc_info=True)
-            # Take a screenshot for debugging
-            utils.capture_screenshot(self.driver, "job_elements_error")
+            logger.error(f"Unexpected error while fetching job elements: {e}", exc_info=True)
             return []
 
     def apply_jobs(self, search_term, search_country):
         try:
-            job_list_container = self.wait.until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'scaffold-layout__list-container'))
-            )
-            job_list_elements = job_list_container.find_elements(By.CLASS_NAME, 'jobs-search-results__list-item')
+            job_list_container = self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'scaffold-layout__list')))
+            job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'ul.scaffold-layout__list-container > li.jobs-search-results__list-item[data-occludable-job-id]')
         except (TimeoutException, NoSuchElementException):
             logger.warning("Timed out waiting for job list container.")
             return
@@ -265,156 +265,64 @@ class AIHawkJobManager:
             # self.seen_jobs.append(job.link)
             self.cache.add_to_cache(job, "is_seen")
 
-    def scroll_jobs(
-        self,
-        step=300, 
-        reverse=False, 
-        max_attempts=10,
-    ):
-        """
-        Scrolls a scrollable job listings element on the page to load all job postings.
 
-        Parameters:
-        - step (int): Number of pixels to scroll at each step. Must be positive.
-        - reverse (bool): If True, scrolls up; otherwise, scrolls down.
-        - max_attempts (int): Maximum number of attempts without new items before stopping.
-
-        Returns:
-        - bool: True if scrolling completed successfully, False otherwise.
-        """
+    def scroll_jobs(self):
         logger.debug("Starting scroll_jobs.")
 
-        # Define locators
-        jobs_list_locator = (By.CLASS_NAME, 'jobs-search-results-list')
-        loader_locator = (By.CLASS_NAME, 'artdeco-loader')
-        job_title_locator = (By.XPATH, ".//a[contains(@class, 'job-card-list__title')]")
-
-        if step <= 0:
-            logger.error("The step value must be positive.")
-            raise ValueError("Step must be positive.")
+        # Define selectors
+        job_item_locator = (By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
+        
 
         try:
-            # Wait for the initial loader to disappear
-            loader_disappeared = self.wait_for_loader(loader_locator)
-            if not loader_disappeared:
-                logger.debug("Initial loader did not disappear. Proceeding anyway.")
+            # Locate all job items
+            job_items = self.driver.find_elements(*job_item_locator)
+            logger.debug(f"Found {len(job_items)} job items.")
 
-            # Locate the scrollable jobs list
-            try:
-                scrollable_element = self.wait.until(
-                    EC.visibility_of_element_located(jobs_list_locator)
-                )
-                logger.debug("Scrollable jobs list is visible.")
-            except TimeoutException:
-                logger.warning(f"Jobs list with locator {jobs_list_locator} not found within the wait time.")
-                return False
-
-            # Wait for loader to disappear after locating the jobs list
-            loader_disappeared = self.wait_for_loader(loader_locator)
-            if not loader_disappeared:
-                logger.debug("Loader did not disappear after locating jobs list. Proceeding.")
-
-            # Check if the jobs list is scrollable
-            try:
-                scroll_height = int(scrollable_element.get_attribute("scrollHeight"))
-                client_height = int(scrollable_element.get_attribute("clientHeight"))
-                if scroll_height <= client_height:
-                    logger.info("Jobs list is not scrollable.")
-                    utils.capture_screenshot("jobs_list_not_scrollable")
-                    return False
-                logger.debug(f"Jobs list is scrollable (scrollHeight: {scroll_height}, clientHeight: {client_height}).")
-            except Exception as e:
-                logger.error(f"Failed to determine if jobs list is scrollable: {e}", exc_info=True)
-                return False
-
-            # Ensure the jobs list is visible
-            if not scrollable_element.is_displayed():
-                logger.warning("Jobs list is not visible. Attempting to bring it into view.")
+            # Iterate over each job item to force content loading
+            for idx, job_item in enumerate(job_items):
                 try:
-                    self.driver.execute_script("arguments[0].scrollIntoView(true);", scrollable_element)
-                    time.sleep(1)  # Allow time for the element to become visible
-                    if not scrollable_element.is_displayed():
-                        logger.warning("Jobs list is still not visible after scrolling into view.")
-                        utils.capture_screenshot("jobs_list_not_visible_after_scroll")
-                        return False
-                    logger.debug("Jobs list is now visible after scrolling into view.")
-                except WebDriverException as e:
-                    logger.error(f"Failed to scroll jobs list into view: {e}", exc_info=True)
-                    utils.capture_screenshot("scroll_into_view_failed")
-                    return False
+                    # Scroll to the job item
+                    self.driver.execute_script("arguments[0].scrollIntoView(true);", job_item)
+                    logger.debug(f"Scrolled to job item {idx+1}/{len(job_items)}")
 
-            # Initialize counters for tracking job items and attempts
-            previous_job_count = 0
-            attempts = 0
+                    # Wait for the loader to disappear after scrolling to the item
+                    loader_disappeared = self.wait_for_loader()
+                    if not loader_disappeared:
+                        logger.debug("Loader did not disappear after scrolling to the item. Proceeding.")
 
-            while attempts < max_attempts:
-                # Wait for loader to disappear before scrolling
-                loader_disappeared = self.wait_for_loader(loader_locator)
-                if not loader_disappeared:
-                    logger.debug("Loader did not disappear before scrolling. Proceeding.")
+                    time.sleep(0.2)  # Wait for the content to load
+                except Exception as e:
+                    logger.error(f"Error scrolling to job item {idx+1}: {e}", exc_info=True)
 
-                # Calculate new scroll position
-                try:
-                    current_scroll_position = int(scrollable_element.get_attribute("scrollTop"))
-                except (TypeError, ValueError) as e:
-                    logger.error(f"Invalid scroll position value: {e}", exc_info=True)
-                    return False
+            logger.debug("Completed scrolling through all job items.")
 
-                new_scroll_position = current_scroll_position + step if not reverse else current_scroll_position - step
-                self.driver.execute_script("arguments[0].scrollTop = arguments[1];", scrollable_element, new_scroll_position)
-                logger.debug(f"Scrolled to position: {new_scroll_position}")
-
-                # Wait for loader to disappear after scrolling
-                loader_disappeared = self.wait_for_loader(loader_locator)
-                if not loader_disappeared:
-                    logger.debug("Loader is still visible after scrolling. Proceeding.")
-
-                # Retrieve current number of job items
-                job_items = self.driver.find_elements(*job_title_locator)
-                current_job_count = len(job_items)
-                logger.debug(f"Current number of job items: {current_job_count}")
-
-                # Check if enough job items are loaded
-                if current_job_count >= 25:
-                    logger.debug("Reached 25 job items.")
-                    break
-
-                if current_job_count > previous_job_count:
-                    logger.debug("New job items loaded.")
-                    previous_job_count = current_job_count
-                    attempts = 0  # Reset attempts since new items were found
-                else:
-                    attempts += 1
-                    logger.debug(f"No new job items detected. Attempt {attempts}/{max_attempts}.")
-                    time.sleep(0.5)  # Wait before the next attempt
-
-            logger.debug("Completed scrolling. All job items have been loaded.")
             return True
 
         except Exception as e:
-            logger.error(f"An error occurred during scrolling jobs: {e}", exc_info=True)
+            logger.error(f"An error occurred during job scrolling: {e}", exc_info=True)
             return False
 
-    def wait_for_loader(self, loader_locator, timeout=10):
-        """
-        Waits for the loader element to disappear.
+    def wait_for_loader(self, timeout=10):
+            """
+            Waits for the loader element to disappear.
 
-        Parameters:
-        - loader_locator (tuple): Locator for the loader element.
-        - timeout (int): Maximum time to wait in seconds.
+            Parameters:
+            - loader_locator (tuple): Locator of the loader element.
+            - timeout (int): Maximum wait time in seconds.
 
-        Returns:
-        - bool: True if the loader disappeared, False otherwise.
-        """
-        try:
-            WebDriverWait(self.driver, timeout).until(
-                EC.invisibility_of_element_located(loader_locator)
-            )
-            logger.debug("Loader has disappeared.")
-            return True
-        except TimeoutException:
-            logger.warning("Loader did not disappear within the specified timeout.")
-            return False
+            Returns:
+            - bool: True if the loader disappeared, False otherwise.
+            """
+            loader_locator = (By.CLASS_NAME, 'artdeco-loader')
+            try:
+                WebDriverWait(self.driver, timeout).until(
+                    EC.invisibility_of_element_located(loader_locator)
+                )
+                logger.debug("Loader disappeared.")
+                return True
+            except TimeoutException:
+                logger.warning("Loader did not disappear within the specified time.")
+                return False
 
 
     def get_existing_score(self, job):
@@ -533,22 +441,18 @@ class AIHawkJobManager:
         """
         logger.debug("Starting extraction of job information from tile.")
 
-        # Initialize variables
-        job_title = self._extract_job_title(job_tile)
-        if job_tile:
+        try:
+            job_title = self._extract_job_title(job_tile)
             company = self._extract_company(job_tile)
             link = self._extract_link(job_tile)
             job_location = self._extract_job_location(job_tile)
             apply_method = self._extract_apply_method(job_tile)
             job_state = self._extract_job_state(job_tile)
-        
+            return job_title, company, job_location, link, apply_method, job_state
+        except Exception as e:
+            logger.error(f"Failed to extract job information: {e}", exc_info=True)
+            return None  # or you can skip this job tile
 
-        logger.debug(
-            f"Completed extraction: Title='{job_title}', Company='{company}', "
-            f"Location='{job_location}', Link='{link}', Job State='{job_state}', Apply Method='{apply_method}'"
-        )
-
-        return job_title, company, job_location, link, apply_method, job_state
 
     def _extract_job_title(self, job_tile):
         """
@@ -563,47 +467,39 @@ class AIHawkJobManager:
         logger.debug("Extracting job title.")
         job_title = ""
         try:
-            job_title_element = WebDriverWait(job_tile, 10).until(
-            EC.presence_of_element_located((By.XPATH, ".//a[contains(@class, 'job-card-list__title')]")))
+            job_title_element = job_tile.find_element(By.XPATH, './/a[contains(@class, "job-card-list__title--link")]')
             job_title = job_title_element.text.strip()
             logger.debug(f"Extracted Job Title: '{job_title}'")
         except NoSuchElementException:
             logger.error("Job title element not found.")
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
             utils.capture_screenshot(self.driver, "job_title_error")
-        except TimeoutException:
-            logger.error("Timed out waiting for the job title element.")
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
-            utils.capture_screenshot(self.driver, "job_title_error")
-
         except Exception as e:
             logger.error(f"Unexpected error in _extract_job_title: {e}", exc_info=True)
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
             utils.capture_screenshot(self.driver, "job_title_error")
         return job_title
 
 
     def _extract_company(self, job_tile):
-        logger.debug("Extracting company and location from primary description.") 
+        logger.debug("Extracting company name from job tile.")  
         company = ""
         try:
-            company_element = WebDriverWait(job_tile, 2).until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__primary-description')))
-            primary_description = company_element.text.strip()
-            # Split at '·' to get company and location
-            parts = primary_description.split('·')
-            company = parts[0].strip() if parts else ""
+            subtitle_element = job_tile.find_element(By.CSS_SELECTOR, 'div.artdeco-entity-lockup__subtitle')
+            company_location_text = subtitle_element.text.strip()
+            if '·' in company_location_text:
+                company = company_location_text.split('·')[0].strip()
+            else:
+                company = company_location_text.strip()
             logger.debug(f"Extracted Company: '{company}'")
         except NoSuchElementException:
-            logger.error("Element not found.")
-            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
-        except TimeoutException:
-            logger.error("Timed out.")
-            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.error("Company name element not found.")
+            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
         except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
-            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.error(f"Unexpected error while extracting company: {e}", exc_info=True)
+            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
         return company
+
 
     def _extract_link(self, job_tile):
         """
@@ -618,42 +514,37 @@ class AIHawkJobManager:
         logger.debug("Extracting job link.")
         link = ""
         try:
-            job_title_element = WebDriverWait(job_tile, 2).until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'job-card-list__title')))
+            job_title_element = job_tile.find_element(By.CSS_SELECTOR, 'a.job-card-list__title')
             link = job_title_element.get_attribute('href').split('?')[0]
             logger.debug(f"Extracted Link: '{link}'")
         except NoSuchElementException:
-            logger.error("Element not found.")
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
-        except TimeoutException:
-            logger.error("Timed out.")
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.error("Job link element not found.")
+            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
         except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
-            logger.debug(f"HTML do job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.error(f"Unexpected error while extracting job link: {e}", exc_info=True)
+            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
         return link
 
+
     def _extract_job_location(self, job_tile):
-        logger.debug("Extracting job location from primary description.")
+        logger.debug("Extracting job location from job tile.")
         job_location = ""
         try:
-            company_element = WebDriverWait(job_tile, 2).until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'job-card-container__primary-description')))
-            primary_description = company_element.text.strip()
-            # Split at '·' to get company and location
-            parts = primary_description.split('·')
-            job_location = parts[1].strip() if len(parts) > 1 else ""
+            subtitle_element = job_tile.find_element(By.CSS_SELECTOR, 'div.artdeco-entity-lockup__subtitle')
+            company_location_text = subtitle_element.text.strip()
+            if '·' in company_location_text:
+                job_location = company_location_text.split('·')[1].strip()
+            else:
+                job_location = company_location_text.strip()
             logger.debug(f"Extracted Job Location: '{job_location}'")
         except NoSuchElementException:
-            logger.error("Element not found.")
-            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
-        except TimeoutException:
-            logger.error("Timed out.")
-            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.error("Job location element not found.")
+            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
         except Exception as e:
-            logger.error(f"Unexpected error: {e}", exc_info=True)
-            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.error(f"Unexpected error while extracting job location: {e}", exc_info=True)
+            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
         return job_location
+
 
     def _extract_apply_method(self, job_tile):
         """
@@ -669,30 +560,16 @@ class AIHawkJobManager:
         logger.debug("Starting apply method extraction.")
         apply_method = None
         try:
-            # Wait for the footer <ul> element to be present
-            WebDriverWait(job_tile, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'ul.job-card-container__footer-wrapper'))
-            )
-            logger.debug("Footer <ul> element found.")
-
-            # Attempt to extract the apply method after the <ul> is present
-            apply_method_element = job_tile.find_element(By.CLASS_NAME, 'job-card-container__apply-method')
-            apply_method_text = apply_method_element.text.strip()
-            logger.debug(f"Extracted apply method: '{apply_method_text}'")
-
-            if apply_method_text.lower() == 'easy apply':
-                apply_method = apply_method_text
-
-        except TimeoutException:
-            logger.debug("Timeout while waiting for the footer <ul> element.")
-            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+            apply_method_element = job_tile.find_element(By.CSS_SELECTOR, 'li.job-card-container__apply-method')
+            apply_method_text = apply_method_element.text.strip().lower()
+            logger.debug(f"Extracted apply method text: '{apply_method_text}'")
+            if 'easy apply' in apply_method_text:
+                apply_method = 'Easy Apply'
+                logger.debug("Apply method is 'Easy Apply'.")
         except NoSuchElementException:
-            logger.debug("Element 'job-card-container__apply-method' not found.")
-            # logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.debug("Apply method element not found.")
         except Exception as e:
             logger.debug(f"Unexpected error while extracting apply method: {e}", exc_info=True)
-            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
-
         return apply_method
 
 
@@ -710,31 +587,14 @@ class AIHawkJobManager:
         logger.debug("Starting job state extraction.")
         job_state = None
         try:
-            # Wait for the footer <ul> element to be present
-            WebDriverWait(job_tile, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, 'ul.job-card-container__footer-wrapper'))
-            )
-            logger.debug("Footer <ul> element found.")
-
-            # Attempt to extract the job state after the <ul> is present
-            job_state_element = job_tile.find_element(By.CLASS_NAME, 'job-card-container__footer-job-state')
-            job_state_text = job_state_element.text.strip()
-            logger.debug(f"Extracted job state: '{job_state_text}'")
-
-            job_state = job_state_text
-
-        except TimeoutException:
-            logger.debug("Timeout while waiting for the footer <ul> element.")
-            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+            job_state_element = job_tile.find_element(By.CSS_SELECTOR, 'li.job-card-container__footer-job-state')
+            job_state = job_state_element.text.strip()
+            logger.debug(f"Extracted job state: '{job_state}'")
         except NoSuchElementException:
-            logger.debug("Element 'job-card-container__footer-job-state' not found.")
-            # logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
+            logger.debug("Job state element not found.")
         except Exception as e:
             logger.debug(f"Unexpected error while extracting job state: {e}", exc_info=True)
-            logger.debug(f"HTML of job_tile: {job_tile.get_attribute('outerHTML')}")
-
         return job_state
-
 
 
     def must_be_skipped(self, job: Job) -> bool:

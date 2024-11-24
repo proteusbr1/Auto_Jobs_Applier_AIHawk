@@ -620,6 +620,7 @@ class AIHawkEasyApplier:
         except Exception as e:
             logger.warning(f"Failed to discard application: {e}", exc_info=True)
 
+
     def _2_fill_up(self, job: Job) -> None:
         """
         Fills up each section of the application form.
@@ -631,28 +632,43 @@ class AIHawkEasyApplier:
         try:
             # Find the Easy Apply content section
             try:
-                easy_apply_content = self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, "jobs-easy-apply-content")))
+                easy_apply_content = self.wait.until(
+                    EC.presence_of_element_located(
+                        (By.CLASS_NAME, "jobs-easy-apply-content")
+                    )
+                )
                 logger.debug("Easy apply content section found successfully.")
             except TimeoutException:
-                logger.warning("Easy apply content section not found. Attempting to submit the application directly.")
+                logger.warning(
+                    "Easy apply content section not found. Attempting to submit the application directly."
+                )
                 return
 
+           # Find all form sections within the Easy Apply content
+            form = easy_apply_content.find_element(By.TAG_NAME, 'form')
+            logger.debug("Form found within Easy Apply content.")
+
             # Find all form sections within the Easy Apply content
-            pb4_elements = easy_apply_content.find_elements(By.CLASS_NAME, "pb4")
-            logger.debug(f"Found {len(pb4_elements)} form sections to process.")
+            form_sections = form.find_elements(By.XPATH, ".//div[contains(@class, 'jobs-easy-apply-form-section__grouping')]")
+            logger.debug(f"Found {len(form_sections)} form sections to process.")
 
             # Process each form section
-            for index, element in enumerate(pb4_elements):
-                logger.debug(f"Processing form section {index + 1}/{len(pb4_elements)}")
-                self._3_process_form_element(element, job)
+            for index, section in enumerate(form_sections):
+                logger.debug(f"Processing form section {index + 1}/{len(form_sections)}")
+                self._3_process_form_element(section, job)
             logger.debug("All form sections processed successfully.")
 
         except TimeoutException:
-            logger.error("Easy apply content section not found within the timeout period",exc_info=True,)
+            logger.error(
+                "Form section not found within the timeout period", exc_info=True
+            )
             raise
         except Exception as e:
-            logger.error(f"An error occurred while filling up the form: {e}", exc_info=True)
+            logger.error(
+                f"An error occurred while filling up the form: {e}", exc_info=True
+            )
             raise
+
 
     def _3_process_form_element(self, element: WebElement, job: Job) -> None:
         """
@@ -665,7 +681,7 @@ class AIHawkEasyApplier:
         if self._4_is_upload_field(element):
             self._4_handle_upload_fields(element, job)
         else:
-            self._4_fill_additional_questions(element, job)
+            self._5_process_form_section(element, job)
 
     def _4_is_upload_field(self, element: WebElement) -> bool:
         """
@@ -969,26 +985,6 @@ class AIHawkEasyApplier:
             logger.error("HTTP error occurred during resume generation", exc_info=True)
             raise
 
-    def _4_fill_additional_questions(self, element: WebElement, job: Job) -> None:
-        """
-        Fills out additional questions in the application form.
-        """
-        logger.debug("Filling additional questions")
-        try:
-            form_sections = element.find_elements(By.CLASS_NAME, "jobs-easy-apply-form-section__grouping")
-            if not form_sections:
-                logger.debug("No form sections found in this element")
-                return
-
-            logger.debug(f"Found {len(form_sections)} additional form sections to process")
-            for section in form_sections:
-                self._5_process_form_section(section, job)
-            logger.debug("All form sections processed successfully")
-        except Exception as e:
-            logger.warning("An error occurred while filling additional questions", exc_info=True)
-            utils.capture_screenshot(self.driver,"additional_questions_error")
-            raise
-
     def _5_process_form_section(self, section: WebElement, job: Job) -> None:
         """
         Processes a single form section and handles different types of questions.
@@ -1009,6 +1005,7 @@ class AIHawkEasyApplier:
             return
         else:
             logger.debug("No recognizable question type handled in this section")
+
 
     def _6_handle_terms_of_service(self, element: WebElement) -> bool:
         """
