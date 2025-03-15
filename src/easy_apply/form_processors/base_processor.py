@@ -163,7 +163,10 @@ class BaseProcessor:
             
             # Try JavaScript as a fallback method to enter text
             try:
-                self.driver.execute_script(f"arguments[0].value = '{text.replace("'", "\\'")}';", element)
+                # Escape single quotes in the text to avoid JavaScript syntax errors
+                escaped_text = text.replace("'", "\\'")
+                js_script = f"arguments[0].value = '{escaped_text}';"
+                self.driver.execute_script(js_script, element)
                 logger.debug(f"Text entered using JavaScript fallback: {text[:20]}{'...' if len(text) > 20 else ''}")
             except Exception as js_error:
                 logger.error(f"JavaScript text entry also failed: {js_error}")
