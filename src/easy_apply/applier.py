@@ -296,9 +296,6 @@ class AIHawkEasyApplier:
                 
                 logger.debug(f"Found a total of {len(form_sections)} form elements to process.")
             
-            # Take a screenshot for debugging
-            utils.capture_screenshot(self.driver, "form_before_filling")
-            
             # Process each form section
             for index, section in enumerate(form_sections):
                 logger.debug(f"Processing form section {index + 1}/{len(form_sections)}")
