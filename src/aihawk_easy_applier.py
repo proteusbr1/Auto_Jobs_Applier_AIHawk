@@ -488,23 +488,26 @@ class AIHawkEasyApplier:
         """
         logger.debug(f"Filling out application form for job: {job.title} at {job.company}")
         try:
-            attempts = 0  # Initialize the attempt counter
+            attempts = 0
             while attempts < max_attempts:
-                self._2_fill_up(job)
-                if self._2_next_or_submit():
-                    logger.debug("Application form submitted successfully")
-                    return True
-                
-                attempts += 1  # Increment the attempt counter
-                logger.debug(f"Page {attempts} complete. Netx page.")
+                try:
+                    self._2_fill_up(job)
+                    if self._2_next_or_submit():
+                        logger.debug("Application form submitted successfully")
+                        return True
 
-            logger.warning("Maximum attempts reached. Aborting application process.")
-            utils.capture_screenshot(self.driver,"max_attempts_reached")
-            return False  # Return false if the max attempts are reached
-
+                    attempts += 1
+                    logger.debug(f"Page {attempts} complete. Next page.")
+                except KeyError as e:
+                    logger.error(f"KeyError occurred during form filling: {e}. Skipping this step.")
+                    time.sleep(10)
+                    break  # Decide whether to continue or break
+            logger.warning("Maximum attempts reached or an error occurred. Aborting application process.")
+            utils.capture_screenshot(self.driver, "max_attempts_reached")
+            return False
         except Exception as e:
             logger.error(f"An error occurred while filling the application form: {e}", exc_info=True)
-            utils.capture_screenshot(self.driver,"error_in_fill_application_form")	
+            utils.capture_screenshot(self.driver, "error_in_fill_application_form")
             return False
 
     def _2_next_or_submit(self) -> bool:
@@ -1439,25 +1442,35 @@ class AIHawkEasyApplier:
                     return []
             
             logger.debug("Questions successfully loaded from JSON")
-            return data
+            logger.debug("Validating loaded questions...")
+            valid_data = []
+            for item in data:
+                if isinstance(item, dict) and all(k in item for k in ["type", "question", "answer"]):
+                    valid_data.append(item)
+                else:
+                    logger.error(f"Invalid item in answers.json: {item}")
+            logger.debug(f"Total of {len(valid_data)} valid questions loaded.")
+            return valid_data
         except Exception as e:
             logger.error("Error loading question data from JSON file", exc_info=True)
             raise
 
     def _get_existing_answer(self, question_text: str, question_type: str) -> Optional[str]:
-        """
-        Retrieves an existing answer from the saved data based on the question text and type.
-        """
         sanitized_question = self.utils_sanitize_text(question_text)
-        return next(
-            (
-                item.get("answer") 
-                for item in self.all_questions
-                if self.utils_sanitize_text(item.get("question", "")) == sanitized_question 
-                and item.get("type") == question_type
-            ),
-            None
-        )
+        try:
+            for item in self.all_questions:
+                if not isinstance(item, dict):
+                    logger.error(f"Unexpected item type in all_questions: {type(item)} - {item}")
+                    continue
+                item_question = self.utils_sanitize_text(item.get("question", ""))
+                item_type = item.get("type")
+                logger.debug(f"Checking item: question='{item_question}', type='{item_type}'")
+                if item_question == sanitized_question and item_type == question_type:
+                    return item.get("answer")
+            return None
+        except KeyError as e:
+            logger.error(f"KeyError when accessing item in all_questions: {e}", exc_info=True)
+            return None
 
 # Utils
 

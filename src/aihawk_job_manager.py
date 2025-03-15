@@ -5,6 +5,7 @@ import random
 from itertools import product
 from pathlib import Path
 import time
+import sys
 
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, WebDriverException
 from selenium.webdriver.common.by import By
@@ -39,7 +40,7 @@ class EnvironmentKeys:
 
 
 class AIHawkJobManager:
-    def __init__(self, driver, wait_time: int = 10):
+    def __init__(self, driver, wait_time: int = 20):
         logger.debug("Initializing AIHawkJobManager")
         self.driver = driver
         self.wait = WebDriverWait(self.driver, wait_time)
@@ -144,8 +145,8 @@ class AIHawkJobManager:
 
         # Define locators at the beginning of the function
         NO_RESULTS_LOCATOR = (By.CLASS_NAME, 'jobs-search-no-results-banner')
-        JOB_LIST_CONTAINER_LOCATOR = (By.CLASS_NAME, 'scaffold-layout__list-container')
-        JOB_TILE_LOCATOR = (By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
+        JOB_LIST_CONTAINER_LOCATOR = (By.XPATH, "//main[@id='main']//div[contains(@class, 'scaffold-layout__list-detail-inner')]//ul")
+        JOB_TILE_LOCATOR = (By.CSS_SELECTOR, 'li.scaffold-layout__list-item[data-occludable-job-id]')
 
         try:
             logger.debug(f"Waiting for either {NO_RESULTS_LOCATOR} or job tiles to be present.")
@@ -162,7 +163,7 @@ class AIHawkJobManager:
         except TimeoutException:
             logger.warning("Timed out waiting for the 'no results' banner or the job elements.")
             utils.capture_screenshot(self.driver, "job_elements_timeout")
-            logger.debug(f"HTML of the page: {self.driver.page_source}")
+            # logger.debug(f"HTML of the page: {self.driver.page_source}")
             return []
 
         # Check if the "no results" banner is present
@@ -204,14 +205,20 @@ class AIHawkJobManager:
 
         except StaleElementReferenceException:
             logger.error("StaleElementReferenceException encountered. Attempting to recapture job elements.")
+        try:
+            logger.debug("Waiting for job list container to be present.")
+            job_list_container = self.wait.until(
+                EC.presence_of_element_located(JOB_LIST_CONTAINER_LOCATOR)
+            )
+            logger.debug("Job list container found.")
+        except (TimeoutException, NoSuchElementException) as e:
+            logger.warning(f"Exception while waiting for the job list container: {e}. Retrying after a short delay.")
+            time.sleep(2)
             try:
-                # Re-fetch the job list container and job elements
-                job_list_container = self.driver.find_element(*JOB_LIST_CONTAINER_LOCATOR)
-                job_list_elements = job_list_container.find_elements(*JOB_TILE_LOCATOR)
-                logger.debug(f"Recaptured {len(job_list_elements)} job elements after StaleElementReferenceException.")
-                return job_list_elements
-            except Exception as e:
-                logger.error(f"Failed to recapture job elements after StaleElementReferenceException: {e}", exc_info=True)
+                job_list_container = self.driver.find_element(By.XPATH, "//div[contains(@class, 'scaffold-layout__list-detail-inner')]/div[contains(@class, 'scaffold-layout__list')]/ul")
+                logger.debug("Fallback: Job list container found using driver.find_element with XPath.")
+            except Exception as ex:
+                logger.error(f"Fallback failed while retrieving job list container: {ex}", exc_info=True)
                 return []
         except Exception as e:
             logger.error(f"Unexpected error while fetching job elements: {e}", exc_info=True)
@@ -219,8 +226,8 @@ class AIHawkJobManager:
 
     def apply_jobs(self, search_term, search_country):
         try:
-            job_list_container = self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'scaffold-layout__list')))
-            job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'ul.scaffold-layout__list-container > li.jobs-search-results__list-item[data-occludable-job-id]')
+            job_list_container = self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'NNRjLAgluNYQKLYkXEJWjatvSWPZXnicjMVMeU')))
+            job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'li.scaffold-layout__list-item[data-occludable-job-id]')
         except (TimeoutException, NoSuchElementException):
             logger.warning("Timed out waiting for job list container.")
             return
@@ -229,10 +236,13 @@ class AIHawkJobManager:
             logger.warning("No job list elements found on page, skipping.")
             return
 
-        job_list = [
-            Job(*self.extract_job_information_from_tile(job_element), search_term=search_term, search_country=search_country)
-            for job_element in job_list_elements
-        ]
+        job_list = []
+        for job_element in job_list_elements:
+            job_info = self.extract_job_information_from_tile(job_element)
+            if job_info is None:
+                logger.debug("Skipping job tile due to extraction failure.")
+                continue
+            job_list.append(Job(*job_info, search_term=search_term, search_country=search_country))
 
         for job in job_list:
             logger.debug(f"Evaluating job: '{job.title}' at '{job.company}'")
@@ -270,20 +280,23 @@ class AIHawkJobManager:
         logger.debug("Starting scroll_jobs.")
 
         # Define selectors
-        job_item_locator = (By.CSS_SELECTOR, 'li.jobs-search-results__list-item[data-occludable-job-id]')
-        
+        job_item_locator = (By.CSS_SELECTOR, 'li.scaffold-layout__list-item[data-occludable-job-id]')
 
         try:
-            # Locate all job items
-            job_items = self.driver.find_elements(*job_item_locator)
-            logger.debug(f"Found {len(job_items)} job items.")
+            # Get the total number of job items
+            total_jobs = len(self.driver.find_elements(*job_item_locator))
+            logger.debug(f"Found {total_jobs} job items.")
 
-            # Iterate over each job item to force content loading
-            for idx, job_item in enumerate(job_items):
+            idx = 0
+            while idx < total_jobs:
                 try:
+                    # Fetch the job item during each iteration
+                    job_items = self.driver.find_elements(*job_item_locator)
+                    job_item = job_items[idx]
+
                     # Scroll to the job item
                     self.driver.execute_script("arguments[0].scrollIntoView(true);", job_item)
-                    logger.debug(f"Scrolled to job item {idx+1}/{len(job_items)}")
+                    logger.debug(f"Scrolled to job item {idx+1}/{total_jobs}")
 
                     # Wait for the loader to disappear after scrolling to the item
                     loader_disappeared = self.wait_for_loader()
@@ -291,8 +304,20 @@ class AIHawkJobManager:
                         logger.debug("Loader did not disappear after scrolling to the item. Proceeding.")
 
                     time.sleep(0.2)  # Wait for the content to load
+
+                    # Increment the index
+                    idx += 1
+
+                    # Update the total number of job items in case new items are loaded
+                    total_jobs = len(self.driver.find_elements(*job_item_locator))
+                except StaleElementReferenceException as e:
+                    logger.warning(f"StaleElementReferenceException at index {idx}: {e}. Re-fetching job items.")
+                    # Re-fetch the total job items and continue
+                    total_jobs = len(self.driver.find_elements(*job_item_locator))
                 except Exception as e:
                     logger.error(f"Error scrolling to job item {idx+1}: {e}", exc_info=True)
+                    # Optionally, you can decide to break the loop or continue
+                    idx += 1  # Try the next item
 
             logger.debug("Completed scrolling through all job items.")
 
@@ -514,11 +539,13 @@ class AIHawkJobManager:
         logger.debug("Extracting job link.")
         link = ""
         try:
-            job_title_element = job_tile.find_element(By.CSS_SELECTOR, 'a.job-card-list__title')
-            link = job_title_element.get_attribute('href').split('?')[0]
+            # Use a more robust selector to find the job link, matching any anchor with '/jobs/view/' in its href
+            job_title_element = job_tile.find_element(By.CSS_SELECTOR, "a[href*='/jobs/view/']")
+            link_attr = job_title_element.get_attribute('href') or job_title_element.get_property('href') or ""
+            link = link_attr.split('?')[0] if link_attr else ""
             logger.debug(f"Extracted Link: '{link}'")
         except NoSuchElementException:
-            logger.error("Job link element not found.")
+            logger.error("Job link element not found using selector a[href*='/jobs/view/'].")
             logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
         except Exception as e:
             logger.error(f"Unexpected error while extracting job link: {e}", exc_info=True)
@@ -560,8 +587,8 @@ class AIHawkJobManager:
         logger.debug("Starting apply method extraction.")
         apply_method = None
         try:
-            apply_method_element = job_tile.find_element(By.CSS_SELECTOR, 'li.job-card-container__apply-method')
-            apply_method_text = apply_method_element.text.strip().lower()
+            apply_method_element = job_tile.find_element(By.CSS_SELECTOR, 'button.jobs-apply-button')
+            apply_method_text = (apply_method_element.get_attribute("innerText") or "").strip().lower()
             logger.debug(f"Extracted apply method text: '{apply_method_text}'")
             if 'easy apply' in apply_method_text:
                 apply_method = 'Easy Apply'
@@ -668,7 +695,7 @@ class AIHawkJobManager:
         Returns:
             bool: True if job state is invalid, False otherwise.
         """
-        return job.state in {"Continue", "Applied", "Apply"}
+        return bool(job.state) and job.state in {"Continue", "Applied", "Apply"}
 
     def _is_apply_method_not_easy_apply(self, job: Job) -> bool:
         """
@@ -680,7 +707,9 @@ class AIHawkJobManager:
         Returns:
             bool: True if apply method is not 'Easy Apply', False otherwise.
         """
-        return job.apply_method != "Easy Apply"
+        if job.apply_method is None:
+            return False
+        return job.apply_method.lower() != "easy apply"
 
 
     def _is_title_blacklisted(self, title: str) -> bool:

@@ -89,7 +89,7 @@ class AIHawkAuthenticator:
         logger.debug("Checking if user is logged in...")
         try:
             self.driver.get('https://www.linkedin.com/feed')
-            WebDriverWait(self.driver, 3).until(
+            WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.CLASS_NAME, 'share-box-feed-entry__trigger'))
             )
 
