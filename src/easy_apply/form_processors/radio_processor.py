@@ -48,42 +48,100 @@ class RadioProcessor(BaseProcessor):
         except Exception as e:
             logger.debug(f"No radio buttons found in old structure: {e}")
         
-        # Try to find radio buttons in the new structure
+        # Try to find radio buttons in the new structure (2025)
         try:
             # Look for radio buttons in the new structure
-            # This is a placeholder - update with actual selectors when the new structure is known
-            form_element = section.find_element(By.CLASS_NAME, self.selectors["new"]["form_element"])
-            radios = form_element.find_elements(By.XPATH, ".//input[@type='radio']")
+            # First try to find the fieldset which contains the radio buttons
+            fieldset = section.find_element(By.XPATH, f".//fieldset[@{self.selectors['new']['radio_fieldset']}='true']")
             
-            if radios:
-                logger.debug(f"Found {len(radios)} radio options in new structure")
-                question_text = self.extract_question_text(section)
+            if fieldset:
+                logger.debug("Found fieldset for radio buttons in new structure")
                 
-                # Get the labels for each radio option
-                options = []
-                for radio in radios:
-                    label_id = radio.get_attribute("id")
-                    if label_id:
-                        label = section.find_element(By.XPATH, f"//label[@for='{label_id}']")
-                        options.append(label.text.lower())
+                # Extract the question text from the legend
+                legend = fieldset.find_element(By.TAG_NAME, "legend")
+                question_text = legend.text.strip()
+                logger.debug(f"Question text from legend: {question_text}")
                 
-                logger.debug(f"Radio options in new structure: {options}")
+                # Find all radio options
+                radio_options = fieldset.find_elements(By.XPATH, f".//div[contains(@class, '{self.selectors['new']['radio_option_container']}')]")
                 
-                # Get answer (from storage or generate new one)
-                answer = self._get_answer_for_question(question_text, "radio", options, job)
-                
-                # Select the radio button
-                for i, option in enumerate(options):
-                    if answer.lower() in option:
-                        self.wait.until(EC.element_to_be_clickable(radios[i])).click()
-                        logger.debug(f"Selected radio option '{option}' in new structure")
-                        return True
-                
-                # If no match found, select the first option
-                logger.warning(f"Answer '{answer}' not found in radio options; selecting the first option")
-                self.wait.until(EC.element_to_be_clickable(radios[0])).click()
-                logger.debug(f"Selected first radio option as fallback")
-                return True
+                if radio_options:
+                    logger.debug(f"Found {len(radio_options)} radio options in new structure")
+                    
+                    # Get the labels and inputs for each radio option
+                    options = []
+                    radio_inputs = []
+                    
+                    for option in radio_options:
+                        try:
+                            # Find the input element
+                            input_elem = option.find_element(By.XPATH, f".//input[@{self.selectors['new']['radio_input']}]")
+                            radio_inputs.append(input_elem)
+                            
+                            # Find the label element
+                            label_elem = option.find_element(By.XPATH, f".//label[@{self.selectors['new']['radio_label']}]")
+                            option_text = label_elem.text.strip().lower()
+                            options.append(option_text)
+                            
+                            logger.debug(f"Found radio option: {option_text}")
+                        except Exception as e:
+                            logger.warning(f"Error extracting radio option: {e}")
+                    
+                    logger.debug(f"Radio options in new structure: {options}")
+                    
+                    # Get answer (from storage or generate new one)
+                    answer = self._get_answer_for_question(question_text, "radio", options, job)
+                    
+                    # Select the radio button
+                    selected = False
+                    for i, option in enumerate(options):
+                        if answer.lower() in option:
+                            try:
+                                # Try JavaScript click on the input element
+                                self.driver.execute_script("arguments[0].click();", radio_inputs[i])
+                                logger.debug(f"Selected radio option '{option}' using JavaScript click")
+                                selected = True
+                                return True
+                            except Exception as js_click_error:
+                                logger.warning(f"Failed to click radio input with JavaScript: {js_click_error}")
+                                try:
+                                    # Try clicking the label instead
+                                    label = radio_options[i].find_element(By.XPATH, ".//label")
+                                    self.driver.execute_script("arguments[0].click();", label)
+                                    logger.debug(f"Selected radio option '{option}' by clicking label with JavaScript")
+                                    selected = True
+                                    return True
+                                except Exception as label_click_error:
+                                    logger.warning(f"Failed to click radio label with JavaScript: {label_click_error}")
+                    
+                    # If no match found or clicking failed, select the first option
+                    if not selected:
+                        logger.warning(f"Answer '{answer}' not found in radio options or clicking failed; selecting the first option")
+                        try:
+                            # Try JavaScript click on the first input
+                            self.driver.execute_script("arguments[0].click();", radio_inputs[0])
+                            logger.debug(f"Selected first radio option using JavaScript click as fallback")
+                            return True
+                        except Exception as first_js_click_error:
+                            logger.warning(f"Failed to click first radio input with JavaScript: {first_js_click_error}")
+                            try:
+                                # Try clicking the first label with JavaScript
+                                first_label = radio_options[0].find_element(By.XPATH, ".//label")
+                                self.driver.execute_script("arguments[0].click();", first_label)
+                                logger.debug(f"Selected first radio option by clicking label with JavaScript as fallback")
+                                return True
+                            except Exception as first_label_click_error:
+                                logger.error(f"Failed to click first radio label with JavaScript: {first_label_click_error}")
+                                
+                                # Last resort: try to use ActionChains
+                                try:
+                                    from selenium.webdriver.common.action_chains import ActionChains
+                                    actions = ActionChains(self.driver)
+                                    actions.move_to_element(radio_inputs[0]).click().perform()
+                                    logger.debug("Selected first radio option using ActionChains as last resort")
+                                    return True
+                                except Exception as action_error:
+                                    logger.error(f"Failed to click using ActionChains: {action_error}")
         except Exception as e:
             logger.debug(f"No radio buttons found in new structure: {e}")
         

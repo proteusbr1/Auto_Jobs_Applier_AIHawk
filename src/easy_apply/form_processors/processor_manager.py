@@ -83,6 +83,12 @@ class FormProcessorManager:
         """
         logger.debug("Processing form section")
         
+        # Get the current URL for error logging
+        try:
+            current_url = self.driver.current_url
+        except:
+            current_url = "unknown"
+        
         # Try each processor in sequence until one succeeds
         for processor in self.processors:
             try:
@@ -91,6 +97,14 @@ class FormProcessorManager:
                     return True
             except Exception as e:
                 logger.warning(f"Error in {processor.__class__.__name__}: {e}", exc_info=True)
+                logger.warning(f"Error occurred while processing job URL: {current_url}")
+                
+                # Try to capture a screenshot of the error
+                try:
+                    import src.utils as utils
+                    utils.capture_screenshot(self.driver, f"error_in_{processor.__class__.__name__}")
+                except Exception as screenshot_error:
+                    logger.warning(f"Failed to capture screenshot: {screenshot_error}")
         
         logger.debug("No processor could handle this section")
         return False

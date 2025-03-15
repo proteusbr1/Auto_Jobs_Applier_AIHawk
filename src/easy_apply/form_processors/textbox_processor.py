@@ -50,17 +50,26 @@ class TextboxProcessor(BaseProcessor):
             bool: True if textbox was found and handled, False otherwise.
         """
         try:
+            # Check if selectors is a dictionary and has the expected structure
+            if not isinstance(self.selectors, dict) or "new" not in self.selectors or not isinstance(self.selectors["new"], dict):
+                logger.warning("Invalid selectors structure in TextboxProcessor")
+                return False
+                
             # Look for textareas in the new structure
-            artdeco_textareas = section.find_elements(By.CLASS_NAME, self.selectors["new"]["textarea"])
-            if artdeco_textareas:
-                logger.debug("Found textarea in new artdeco structure")
-                return self._process_artdeco_text_field(artdeco_textareas[0], section, job, is_textarea=True)
+            textarea_selector = self.selectors["new"].get("textarea")
+            if textarea_selector:
+                artdeco_textareas = section.find_elements(By.CLASS_NAME, textarea_selector)
+                if artdeco_textareas:
+                    logger.debug("Found textarea in new artdeco structure")
+                    return self._process_artdeco_text_field(artdeco_textareas[0], section, job, is_textarea=True)
                 
             # Look for inputs in the new structure
-            artdeco_inputs = section.find_elements(By.CLASS_NAME, self.selectors["new"]["input"])
-            if artdeco_inputs:
-                logger.debug("Found input in new artdeco structure")
-                return self._process_artdeco_text_field(artdeco_inputs[0], section, job, is_textarea=False)
+            input_selector = self.selectors["new"].get("input")
+            if input_selector:
+                artdeco_inputs = section.find_elements(By.CLASS_NAME, input_selector)
+                if artdeco_inputs:
+                    logger.debug("Found input in new artdeco structure")
+                    return self._process_artdeco_text_field(artdeco_inputs[0], section, job, is_textarea=False)
                 
             return False
         except Exception as e:
@@ -104,23 +113,45 @@ class TextboxProcessor(BaseProcessor):
         Returns:
             Tuple[str, str]: The question text and question type.
         """
-        # Find the label
-        label_elements = section.find_elements(By.TAG_NAME, self.selectors["common"]["label"])
-        question_text = label_elements[0].text.strip() if label_elements else "unknown"
-        
-        # Determine question type
-        if is_textarea:
-            # For textareas, check if it's a salary/compensation question
-            is_salary = "salary" in question_text.lower() or "compensation" in question_text.lower()
-            question_type = "numeric" if is_salary else "textbox"
-        else:
-            # For inputs, check if it's a numeric field
-            field_type = field.get_attribute("type").lower()
-            field_id = field.get_attribute("id").lower()
-            is_numeric = "numeric" in field_id or field_type == "number"
-            question_type = "numeric" if is_numeric else "textbox"
+        try:
+            # Check if selectors is a dictionary and has the expected structure
+            if not isinstance(self.selectors, dict) or "common" not in self.selectors or not isinstance(self.selectors["common"], dict):
+                logger.warning("Invalid selectors structure in _extract_question_info")
+                return "unknown", "textbox"
+                
+            # Find the label
+            label_selector = self.selectors["common"].get("label")
+            if not label_selector:
+                logger.warning("Label selector not found in common selectors")
+                question_text = "unknown"
+            else:
+                label_elements = section.find_elements(By.TAG_NAME, label_selector)
+                question_text = label_elements[0].text.strip() if label_elements and len(label_elements) > 0 else "unknown"
             
-        return question_text, question_type
+            # Determine question type
+            if is_textarea:
+                # For textareas, check if it's a salary/compensation question
+                is_salary = "salary" in question_text.lower() or "compensation" in question_text.lower()
+                question_type = "numeric" if is_salary else "textbox"
+            else:
+                # For inputs, check if it's a numeric field
+                try:
+                    field_type = field.get_attribute("type")
+                    field_type = field_type.lower() if field_type else ""
+                    
+                    field_id = field.get_attribute("id")
+                    field_id = field_id.lower() if field_id else ""
+                    
+                    is_numeric = "numeric" in field_id or field_type == "number"
+                    question_type = "numeric" if is_numeric else "textbox"
+                except Exception as e:
+                    logger.warning(f"Error determining field type: {e}")
+                    question_type = "textbox"  # Default to textbox if we can't determine
+                
+            return question_text, question_type
+        except Exception as e:
+            logger.warning(f"Error in _extract_question_info: {e}", exc_info=True)
+            return "unknown", "textbox"  # Return default values on error
     
     def _handle_old_textbox_structure(self, section: WebElement, job: Job) -> bool:
         """
@@ -133,36 +164,59 @@ class TextboxProcessor(BaseProcessor):
         Returns:
             bool: True if textbox was found and handled, False otherwise.
         """
-        # Find all input and textarea elements
-        text_fields = section.find_elements(By.TAG_NAME, "input") + section.find_elements(By.TAG_NAME, "textarea")
-        
-        if not text_fields:
-            return False
+        try:
+            # Find all input and textarea elements
+            text_fields = section.find_elements(By.TAG_NAME, "input") + section.find_elements(By.TAG_NAME, "textarea")
             
-        text_field = text_fields[0]
-        label_elements = section.find_elements(By.TAG_NAME, self.selectors["common"]["label"])
-        question_text = label_elements[0].text.lower().strip() if label_elements else "unknown"
-        
-        # Determine if the field is numeric
-        field_type = text_field.get_attribute("type").lower()
-        field_id = text_field.get_attribute("id").lower()
-        is_numeric = "numeric" in field_id or field_type == "number"
-        question_type = "numeric" if is_numeric else "textbox"
-        
-        # Check if it's a cover letter
-        is_cover_letter = "cover letter" in question_text.lower()
-        
-        # Get the appropriate answer
-        if is_cover_letter:
-            answer = self.gpt_answerer.answer_question_simple(question_text, job, 1000)
-            logger.debug("Generated cover letter")
-        else:
-            answer = self._get_answer_for_field(question_text, question_type, job)
-        
-        # Enter the answer
-        self.enter_text(text_field, answer)
-        logger.debug(f"Entered answer into the textbox: {answer}")
-        return True
+            if not text_fields:
+                return False
+                
+            text_field = text_fields[0]
+            
+            # Check if selectors is a dictionary and has the expected structure
+            if not isinstance(self.selectors, dict) or "common" not in self.selectors or not isinstance(self.selectors["common"], dict):
+                logger.warning("Invalid selectors structure in _handle_old_textbox_structure")
+                question_text = "unknown"
+            else:
+                label_selector = self.selectors["common"].get("label")
+                if not label_selector:
+                    logger.warning("Label selector not found in common selectors")
+                    question_text = "unknown"
+                else:
+                    label_elements = section.find_elements(By.TAG_NAME, label_selector)
+                    question_text = label_elements[0].text.lower().strip() if label_elements and len(label_elements) > 0 else "unknown"
+            
+            # Determine if the field is numeric
+            try:
+                field_type = text_field.get_attribute("type")
+                field_type = field_type.lower() if field_type else ""
+                
+                field_id = text_field.get_attribute("id")
+                field_id = field_id.lower() if field_id else ""
+                
+                is_numeric = "numeric" in field_id or field_type == "number"
+                question_type = "numeric" if is_numeric else "textbox"
+            except Exception as e:
+                logger.warning(f"Error determining field type: {e}")
+                question_type = "textbox"  # Default to textbox if we can't determine
+            
+            # Check if it's a cover letter
+            is_cover_letter = "cover letter" in question_text.lower()
+            
+            # Get the appropriate answer
+            if is_cover_letter:
+                answer = self.gpt_answerer.answer_question_simple(question_text, job, 1000)
+                logger.debug("Generated cover letter")
+            else:
+                answer = self._get_answer_for_field(question_text, question_type, job)
+            
+            # Enter the answer
+            self.enter_text(text_field, answer)
+            logger.debug(f"Entered answer into the textbox: {answer}")
+            return True
+        except Exception as e:
+            logger.warning(f"Error in _handle_old_textbox_structure: {e}", exc_info=True)
+            return False
     
     def _get_answer_for_field(self, question_text: str, question_type: str, job: Job) -> str:
         """

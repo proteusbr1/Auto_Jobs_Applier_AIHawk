@@ -24,7 +24,11 @@ SELECTORS = {
         "form_section": "PhUvDQfCdKEziUOXPXmpuBzOwdFzCzynpE",
         "form_element": "fb-dash-form-element",
         "select_container": "text-entity-list-form-component",
-        "required_label": "fb-dash-form-element__label-title--is-required"
+        "required_label": "fb-dash-form-element__label-title--is-required",
+        "radio_fieldset": "data-test-form-builder-radio-button-form-component",
+        "radio_option_container": "qwbzuAdmnzzPszIBvGgzZoJXWONMrhTWs",
+        "radio_input": "data-test-text-selectable-option__input",
+        "radio_label": "data-test-text-selectable-option__label"
     },
     # Old LinkedIn structure
     "old": {
@@ -122,13 +126,33 @@ class BaseProcessor:
             text (str): The text to enter.
         """
         try:
+            # Ensure text is a string
+            if not isinstance(text, str):
+                text = str(text)
+                logger.warning(f"Converting non-string text to string: {text}")
+                
+            # Wait for element to be clickable
             self.wait.until(EC.element_to_be_clickable(element))
-            element.clear()
+            
+            # Clear the field
+            try:
+                element.clear()
+            except Exception as clear_error:
+                logger.warning(f"Could not clear element: {clear_error}")
+                # Try JavaScript clear as fallback
+                try:
+                    self.driver.execute_script("arguments[0].value = '';", element)
+                    logger.debug("Cleared element using JavaScript")
+                except Exception as js_clear_error:
+                    logger.warning(f"JavaScript clear also failed: {js_clear_error}")
+            
+            # Enter text
             element.send_keys(text)
             logger.debug(f"Text entered successfully: {text[:20]}{'...' if len(text) > 20 else ''}")
         except Exception as e:
             logger.error(f"Failed to enter text: {e}", exc_info=True)
-            raise
+            # Don't raise the exception, just log it and continue
+            # This allows the application to continue even if one field fails
     
     def get_existing_answer(self, question_text: str, question_type: str) -> Optional[str]:
         """

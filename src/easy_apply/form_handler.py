@@ -225,6 +225,9 @@ class FormHandler:
         except Exception as e:
             logger.error(f"Error in the next_or_submit function: {e}", exc_info=True)
             utils.capture_screenshot(self.driver, "error_in_next_or_submit")
+            # Log the current URL for debugging
+            current_url = self.driver.current_url
+            logger.error(f"Current job URL when error occurred: {current_url}")
             return False
     
     def _unfollow_company(self) -> None:
@@ -308,6 +311,10 @@ class FormHandler:
                         logger.error(f"  - Field '{field}': {error}")
                 
                 logger.error(f"Form submission failed with errors: {error_texts}")
+                
+                # Log the current URL for debugging
+                current_url = self.driver.current_url
+                logger.error(f"Current job URL when error occurred: {current_url}")
                 
                 # Create a more detailed error message
                 if field_errors:

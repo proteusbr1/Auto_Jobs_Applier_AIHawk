@@ -133,7 +133,7 @@ class AIHawkEasyApplier:
                 proceed_with_application = False
                 
                 if job.score >= MIN_SCORE_APPLY:
-                    logger.info(f"Job score is {job.score}. Proceeding with the application.")
+                    logger.info(f"Job score is {job.score}. Proceeding with the application: {job.link}")
                     proceed_with_application = True
                     
                     # Check salary if enabled
@@ -145,7 +145,7 @@ class AIHawkEasyApplier:
                             self.cache.write_to_file(job, "skipped_low_salary")
                             proceed_with_application = False
                         else:
-                            logger.info(f"Estimated salary {job.gpt_salary} is within expected {SALARY_EXPECTATIONS}. Proceeding with the application.")
+                            logger.info(f"Estimated salary {job.gpt_salary} is within expected {SALARY_EXPECTATIONS}. Proceeding with the application: {job.link}")
                     else:
                         logger.info(f"Salary is not being verified. Proceeding with the application.")
                 else:
@@ -205,6 +205,9 @@ class AIHawkEasyApplier:
         logger.debug(f"Filling out application form for job: {job.title} at {job.company}")
         try:
             attempts = 0
+            error_count = 0
+            max_errors = 1  # Maximum number of errors before skipping the job
+            
             while attempts < max_attempts:
                 try:
                     self._fill_up(job)
@@ -215,16 +218,37 @@ class AIHawkEasyApplier:
                     attempts += 1
                     logger.debug(f"Page {attempts} complete. Next page.")
                 except KeyError as e:
-                    logger.error(f"KeyError occurred during form filling: {e}. Skipping this step.")
+                    logger.error(f"KeyError occurred during form filling: {e}. Skipping this job.")
                     utils.capture_screenshot(self.driver, "form_filling_key_error")
-                    time.sleep(10)
-                    break  # Decide whether to continue or break
-            logger.warning("Maximum attempts reached or an error occurred. Aborting application process.")
+                    return False  # Skip to the next job immediately
+                except Exception as e:
+                    error_count += 1
+                    logger.error(f"Error during form filling (error {error_count}/{max_errors}): {e}")
+                    utils.capture_screenshot(self.driver, f"form_filling_error_{error_count}")
+                    
+                    # If we've hit the maximum number of errors, skip this job
+                    if error_count >= max_errors:
+                        logger.error(f"Maximum errors ({max_errors}) reached. Skipping this job.")
+                        # Log the current URL for debugging
+                        current_url = self.driver.current_url
+                        logger.error(f"Current job URL when skipping: {current_url}")
+                        return False
+                    
+                    # Otherwise, try to continue with the next page
+                    continue
+                    
+            logger.warning("Maximum attempts reached. Aborting application process.")
             utils.capture_screenshot(self.driver, "form_filling_max_attempts")
             return False
         except Exception as e:
             logger.error(f"An error occurred while filling the application form: {e}", exc_info=True)
             utils.capture_screenshot(self.driver, "form_filling_exception")
+            # Log the current URL for debugging
+            try:
+                current_url = self.driver.current_url
+                logger.error(f"Current job URL when exception occurred: {current_url}")
+            except:
+                pass
             return False
 
     def _fill_up(self, job: Job) -> None:
