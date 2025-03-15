@@ -89,30 +89,54 @@ class AIHawkAuthenticator:
         logger.debug("Checking if user is logged in...")
         try:
             self.driver.get('https://www.linkedin.com/feed')
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, 'share-box-feed-entry__trigger'))
-            )
-
-            buttons = self.driver.find_elements(By.CLASS_NAME, 'share-box-feed-entry__trigger')
-            logger.debug(f"Found {len(buttons)} 'Start a post' buttons.")
-
-            for i, button in enumerate(buttons, start=1):
-                logger.debug(f"Button {i} text: '{button.text.strip()}'")
-
-            if any(button.text.strip().lower() == 'start a post' for button in buttons):
+            
+            # Wait for page to load
+            # time.sleep(3)
+            
+            # Multiple ways to check if logged in
+            
+            # Method 1: Check for "Start a post" text in any button
+            try:
+                WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, "//button[contains(.,'Start a post')]"))
+                )
                 logger.debug("Found 'Start a post' button indicating user is logged in.")
                 return True
-
-            profile_img_elements = self.driver.find_elements(By.XPATH, "//img[contains(@alt, 'Photo of')]")
-            if profile_img_elements:
-                logger.debug("Profile image found. Assuming user is logged in.")
-                return True
-
-            logger.debug("Did not find 'Start a post' button or profile image. User might not be logged in.")
+            except TimeoutException:
+                logger.debug("Could not find 'Start a post' button. Trying alternative methods.")
+            
+            # Method 2: Check for profile image
+            try:
+                profile_img_elements = self.driver.find_elements(By.XPATH, "//img[contains(@alt, 'Photo of') or contains(@alt, 'profile photo')]")
+                if profile_img_elements:
+                    logger.debug("Profile image found. Assuming user is logged in.")
+                    return True
+            except Exception as e:
+                logger.debug(f"Error checking for profile image: {e}")
+            
+            # Method 3: Check for feed content
+            try:
+                feed_elements = self.driver.find_elements(By.CLASS_NAME, "feed-shared-update-v2")
+                if feed_elements:
+                    logger.debug("Feed content found. User is logged in.")
+                    return True
+            except Exception as e:
+                logger.debug(f"Error checking for feed content: {e}")
+            
+            # Method 4: Check URL - if we're redirected to login page, we're not logged in
+            if 'login' in self.driver.current_url or 'checkpoint' in self.driver.current_url:
+                logger.debug("Redirected to login page. User is not logged in.")
+                return False
+                
+            logger.debug("Could not definitively determine login status. Assuming not logged in.")
             return False
 
         except TimeoutException:
             logger.error("Page elements took too long to load or were not found.")
+            # Check if we're on the login page
+            if 'login' in self.driver.current_url:
+                logger.debug("On login page. User is not logged in.")
+                return False
             return False
         except Exception as e:
             logger.exception(f"An unexpected error occurred in is_logged_in: {e}")

@@ -1,4 +1,3 @@
-# aihawk_job_manager.py
 import json
 import os
 import random
@@ -184,6 +183,7 @@ class AIHawkJobManager:
             )
             logger.debug("Job list container found.")
 
+
         except (TimeoutException, NoSuchElementException) as e:
             logger.warning(f"Exception while waiting for the job list container: {e}")
             return []
@@ -226,10 +226,40 @@ class AIHawkJobManager:
 
     def apply_jobs(self, search_term, search_country):
         try:
-            job_list_container = self.wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'NNRjLAgluNYQKLYkXEJWjatvSWPZXnicjMVMeU')))
+            # Try multiple selectors to find the job list container
+            try:
+                # First attempt with XPath to find the job list container
+                job_list_container = self.wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//main[@id='main']//div[contains(@class, 'scaffold-layout__list-detail-inner')]//ul"))
+                )
+                logger.debug("Found job list container using XPath.")
+            except (TimeoutException, NoSuchElementException):
+                # Second attempt with a more general selector
+                try:
+                    job_list_container = self.wait.until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "ul.scaffold-layout__list-container"))
+                    )
+                    logger.debug("Found job list container using CSS selector.")
+                except (TimeoutException, NoSuchElementException):
+                    # Third attempt with a very general selector
+                    try:
+                        job_list_container = self.driver.find_element(By.XPATH, "//main//ul[contains(@class, 'scaffold-layout__list-container') or contains(@class, 'jobs-search-results__list')]")
+                        logger.debug("Found job list container using general XPath.")
+                    except NoSuchElementException:
+                        logger.warning("Could not find job list container with any selector.")
+                        return
+            
+            # Find job list elements
             job_list_elements = job_list_container.find_elements(By.CSS_SELECTOR, 'li.scaffold-layout__list-item[data-occludable-job-id]')
-        except (TimeoutException, NoSuchElementException):
-            logger.warning("Timed out waiting for job list container.")
+            
+            if not job_list_elements:
+                # Try alternative selector if the first one doesn't work
+                job_list_elements = job_list_container.find_elements(By.XPATH, ".//li[contains(@class, 'scaffold-layout__list-item')]")
+                logger.debug(f"Found {len(job_list_elements)} job elements using alternative selector.")
+            
+        except (TimeoutException, NoSuchElementException) as e:
+            logger.warning(f"Timed out waiting for job list container: {e}")
+            utils.capture_screenshot(self.driver, "job_list_container_error")
             return
 
         if not job_list_elements:
@@ -510,16 +540,33 @@ class AIHawkJobManager:
         logger.debug("Extracting company name from job tile.")  
         company = ""
         try:
-            subtitle_element = job_tile.find_element(By.CSS_SELECTOR, 'div.artdeco-entity-lockup__subtitle')
-            company_location_text = subtitle_element.text.strip()
-            if '·' in company_location_text:
-                company = company_location_text.split('·')[0].strip()
-            else:
-                company = company_location_text.strip()
+            # Try multiple selectors to find the company name
+            try:
+                subtitle_element = job_tile.find_element(By.CSS_SELECTOR, 'div.artdeco-entity-lockup__subtitle')
+                company_location_text = subtitle_element.text.strip()
+                if '·' in company_location_text:
+                    company = company_location_text.split('·')[0].strip()
+                else:
+                    company = company_location_text.strip()
+            except NoSuchElementException:
+                # Try alternative selector
+                try:
+                    company_element = job_tile.find_element(By.CSS_SELECTOR, 'span.job-card-container__primary-description')
+                    company = company_element.text.strip()
+                except NoSuchElementException:
+                    # Try another alternative selector
+                    try:
+                        company_element = job_tile.find_element(By.XPATH, ".//a[contains(@class, 'job-card-container__company-name') or contains(@class, 'job-card-list__company-name')]")
+                        company = company_element.text.strip()
+                    except NoSuchElementException:
+                        # One more attempt with a very general selector
+                        company_elements = job_tile.find_elements(By.XPATH, ".//span[contains(text(), 'at ')]")
+                        if company_elements:
+                            company_text = company_elements[0].text
+                            if 'at ' in company_text:
+                                company = company_text.split('at ')[1].strip()
+            
             logger.debug(f"Extracted Company: '{company}'")
-        except NoSuchElementException:
-            logger.error("Company name element not found.")
-            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
         except Exception as e:
             logger.error(f"Unexpected error while extracting company: {e}", exc_info=True)
             logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
@@ -575,8 +622,8 @@ class AIHawkJobManager:
 
     def _extract_apply_method(self, job_tile):
         """
-        Extracts the apply method from the job_tile using the CSS class 'job-card-container__apply-method'.
-        This is done only after ensuring that the <ul> element with the class 'job-card-container__footer-wrapper' is present.
+        Extracts the apply method from the job_tile.
+        Tries multiple selectors to find the 'Easy Apply' button or text.
 
         Args:
             job_tile (WebElement): The Selenium WebElement representing the job_tile.
@@ -587,16 +634,45 @@ class AIHawkJobManager:
         logger.debug("Starting apply method extraction.")
         apply_method = None
         try:
-            apply_method_element = job_tile.find_element(By.CSS_SELECTOR, 'button.jobs-apply-button')
-            apply_method_text = (apply_method_element.get_attribute("innerText") or "").strip().lower()
-            logger.debug(f"Extracted apply method text: '{apply_method_text}'")
-            if 'easy apply' in apply_method_text:
-                apply_method = 'Easy Apply'
-                logger.debug("Apply method is 'Easy Apply'.")
-        except NoSuchElementException:
-            logger.debug("Apply method element not found.")
+            # Try multiple selectors to find the Easy Apply button or text
+            selectors = [
+                # Original selectors
+                (By.CSS_SELECTOR, 'button.jobs-apply-button'),
+                (By.CSS_SELECTOR, 'li.job-card-container__apply-method'),
+                # New selectors
+                (By.XPATH, ".//button[contains(text(), 'Easy Apply')]"),
+                (By.XPATH, ".//span[contains(text(), 'Easy Apply')]"),
+                (By.XPATH, ".//div[contains(@class, 'job-card-container__apply-method') or contains(@class, 'jobs-apply-button')]"),
+                # Very general selector
+                (By.XPATH, ".//*[contains(text(), 'Easy Apply')]")
+            ]
+            
+            for selector_type, selector in selectors:
+                try:
+                    element = job_tile.find_element(selector_type, selector)
+                    element_text = (element.text or element.get_attribute("innerText") or "").strip().lower()
+                    logger.debug(f"Found element with text: '{element_text}' using selector: {selector}")
+                    
+                    if 'easy apply' in element_text:
+                        apply_method = 'Easy Apply'
+                        logger.debug("Apply method is 'Easy Apply'.")
+                        break
+                except NoSuchElementException:
+                    continue
+                except Exception as e:
+                    logger.debug(f"Error with selector {selector}: {e}")
+                    continue
+            
+            # If we still don't have an apply method, check the entire job tile text
+            if apply_method is None:
+                job_tile_text = job_tile.text.lower()
+                if 'easy apply' in job_tile_text:
+                    apply_method = 'Easy Apply'
+                    logger.debug("Found 'Easy Apply' in job tile text.")
+            
         except Exception as e:
             logger.debug(f"Unexpected error while extracting apply method: {e}", exc_info=True)
+        
         return apply_method
 
 

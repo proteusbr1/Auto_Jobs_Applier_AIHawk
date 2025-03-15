@@ -36,8 +36,7 @@ if TRYING_DEGUB:
     MIN_SCORE_APPLY = 0
 
 
-# Load environment variables from a .env file
-load_dotenv()
+# Environment variables will be loaded in the ConfigValidator.validate_secrets() method
 
 
 class AIModel(ABC):
@@ -1746,4 +1745,4 @@ Provide only the exact name of the section from the list above with no additiona
         
         except Exception as e:
             logger.error(f"Error generating tailored cover letter: {e}", exc_info=True)
-            raise        
+            raise
