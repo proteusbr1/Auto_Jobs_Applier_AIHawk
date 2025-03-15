@@ -251,9 +251,6 @@ class FormHandler:
         """
         logger.debug("Checking for form errors")
         try:
-            # Capture a screenshot for debugging regardless of errors
-            utils.capture_screenshot(self.driver, "form_check_for_errors")
-            
             # Check for errors in the old HTML structure
             error_elements = self.driver.find_elements(By.CLASS_NAME, "artdeco-inline-feedback--error")
             
