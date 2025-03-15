@@ -251,6 +251,9 @@ class FormHandler:
         """
         logger.debug("Checking for form errors")
         try:
+            # Capture a screenshot for debugging regardless of errors
+            utils.capture_screenshot(self.driver, "form_check_for_errors")
+            
             # Check for errors in the old HTML structure
             error_elements = self.driver.find_elements(By.CLASS_NAME, "artdeco-inline-feedback--error")
             
@@ -259,8 +262,18 @@ class FormHandler:
                 # Look for any elements with error messages
                 error_elements = self.driver.find_elements(By.XPATH, "//*[contains(@id, '-error')]")
                 
+                # Also look for elements with error classes
+                error_class_elements = self.driver.find_elements(By.XPATH, "//*[contains(@class, 'error') or contains(@class, 'invalid')]")
+                if error_class_elements:
+                    error_elements.extend(error_class_elements)
+                
                 # Filter out empty error elements
                 error_elements = [e for e in error_elements if e.text.strip()]
+            
+            # Check for red text that might indicate errors
+            red_text_elements = self.driver.find_elements(By.XPATH, "//*[contains(@style, 'color: red') or contains(@style, 'color:#ff')]")
+            if red_text_elements:
+                error_elements.extend([e for e in red_text_elements if e.text.strip()])
             
             if error_elements:
                 error_texts = []
@@ -316,6 +329,9 @@ class FormHandler:
                 current_url = self.driver.current_url
                 logger.error(f"Current job URL when error occurred: {current_url}")
                 
+                # Capture another screenshot specifically for the error
+                utils.capture_screenshot(self.driver, "form_errors_detected")
+                
                 # Create a more detailed error message
                 if field_errors:
                     detailed_errors = [f"Field '{field}': {error}" for field, error in field_errors.items()]
@@ -326,6 +342,8 @@ class FormHandler:
                 logger.debug("No form errors detected")
         except Exception as e:
             logger.error(f"Error while checking for form errors: {e}", exc_info=True)
+            # Capture a screenshot for the exception
+            utils.capture_screenshot(self.driver, "error_in_check_for_errors")
             raise
     
     def discard_application(self) -> None:

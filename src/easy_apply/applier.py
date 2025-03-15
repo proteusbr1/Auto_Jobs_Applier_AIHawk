@@ -145,7 +145,7 @@ class AIHawkEasyApplier:
                             self.cache.write_to_file(job, "skipped_low_salary")
                             proceed_with_application = False
                         else:
-                            logger.info(f"Estimated salary {job.gpt_salary} is within expected {SALARY_EXPECTATIONS}. Proceeding with the application: {job.link}")
+                            logger.info(f"Estimated salary {job.gpt_salary} is within expected {SALARY_EXPECTATIONS}.")
                     else:
                         logger.info(f"Salary is not being verified. Proceeding with the application.")
                 else:

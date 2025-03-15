@@ -236,13 +236,25 @@ class TextboxProcessor(BaseProcessor):
             return existing_answer
         
         # Generate new answer
-        if question_type == "numeric":
-            answer = self.gpt_answerer.answer_question_numeric(question_text)
-        else:
-            answer = self.gpt_answerer.answer_question_simple(question_text, job=job)
+        try:
+            if question_type == "numeric":
+                answer = self.gpt_answerer.answer_question_numeric(question_text)
+                # Ensure the answer is a string
+                if not isinstance(answer, str):
+                    answer = str(answer)
+                    logger.debug(f"Converted numeric answer to string: {answer}")
+            else:
+                answer = self.gpt_answerer.answer_question_simple(question_text, job=job)
+                
+            # Save the answer
+            self.save_answer(question_text, question_type, answer)
             
-        # Save the answer
-        self.save_answer(question_text, question_type, answer)
-        
-        logger.debug(f"Generated new answer: {answer}")
-        return answer
+            logger.debug(f"Generated new answer: {answer}")
+            return answer
+        except Exception as e:
+            logger.error(f"Error generating answer for '{question_text}': {e}", exc_info=True)
+            # Return a safe default value
+            if question_type == "numeric":
+                return "0"
+            else:
+                return "N/A"

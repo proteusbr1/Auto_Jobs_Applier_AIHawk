@@ -151,6 +151,23 @@ class BaseProcessor:
             logger.debug(f"Text entered successfully: {text[:20]}{'...' if len(text) > 20 else ''}")
         except Exception as e:
             logger.error(f"Failed to enter text: {e}", exc_info=True)
+            # Capture a screenshot for debugging
+            try:
+                import src.utils as utils
+                utils.capture_screenshot(self.driver, "text_entry_error")
+                # Log the current URL for debugging
+                current_url = self.driver.current_url
+                logger.error(f"Text entry error occurred at URL: {current_url}")
+            except Exception as screenshot_error:
+                logger.warning(f"Failed to capture screenshot: {screenshot_error}")
+            
+            # Try JavaScript as a fallback method to enter text
+            try:
+                self.driver.execute_script(f"arguments[0].value = '{text.replace("'", "\\'")}';", element)
+                logger.debug(f"Text entered using JavaScript fallback: {text[:20]}{'...' if len(text) > 20 else ''}")
+            except Exception as js_error:
+                logger.error(f"JavaScript text entry also failed: {js_error}")
+            
             # Don't raise the exception, just log it and continue
             # This allows the application to continue even if one field fails
     
