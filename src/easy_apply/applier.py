@@ -187,6 +187,7 @@ class AIHawkEasyApplier:
         
         except Exception as e:
             logger.error(f"Failed to apply for the job: {e}", exc_info=True)
+            utils.capture_screenshot(self.driver, "job_apply_exception")
             # self.cache.write_to_file(job, "failed")
             return False
 
@@ -215,12 +216,15 @@ class AIHawkEasyApplier:
                     logger.debug(f"Page {attempts} complete. Next page.")
                 except KeyError as e:
                     logger.error(f"KeyError occurred during form filling: {e}. Skipping this step.")
+                    utils.capture_screenshot(self.driver, "form_filling_key_error")
                     time.sleep(10)
                     break  # Decide whether to continue or break
             logger.warning("Maximum attempts reached or an error occurred. Aborting application process.")
+            utils.capture_screenshot(self.driver, "form_filling_max_attempts")
             return False
         except Exception as e:
             logger.error(f"An error occurred while filling the application form: {e}", exc_info=True)
+            utils.capture_screenshot(self.driver, "form_filling_exception")
             return False
 
     def _fill_up(self, job: Job) -> None:
