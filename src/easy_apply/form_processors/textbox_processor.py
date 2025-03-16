@@ -14,6 +14,20 @@ class TextboxProcessor(BaseProcessor):
     Processor for textbox form fields in LinkedIn Easy Apply forms.
     """
     
+    # Blacklist of questions that should always generate new answers
+    # These questions will bypass the answer storage lookup
+    BLACKLISTED_QUESTIONS = [
+        "headline",
+        "cover letter",
+        "why are you interested in this position",
+        "why do you want to work here",
+        "why are you a good fit for this role",
+        "tell us about yourself",
+        "what makes you unique",
+        "what are your strengths",
+        "what are your weaknesses"
+    ]
+    
     def handle(self, section: WebElement, job: Job) -> bool:
         """
         Finds and handles textbox questions in the form section.
@@ -230,10 +244,18 @@ class TextboxProcessor(BaseProcessor):
         Returns:
             str: The answer.
         """
-        # Check for existing answer
-        existing_answer = self.get_existing_answer(question_text, question_type)
-        if existing_answer:
-            return existing_answer
+        # Check if the question is in the blacklist
+        sanitized_question = question_text.lower().strip()
+        is_blacklisted = any(blacklisted_question in sanitized_question for blacklisted_question in self.BLACKLISTED_QUESTIONS)
+        
+        if is_blacklisted:
+            logger.debug(f"Question '{sanitized_question}' is blacklisted. Generating new answer.")
+        else:
+            # Check for existing answer if not blacklisted
+            existing_answer = self.get_existing_answer(question_text, question_type)
+            if existing_answer:
+                logger.debug(f"Using existing answer for '{sanitized_question}'")
+                return existing_answer
         
         # Generate new answer
         try:

@@ -35,6 +35,12 @@ else
         exit 1; 
     }
     
+    # Run log management script to clean up and optimize logs
+    echo "Running log management..."
+    python log_manager.py --consolidate-cron || {
+        echo "Log management failed, but continuing execution";
+    }
+    
     # Deactivate the virtual environment
     deactivate
     

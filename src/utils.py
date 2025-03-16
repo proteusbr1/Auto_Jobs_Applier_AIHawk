@@ -65,8 +65,8 @@ def configure_logging():
     logger.add(
         LOG_FILE_PATH,
         level=file_log_level,
-        rotation="100 MB",
-        retention="1 days",
+        rotation="500 MB",  # Increased size to reduce frequency of rotation
+        retention="7 days",  # Keep logs for a week instead of just 1 day
         compression="zip",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         enqueue=True

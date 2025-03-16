@@ -1,0 +1,156 @@
+Roadmap para Transformação do Auto_Jobs_Applier_AIHawk em Aplicação Web Multi-Usuário
+Aqui está um roadmap detalhado que você pode usar em prompts para LLMs, ajudando-os a entender o contexto do projeto, o que já foi feito, o que precisa ser feito agora e o que será implementado no futuro.
+
+Contexto do Projeto (Para Incluir em Todos os Prompts)
+CONTEXTO DO PROJETO:
+Estou transformando um aplicativo de automação de candidaturas no LinkedIn (Auto_Jobs_Applier_AIHawk) de uma solução para usuário único em uma aplicação web multi-usuário com modelo de assinatura. O aplicativo original:
+- Faz login no LinkedIn
+- Pesquisa vagas com base em critérios configurados
+- Aplica-se a vagas usando o recurso "Easy Apply"
+- Usa GPT para gerar respostas para perguntas da aplicação
+- Gerencia currículos e pode gerar currículos personalizados
+Roadmap Completo (Visão Geral)
+ROADMAP COMPLETO:
+
+Fase 1: Infraestrutura Core ✅
+- Configuração do framework Flask
+- Implementação de modelos de banco de dados e migrações
+- Criação de sistema básico de autenticação de usuários
+- Desenvolvimento de endpoints de API para gerenciamento de configurações
+
+Fase 2: Adaptação do Motor de Aplicação de Empregos 🔄
+- Refatoração do código existente para suportar múltiplos usuários
+- Implementação de sistema de filas de trabalho
+- Criação de sessões de navegador isoladas por usuário
+- Aprimoramento do tratamento de erros e recuperação
+
+Fase 3: Interface do Usuário ⏳
+- Desenvolvimento do dashboard do usuário
+- Criação de interface de configuração
+- Construção de visualizações de histórico e análises de aplicações
+- Implementação de interface de gerenciamento de currículos
+
+Fase 4: Implantação e Escalabilidade ⏳
+- Containerização da aplicação com Docker
+- Configuração de pipeline CI/CD
+- Implementação de monitoramento e logging
+- Criação de procedimentos de backup e recuperação
+
+Fase 5: Monetização e Recursos de Negócios ⏳
+- Implementação de níveis de assinatura
+- Adição de processamento de pagamentos
+- Desenvolvimento de dashboard administrativo para métricas de negócios
+- Criação de fluxo de onboarding de usuários
+Prompts Específicos para Cada Etapa da Fase 2
+Prompt 1: Refatoração para Suporte Multi-Usuário
+CONTEXTO DO PROJETO:
+[Incluir o contexto padrão aqui]
+
+STATUS ATUAL:
+✅ Fase 1 completa: Framework Flask configurado com autenticação de usuários e modelos de banco de dados.
+🔄 Trabalhando na Fase 2.1: Refatoração do código existente para suportar múltiplos usuários.
+⏳ Pendente: Restante da Fase 2, Fases 3, 4 e 5.
+
+TAREFA ATUAL:
+Preciso refatorar o código do Auto_Jobs_Applier_AIHawk para suportar múltiplos usuários. Especificamente:
+
+1. Modificar as classes principais (AIHawkAuthenticator, AIHawkJobManager, etc.) para receber user_id como parâmetro
+2. Implementar carregamento de configurações específicas do usuário do banco de dados
+3. Criar namespaces para arquivos e diretórios por usuário
+4. Implementar controle de acesso baseado em usuário para todos os recursos
+
+Por favor, ajude-me a refatorar [NOME_DA_CLASSE] para seguir este padrão, mantendo a funcionalidade existente mas adaptando para o contexto multi-usuário.
+Prompt 2: Sistema de Filas de Trabalho
+CONTEXTO DO PROJETO:
+[Incluir o contexto padrão aqui]
+
+STATUS ATUAL:
+✅ Fase 1 completa: Framework Flask configurado com autenticação de usuários e modelos de banco de dados.
+✅ Fase 2.1 completa: Código refatorado para suportar múltiplos usuários.
+🔄 Trabalhando na Fase 2.2: Implementação de sistema de filas de trabalho.
+⏳ Pendente: Fases 2.3, 2.4, e Fases 3, 4 e 5.
+
+TAREFA ATUAL:
+Preciso implementar um sistema de filas de trabalho usando Celery com Redis para processar tarefas de aplicação de emprego de forma assíncrona. Especificamente:
+
+1. Configurar Celery com Redis como broker
+2. Criar filas separadas para diferentes tipos de tarefas (pesquisa de empregos, aplicação, geração de currículo)
+3. Converter operações de longa duração em tarefas assíncronas
+4. Implementar endpoints para verificar o status das tarefas
+
+Por favor, ajude-me a implementar [COMPONENTE_ESPECÍFICO] do sistema de filas, integrando com o código refatorado na etapa anterior.
+Prompt 3: Sessões de Navegador Isoladas
+CONTEXTO DO PROJETO:
+[Incluir o contexto padrão aqui]
+
+STATUS ATUAL:
+✅ Fase 1 completa: Framework Flask configurado com autenticação de usuários e modelos de banco de dados.
+✅ Fase 2.1 completa: Código refatorado para suportar múltiplos usuários.
+✅ Fase 2.2 completa: Sistema de filas de trabalho implementado com Celery e Redis.
+🔄 Trabalhando na Fase 2.3: Criação de sessões de navegador isoladas por usuário.
+⏳ Pendente: Fase 2.4 e Fases 3, 4 e 5.
+
+TAREFA ATUAL:
+Preciso implementar um sistema de gerenciamento de sessões de navegador que crie e gerencie instâncias isoladas do Chrome para cada usuário. Especificamente:
+
+1. Criar um gerenciador de sessões que mantém um pool de instâncias do navegador
+2. Limitar o número de sessões simultâneas por usuário com base no nível de assinatura
+3. Criar diretórios de perfil separados para cada usuário
+4. Implementar limpeza automática de sessões inativas
+
+Por favor, ajude-me a implementar [COMPONENTE_ESPECÍFICO] do sistema de gerenciamento de sessões, integrando com o sistema de filas e o código refatorado nas etapas anteriores.
+Prompt 4: Tratamento de Erros e Recuperação
+CONTEXTO DO PROJETO:
+[Incluir o contexto padrão aqui]
+
+STATUS ATUAL:
+✅ Fase 1 completa: Framework Flask configurado com autenticação de usuários e modelos de banco de dados.
+✅ Fase 2.1 completa: Código refatorado para suportar múltiplos usuários.
+✅ Fase 2.2 completa: Sistema de filas de trabalho implementado com Celery e Redis.
+✅ Fase 2.3 completa: Sistema de gerenciamento de sessões de navegador implementado.
+🔄 Trabalhando na Fase 2.4: Aprimoramento do tratamento de erros e recuperação.
+⏳ Pendente: Fases 3, 4 e 5.
+
+TAREFA ATUAL:
+Preciso implementar um sistema avançado de tratamento de erros e recuperação para lidar com falhas durante o processo de aplicação de emprego. Especificamente:
+
+1. Criar um sistema de classificação de erros por tipo e gravidade
+2. Implementar estratégias de recuperação automática com retry e backoff exponencial
+3. Desenvolver um sistema de notificação para problemas que requerem intervenção
+4. Implementar logging estruturado com contexto e captura de screenshots
+
+Por favor, ajude-me a implementar [COMPONENTE_ESPECÍFICO] do sistema de tratamento de erros, integrando com os componentes desenvolvidos nas etapas anteriores.
+Exemplo de Prompt para Integração de Componentes
+CONTEXTO DO PROJETO:
+[Incluir o contexto padrão aqui]
+
+STATUS ATUAL:
+✅ Fase 1 completa: Framework Flask configurado com autenticação de usuários e modelos de banco de dados.
+✅ Fase 2.1 completa: Código refatorado para suportar múltiplos usuários.
+✅ Fase 2.2 completa: Sistema de filas de trabalho implementado com Celery e Redis.
+✅ Fase 2.3 completa: Sistema de gerenciamento de sessões de navegador implementado.
+✅ Fase 2.4 completa: Sistema de tratamento de erros e recuperação implementado.
+🔄 Trabalhando na integração final da Fase 2.
+⏳ Pendente: Fases 3, 4 e 5.
+
+TAREFA ATUAL:
+Preciso integrar todos os componentes da Fase 2 para garantir que funcionem harmoniosamente juntos. Especificamente:
+
+1. Conectar o sistema de filas com o gerenciador de sessões de navegador
+2. Integrar o sistema de tratamento de erros em todos os componentes
+3. Implementar testes de integração para verificar o funcionamento do sistema completo
+4. Criar documentação técnica para a arquitetura implementada
+
+Por favor, ajude-me a [TAREFA_ESPECÍFICA_DE_INTEGRAÇÃO], garantindo que todos os componentes desenvolvidos nas etapas anteriores funcionem corretamente juntos.
+Instruções para Uso dos Prompts
+Personalização: Substitua os marcadores como [NOME_DA_CLASSE], [COMPONENTE_ESPECÍFICO] e [TAREFA_ESPECÍFICA_DE_INTEGRAÇÃO] com informações específicas do seu projeto.
+
+Contexto Incremental: À medida que você avança no projeto, atualize a seção "STATUS ATUAL" para refletir o progresso real.
+
+Código Existente: Quando relevante, inclua trechos do código existente que precisa ser modificado ou integrado.
+
+Requisitos Específicos: Adicione requisitos específicos ou restrições que o LLM deve considerar ao gerar código.
+
+Feedback Iterativo: Use os resultados de um prompt como entrada para o próximo, refinando o código com base no feedback e nos testes.
+
+Este roadmap estruturado ajudará os LLMs a entender melhor o contexto do seu projeto, o que já foi feito e o que precisa ser implementado, resultando em código mais coerente e adaptado às suas necessidades específicas.

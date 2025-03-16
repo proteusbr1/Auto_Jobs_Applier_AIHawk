@@ -343,8 +343,13 @@ def init_browser() -> webdriver.Chrome:
 
         # Configure the ChromeDriver service with reduced log level
         if TRYING_DEGUB:
-            service = ChromeService(executable_path=ChromeDriverManager().install(),log_path=os.path.join(log_dir, "chromedriver.log"),log_level='WARNING')
+            service = ChromeService(
+                executable_path=ChromeDriverManager().install(),
+                log_path=os.path.join(log_dir, "chromedriver.log"),
+                log_level='WARNING'
+            )
         else:
+            # Don't create chromedriver.log in production mode
             service = ChromeService(executable_path=ChromeDriverManager().install())
 
         browser = webdriver.Chrome(service=service, options=options)

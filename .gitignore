@@ -160,7 +160,7 @@ resumes/
 job_score.json
 
 *.zip
-*.png
+screenshots/
 data_folder/plain_text_resume.yaml
 data_folder/personal_info.py
 data_folder/output/
