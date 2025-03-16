@@ -15,6 +15,7 @@ from src.easy_apply.form_processors.radio_processor import RadioProcessor
 from src.easy_apply.form_processors.date_processor import DateProcessor
 from src.easy_apply.form_processors.typeahead_processor import TypeaheadProcessor
 from src.easy_apply.form_processors.tos_processor import TermsOfServiceProcessor
+from src.easy_apply.form_processors.checkbox_processor import CheckboxProcessor
 
 class FormProcessorManager:
     """
@@ -48,6 +49,8 @@ class FormProcessorManager:
         # Create processor instances
         self.processors = [
             TypeaheadProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
+            # Put checkbox processors first to handle them before other processors
+            CheckboxProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
             TermsOfServiceProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
             RadioProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
             TextboxProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),

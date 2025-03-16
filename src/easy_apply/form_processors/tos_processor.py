@@ -32,14 +32,28 @@ class TermsOfServiceProcessor(BaseProcessor):
         # Check if this is a terms of service checkbox
         is_tos = any(
             term in labels[0].text.lower()
-            for term in ["terms of service", "privacy policy", "terms of use"]
+            for term in ["terms of service", "privacy policy", "terms of use", "terms & conditions", "agree"]
         )
         
         if is_tos:
             try:
                 logger.debug("Found terms of service checkbox")
+                
+                # First try to find and click the checkbox input directly
+                try:
+                    # Look for checkbox inputs within the element
+                    checkbox_inputs = element.find_elements(By.XPATH, ".//input[@type='checkbox']")
+                    if checkbox_inputs:
+                        logger.debug(f"Found {len(checkbox_inputs)} checkbox inputs")
+                        self.wait.until(EC.element_to_be_clickable(checkbox_inputs[0])).click()
+                        logger.debug("Clicked terms of service checkbox input directly")
+                        return True
+                except Exception as checkbox_error:
+                    logger.warning(f"Failed to click checkbox input directly: {checkbox_error}")
+                
+                # If direct checkbox click fails, try clicking the label as fallback
                 self.wait.until(EC.element_to_be_clickable(labels[0])).click()
-                logger.debug("Clicked terms of service checkbox")
+                logger.debug("Clicked terms of service checkbox label")
                 return True
             except Exception as e:
                 logger.warning("Failed to click terms of service checkbox", exc_info=True)

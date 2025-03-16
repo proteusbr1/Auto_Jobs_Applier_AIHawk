@@ -329,11 +329,51 @@ class FormHandler:
                 # Capture another screenshot specifically for the error
                 utils.capture_screenshot(self.driver, "form_errors_detected")
                 
+                # Check specifically for checkbox errors
+                checkbox_errors = []
+                for error_element in error_elements:
+                    error_text = error_element.text.strip().lower()
+                    if "checkbox" in error_text or "check box" in error_text or "select checkbox" in error_text:
+                        checkbox_errors.append(error_text)
+                
                 # Create a more detailed error message
                 if field_errors:
                     detailed_errors = [f"Field '{field}': {error}" for field, error in field_errors.items()]
+                    
+                    # Add specific handling for checkbox errors
+                    if checkbox_errors:
+                        logger.error(f"Checkbox errors detected: {checkbox_errors}")
+                        # Try to find and click any unchecked checkboxes
+                        try:
+                            unchecked_boxes = self.driver.find_elements(By.XPATH, "//input[@type='checkbox' and not(@checked)]")
+                            for checkbox in unchecked_boxes:
+                                try:
+                                    logger.debug(f"Attempting to click unchecked checkbox")
+                                    checkbox.click()
+                                    logger.debug("Clicked unchecked checkbox")
+                                except Exception as click_error:
+                                    logger.warning(f"Failed to click checkbox: {click_error}")
+                        except Exception as find_error:
+                            logger.warning(f"Failed to find unchecked checkboxes: {find_error}")
+                    
                     raise Exception(f"Failed answering or file upload. Specific errors: {detailed_errors}")
                 else:
+                    # Add specific handling for checkbox errors even without field errors
+                    if checkbox_errors:
+                        logger.error(f"Checkbox errors detected: {checkbox_errors}")
+                        # Try to find and click any unchecked checkboxes
+                        try:
+                            unchecked_boxes = self.driver.find_elements(By.XPATH, "//input[@type='checkbox' and not(@checked)]")
+                            for checkbox in unchecked_boxes:
+                                try:
+                                    logger.debug(f"Attempting to click unchecked checkbox")
+                                    checkbox.click()
+                                    logger.debug("Clicked unchecked checkbox")
+                                except Exception as click_error:
+                                    logger.warning(f"Failed to click checkbox: {click_error}")
+                        except Exception as find_error:
+                            logger.warning(f"Failed to find unchecked checkboxes: {find_error}")
+                    
                     raise Exception(f"Failed answering or file upload. {error_texts}")
             else:
                 logger.debug("No form errors detected")
