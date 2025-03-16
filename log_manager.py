@@ -30,6 +30,7 @@ logger = logging.getLogger("LogManager")
 LOG_DIR = Path("./log")
 MAX_LOG_AGE_DAYS = 7  # Keep logs for 7 days by default
 MAX_TOTAL_LOG_SIZE_MB = 1000  # 1GB total log size limit
+MAX_CRON_LOG_SIZE_KB = 500  # 500KB size limit for cron.log
 
 
 def get_file_size_mb(file_path):
@@ -88,6 +89,48 @@ def clean_old_logs(max_age_days=MAX_LOG_AGE_DAYS):
     logger.info(f"Cleaned up {removed_count} old log files (Total: {removed_size_mb:.2f} MB)")
 
 
+def rotate_cron_log(max_size_kb=MAX_CRON_LOG_SIZE_KB):
+    """Rotate cron.log if it exceeds the maximum size."""
+    cron_log_path = LOG_DIR / "cron.log"
+    
+    if not cron_log_path.exists():
+        logger.warning(f"Cron log file {cron_log_path} does not exist.")
+        return
+    
+    # Get file size in KB
+    size_kb = os.path.getsize(cron_log_path) / 1024
+    
+    if size_kb > max_size_kb:
+        logger.info(f"Rotating cron.log (Current size: {size_kb:.2f} KB, Limit: {max_size_kb} KB)")
+        
+        # Create timestamp for the rotated log filename
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        rotated_log_path = LOG_DIR / f"cron.{timestamp}.log"
+        
+        try:
+            # Rename the current log file
+            shutil.copy2(cron_log_path, rotated_log_path)
+            
+            # Create a new empty log file
+            with open(cron_log_path, 'w') as f:
+                f.write(f"# Log rotated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}. Previous log saved as {rotated_log_path.name}\n")
+            
+            logger.info(f"Successfully rotated cron.log to {rotated_log_path.name}")
+            
+            # Compress the rotated log file
+            try:
+                shutil.make_archive(str(rotated_log_path), 'zip', LOG_DIR, rotated_log_path.name)
+                os.remove(rotated_log_path)
+                logger.info(f"Compressed rotated log to {rotated_log_path.name}.zip")
+            except Exception as e:
+                logger.error(f"Failed to compress rotated log: {e}")
+                
+        except Exception as e:
+            logger.error(f"Failed to rotate cron.log: {e}")
+    else:
+        logger.info(f"Cron log size is {size_kb:.2f} KB, below the limit of {max_size_kb} KB. No rotation needed.")
+
+
 def enforce_total_size_limit(max_size_mb=MAX_TOTAL_LOG_SIZE_MB):
     """Ensure total log size stays under the specified limit."""
     if not LOG_DIR.exists():
@@ -99,9 +142,9 @@ def enforce_total_size_limit(max_size_mb=MAX_TOTAL_LOG_SIZE_MB):
     # Get all log files
     log_files = list(LOG_DIR.glob("*.log")) + list(LOG_DIR.glob("*.log.zip"))
     
-    # Skip active log files
-    active_logs = ["app.log", "chromedriver.log", "cron.log", "cron_runs.log"]
-    archive_files = [f for f in log_files if f.name not in active_logs]
+    # Skip active log files (but include rotated cron logs)
+    active_logs = ["app.log", "chromedriver.log", "cron_runs.log"]
+    archive_files = [f for f in log_files if f.name not in active_logs and not f.name == "cron.log"]
     
     # Sort by modification time (oldest first)
     archive_files.sort(key=lambda x: os.path.getmtime(x))
@@ -163,8 +206,12 @@ def main():
                         help=f"Maximum age of log files in days (default: {MAX_LOG_AGE_DAYS})")
     parser.add_argument("--max-size", type=int, default=MAX_TOTAL_LOG_SIZE_MB,
                         help=f"Maximum total size of log files in MB (default: {MAX_TOTAL_LOG_SIZE_MB})")
+    parser.add_argument("--max-cron-size", type=int, default=MAX_CRON_LOG_SIZE_KB,
+                        help=f"Maximum size of cron.log in KB (default: {MAX_CRON_LOG_SIZE_KB})")
     parser.add_argument("--consolidate-cron", action="store_true",
                         help="Consolidate cron_runs.log into cron.log")
+    parser.add_argument("--rotate-cron", action="store_true",
+                        help="Rotate cron.log if it exceeds the maximum size")
     
     args = parser.parse_args()
     
@@ -174,6 +221,9 @@ def main():
     logger.info("Starting log management...")
     
     # Perform log management tasks
+    if args.rotate_cron:
+        rotate_cron_log(args.max_cron_size)
+    
     clean_old_logs(args.max_age)
     enforce_total_size_limit(args.max_size)
     

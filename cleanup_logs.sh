@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# One-time cleanup script for log files
-# This script will clean up existing log files and optimize the log structure
+# Regular log maintenance script for Auto_Jobs_Applier_AIHawk
+# This script manages log files to prevent excessive disk usage
 
-echo "Starting one-time log cleanup..."
+echo "Starting log maintenance at $(date)..."
 
 # Navigate to the project directory
 cd "$(dirname "$0")" || { echo "Failed to navigate to project directory"; exit 1; }
@@ -17,27 +17,22 @@ source "./virtual/bin/activate" || {
     exit 1; 
 }
 
-# Run log manager with more aggressive settings for initial cleanup
-echo "Running initial cleanup with log manager..."
-python log_manager.py --max-age 3 --max-size 500 --consolidate-cron
+# Run log manager with rotation and cleanup
+echo "Running log management..."
+python log_manager.py --max-age 7 --max-size 1000 --max-cron-size 500 --rotate-cron --consolidate-cron
 
-# Count and display log files before and after
-echo "Log files before cleanup:"
+# Calculate and display log statistics
+echo "Log statistics after maintenance:"
+echo "Number of log files:"
 find ./log -type f | wc -l
 
-# Remove old app log archives (keep only the most recent ones)
-echo "Removing old app log archives..."
-find ./log -name "app.*.log.zip" -type f -mtime +3 -delete
-
-# Count and display log files after cleanup
-echo "Log files after cleanup:"
-find ./log -type f | wc -l
-
-# Calculate total size of log directory
 echo "Total size of log directory:"
 du -sh ./log
+
+echo "Largest log files:"
+find ./log -type f -exec du -h {} \; | sort -hr | head -5
 
 # Deactivate the virtual environment
 deactivate
 
-echo "Log cleanup completed successfully."
+echo "Log maintenance completed successfully at $(date)."
