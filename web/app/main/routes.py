@@ -32,7 +32,7 @@ def dashboard():
     """Render the dashboard page."""
     # Get recent job applications
     recent_applications = JobApplication.query.filter_by(user_id=current_user.id) \
-        .order_by(desc(JobApplication.application_date)) \
+        .order_by(desc(JobApplication.created_at)) \
         .limit(5) \
         .all()
     
@@ -115,17 +115,17 @@ def applications():
         query = query.filter_by(status=status)
     
     if company:
-        query = query.filter(JobApplication.company_name.ilike(f'%{company}%'))
+        query = query.filter(JobApplication.company.ilike(f'%{company}%'))
     
     if search_term:
         query = query.filter(
             (JobApplication.job_title.ilike(f'%{search_term}%')) |
-            (JobApplication.company_name.ilike(f'%{search_term}%')) |
+            (JobApplication.company.ilike(f'%{search_term}%')) |
             (JobApplication.location.ilike(f'%{search_term}%'))
         )
     
     # Order by application date, newest first
-    query = query.order_by(desc(JobApplication.application_date))
+    query = query.order_by(desc(JobApplication.created_at))
     
     # Paginate results
     paginated_apps = query.paginate(page=page, per_page=per_page, error_out=False)

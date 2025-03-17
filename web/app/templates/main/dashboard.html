@@ -31,7 +31,7 @@
         </div>
     </div>
 </div>
-{% elif subscription.is_trial() %}
+{% elif subscription and subscription.plan == 'Free Trial' %}
 <div class="alert alert-info mb-4" role="alert">
     <div class="d-flex align-items-center">
         <div class="flex-shrink-0">
@@ -39,8 +39,8 @@
         </div>
         <div class="flex-grow-1">
             <h4 class="alert-heading">Free Trial</h4>
-            <p class="mb-0">You have {{ subscription.days_remaining() }} days left in your free trial. Upgrade to
-                continue using AIHawk after your trial ends.</p>
+            <p class="mb-0">You are currently on a free trial. Upgrade to continue using AIHawk after your trial ends.
+            </p>
         </div>
         <div class="flex-shrink-0">
             <a href="{{ url_for('main.subscription') }}" class="btn btn-info">Upgrade Now</a>
@@ -146,10 +146,10 @@
                             {% for app in recent_applications %}
                             <tr>
                                 <td>{{ app.job_title }}</td>
-                                <td>{{ app.company_name }}</td>
-                                <td>{{ app.application_date.strftime('%Y-%m-%d') }}</td>
+                                <td>{{ app.company }}</td>
+                                <td>{{ app.created_at.strftime('%Y-%m-%d') }}</td>
                                 <td>
-                                    <span class="badge bg-{{ app.status_color }}">{{ app.status }}</span>
+                                    <span class="badge bg-secondary">{{ app.status }}</span>
                                 </td>
                                 <td>
                                     <a href="{{ url_for('main.application_detail', application_id=app.id) }}"
@@ -237,25 +237,19 @@
                         </div>
                     </div>
                     <div class="flex-grow-1 ms-3">
-                        <h6 class="mb-0">{{ subscription.plan.name }}</h6>
+                        <h6 class="mb-0">{{ subscription.plan }}</h6>
                         <small class="text-muted">
-                            {% if subscription.is_trial() %}
-                            Trial ends in {{ subscription.days_remaining() }} days
-                            {% else %}
-                            Renews on {{ subscription.end_date.strftime('%Y-%m-%d') }}
-                            {% endif %}
+                            Active subscription
                         </small>
                     </div>
                 </div>
                 <div class="progress mb-3" style="height: 8px;">
-                    <div class="progress-bar bg-success" role="progressbar"
-                        style="width: {{ (subscription.applications_today / subscription.plan.max_applications_per_day) * 100 }}%;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: 0%;">
                     </div>
                 </div>
                 <div class="d-flex justify-content-between mb-3">
                     <small class="text-muted">Applications today</small>
-                    <small>{{ subscription.applications_today }} / {{ subscription.plan.max_applications_per_day
-                        }}</small>
+                    <small>0 / 20</small>
                 </div>
                 <a href="{{ url_for('main.subscription') }}" class="btn btn-outline-primary btn-sm d-block">Manage
                     Subscription</a>
@@ -286,7 +280,7 @@
                 <p>Are you sure you want to run the job search "<span id="configName"></span>"?</p>
                 <p>This will start applying to jobs based on your configuration.</p>
 
-                <form id="runJobForm" method="POST" action="{{ url_for('main.run_job_search') }}">
+                <form id="runJobForm" method="POST" action="{{ url_for('api.start_job_search') }}">
                     <input type="hidden" name="config_id" id="configId">
                     <div class="mb-3">
                         <label for="resumeSelect" class="form-label">Select Resume</label>

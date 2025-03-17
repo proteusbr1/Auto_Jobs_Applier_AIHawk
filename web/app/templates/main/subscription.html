@@ -1,0 +1,196 @@
+{% extends "layout.html" %}
+
+{% block title %}Subscription - AIHawk{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h2 mb-0">Subscription</h1>
+        <p class="text-muted">Manage your subscription plan</p>
+    </div>
+</div>
+
+<!-- Current Subscription -->
+<div class="card border-0 shadow-sm mb-5">
+    <div class="card-header bg-transparent border-0">
+        <h5 class="card-title mb-0">Current Subscription</h5>
+    </div>
+    <div class="card-body">
+        {% if subscription and subscription.is_active() %}
+        <div class="row">
+            <div class="col-md-6">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="flex-shrink-0">
+                        <div class="bg-success text-white rounded-circle p-2">
+                            <i class="fas fa-check"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h5 class="mb-0">{{ subscription.plan }}</h5>
+                        <p class="text-muted mb-0">Active subscription</p>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <p class="mb-1"><strong>Status:</strong> Active</p>
+                    <p class="mb-1"><strong>Billing Cycle:</strong> Monthly</p>
+                    <p class="mb-0"><strong>Next Billing Date:</strong> {{ subscription.created_at.strftime('%Y-%m-%d')
+                        }}</p>
+                </div>
+                <div class="mb-3">
+                    <h6>Features</h6>
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple applications per day
+                        </li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Concurrent sessions</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple resumes</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Job configurations</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Support</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Analytics</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Resume generation</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card border-0 bg-light">
+                    <div class="card-body">
+                        <h5 class="card-title">Usage Statistics</h5>
+                        <div class="mb-3">
+                            <label class="form-label">Applications Today</label>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: 0%;"></div>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <small class="text-muted">0 used</small>
+                                <small class="text-muted">20 total</small>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Resumes</label>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: 0%;"></div>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <small class="text-muted">0 used</small>
+                                <small class="text-muted">3 total</small>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Job Configurations</label>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: 0%;"></div>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <small class="text-muted">0 used</small>
+                                <small class="text-muted">5 total</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button type="button" class="btn btn-outline-danger"
+                        onclick="alert('Subscription cancellation is not available in the demo version.')">
+                        Cancel Subscription
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <div class="mb-4">
+                <i class="fas fa-exclamation-circle text-warning fa-5x"></i>
+            </div>
+            <h3 class="h4 mb-3">No Active Subscription</h3>
+            <p class="text-muted mb-4">You don't have an active subscription. Choose a plan below to get started.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Available Plans -->
+<div class="mb-4">
+    <h2 class="h3 mb-4">Available Plans</h2>
+    <div class="row g-4">
+        {% if plans %}
+        {% for plan in plans %}
+        <div class="col-md-4">
+            <div
+                class="card h-100 border-0 shadow-sm {% if subscription and subscription.plan == plan.name %}border-primary{% endif %}">
+                <div
+                    class="card-header bg-transparent border-0 text-center pt-4 {% if subscription and subscription.plan == plan.name %}text-primary{% endif %}">
+                    <h3 class="fw-bold">{{ plan.name }}</h3>
+                </div>
+                <div class="card-body text-center">
+                    <h2 class="card-title pricing-card-title">
+                        ${{ "%.2f"|format(plan.price) }}<small class="text-muted fw-light">/{{ plan.interval }}</small>
+                    </h2>
+                    <p class="text-muted mb-4">Subscription plan</p>
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple applications per day
+                        </li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Concurrent sessions</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple resumes</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Job configurations</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Support</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Analytics</li>
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Resume generation</li>
+                    </ul>
+                </div>
+                <div class="card-footer bg-transparent border-0 text-center pb-4">
+                    {% if subscription and subscription.plan == plan.name %}
+                    <button class="btn btn-lg btn-outline-primary w-100" disabled>Current Plan</button>
+                    {% else %}
+                    <button type="button"
+                        class="btn btn-lg {% if plan.name == 'Premium' %}btn-primary{% else %}btn-outline-primary{% endif %} w-100"
+                        onclick="alert('Subscription functionality is not available in the demo version.')">
+                        {% if subscription %}
+                        Switch to {{ plan.name }}
+                        {% else %}
+                        Subscribe
+                        {% endif %}
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="col-12">
+            <div class="alert alert-info">
+                <p class="mb-0">No subscription plans are currently available. Please check back later.</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Payment History -->
+{% if subscription and subscription.is_active() %}
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-transparent border-0">
+        <h5 class="card-title mb-0">Payment History</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{{ subscription.created_at.strftime('%Y-%m-%d') }}</td>
+                        <td>{{ subscription.plan }} Subscription</td>
+                        <td>${{ "%.2f"|format(0.00) }}</td>
+                        <td><span class="badge bg-success">Paid</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

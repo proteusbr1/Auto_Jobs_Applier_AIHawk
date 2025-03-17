@@ -122,38 +122,24 @@
                     </div>
                     <div class="card-body text-center">
                         <h2 class="card-title pricing-card-title">
-                            ${{ "%.2f"|format(plan.price_monthly) }}<small class="text-muted fw-light">/mo</small>
+                            ${{ "%.2f"|format(plan.price) }}<small class="text-muted fw-light">/{{ plan.interval
+                                }}</small>
                         </h2>
-                        <p class="text-muted mb-4">or ${{ "%.2f"|format(plan.price_yearly) }} billed annually</p>
+                        <p class="text-muted mb-4">Subscription plan</p>
                         <ul class="list-unstyled">
-                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{
-                                plan.max_applications_per_day }} applications per day</li>
-                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{
-                                plan.max_concurrent_sessions }} concurrent sessions</li>
-                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{ plan.max_resumes }}
-                                resumes</li>
-                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{ plan.max_job_configs }}
-                                job configurations</li>
+                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple applications per day
+                            </li>
+                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Concurrent sessions</li>
+                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple resumes</li>
+                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Job configurations</li>
                             <li class="mb-2">
-                                {% if plan.has_priority_support %}
-                                <i class="fas fa-check text-success me-2"></i>Priority support
-                                {% else %}
-                                <i class="fas fa-times text-muted me-2"></i>Priority support
-                                {% endif %}
+                                <i class="fas fa-check text-success me-2"></i>Support
                             </li>
                             <li class="mb-2">
-                                {% if plan.has_advanced_analytics %}
-                                <i class="fas fa-check text-success me-2"></i>Advanced analytics
-                                {% else %}
-                                <i class="fas fa-times text-muted me-2"></i>Advanced analytics
-                                {% endif %}
+                                <i class="fas fa-check text-success me-2"></i>Analytics
                             </li>
                             <li class="mb-2">
-                                {% if plan.has_custom_resume_generation %}
-                                <i class="fas fa-check text-success me-2"></i>Custom resume generation
-                                {% else %}
-                                <i class="fas fa-times text-muted me-2"></i>Custom resume generation
-                                {% endif %}
+                                <i class="fas fa-check text-success me-2"></i>Resume generation
                             </li>
                         </ul>
                     </div>

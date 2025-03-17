@@ -48,13 +48,18 @@ def init_db():
     """
     Initialize the database and run migrations.
     """
+    # Get database configuration from environment variables
+    postgres_user = os.environ.get('POSTGRES_USER', 'postgres')
+    postgres_password = os.environ.get('POSTGRES_PASSWORD', 'postgres')
+    postgres_db = os.environ.get('POSTGRES_DB', 'aihawk')
+    
     # Wait for the database to be ready
     db_ready = wait_for_db(
         host='db',
         port=5432,
-        user='postgres',
-        password='postgres',
-        dbname='aihawk',
+        user=postgres_user,
+        password=postgres_password,
+        dbname=postgres_db,
         max_retries=20,
         retry_interval=3
     )
@@ -64,15 +69,12 @@ def init_db():
         sys.exit(1)
     
     # Set the DATABASE_URL environment variable
-    os.environ['DATABASE_URL'] = 'postgresql://postgres:postgres@db:5432/aihawk'
+    os.environ['DATABASE_URL'] = f'postgresql://{postgres_user}:{postgres_password}@db:5432/{postgres_db}'
     
     app = create_app('development')
     
-    # Disable SQLAlchemy event system to avoid relationship errors
-    import sqlalchemy as sa
-    sa.event.remove(sa.pool.Pool, 'connect', None)
-    sa.event.remove(sa.pool.Pool, 'checkout', None)
-    sa.event.remove(sa.engine.Engine, 'before_execute', None)
+    # No need to disable SQLAlchemy event system
+    # This was causing errors
     
     with app.app_context():
         try:

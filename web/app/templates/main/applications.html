@@ -1,0 +1,148 @@
+{% extends "layout.html" %}
+
+{% block title %}Job Applications - AIHawk{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h2 mb-0">Job Applications</h1>
+        <p class="text-muted">Track and manage your job applications</p>
+    </div>
+</div>
+
+<!-- Filter Controls -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <form action="{{ url_for('main.applications') }}" method="GET" class="row g-3">
+            <div class="col-md-4">
+                <label for="statusFilter" class="form-label">Status</label>
+                <select class="form-select" id="statusFilter" name="status">
+                    <option value="" {% if not status %}selected{% endif %}>All Statuses</option>
+                    <option value="applied" {% if status=='applied' %}selected{% endif %}>Applied</option>
+                    <option value="viewed" {% if status=='viewed' %}selected{% endif %}>Viewed</option>
+                    <option value="interviewed" {% if status=='interviewed' %}selected{% endif %}>Interviewed</option>
+                    <option value="offered" {% if status=='offered' %}selected{% endif %}>Offered</option>
+                    <option value="rejected" {% if status=='rejected' %}selected{% endif %}>Rejected</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="companyFilter" class="form-label">Company</label>
+                <input type="text" class="form-control" id="companyFilter" name="company" value="{{ company or '' }}"
+                    placeholder="Filter by company">
+            </div>
+            <div class="col-md-4">
+                <label for="searchFilter" class="form-label">Search</label>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="searchFilter" name="search_term"
+                        value="{{ search_term or '' }}" placeholder="Search job title, company, location">
+                    <button class="btn btn-primary" type="submit">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Applications Table -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Job Title</th>
+                        <th>Company</th>
+                        <th>Location</th>
+                        <th>Date Applied</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if applications %}
+                    {% for app in applications %}
+                    <tr>
+                        <td>{{ app.job_title }}</td>
+                        <td>{{ app.company }}</td>
+                        <td>{{ app.location }}</td>
+                        <td>{{ app.created_at.strftime('%Y-%m-%d') }}</td>
+                        <td>
+                            <span class="badge bg-secondary">{{ app.status }}</span>
+                        </td>
+                        <td>
+                            <a href="{{ url_for('main.application_detail', application_id=app.id) }}"
+                                class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center py-4">
+                            <p class="text-muted mb-0">No applications found.</p>
+                            <a href="{{ url_for('main.job_configs') }}" class="btn btn-sm btn-primary mt-2">Start
+                                Applying</a>
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="Page navigation" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link"
+                href="{{ url_for('main.applications', page=pagination.prev_num, status=status, company=company, search_term=search_term) }}"
+                aria-label="Previous">
+                <span aria-hidden="true">&laquo;</span>
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <a class="page-link" href="#" aria-label="Previous">
+                <span aria-hidden="true">&laquo;</span>
+            </a>
+        </li>
+        {% endif %}
+
+        {% for page in pagination.iter_pages() %}
+        {% if page %}
+        <li class="page-item {% if page == pagination.page %}active{% endif %}">
+            <a class="page-link"
+                href="{{ url_for('main.applications', page=page, status=status, company=company, search_term=search_term) }}">{{
+                page }}</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <a class="page-link" href="#">...</a>
+        </li>
+        {% endif %}
+        {% endfor %}
+
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link"
+                href="{{ url_for('main.applications', page=pagination.next_num, status=status, company=company, search_term=search_term) }}"
+                aria-label="Next">
+                <span aria-hidden="true">&raquo;</span>
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <a class="page-link" href="#" aria-label="Next">
+                <span aria-hidden="true">&raquo;</span>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}

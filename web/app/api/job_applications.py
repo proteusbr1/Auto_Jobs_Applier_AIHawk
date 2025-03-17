@@ -31,17 +31,17 @@ def get_job_applications():
         query = query.filter_by(status=status)
     
     if company:
-        query = query.filter(JobApplication.company_name.ilike(f'%{company}%'))
+        query = query.filter(JobApplication.company.ilike(f'%{company}%'))
     
     if search_term:
         query = query.filter(
             (JobApplication.job_title.ilike(f'%{search_term}%')) |
-            (JobApplication.company_name.ilike(f'%{search_term}%')) |
+            (JobApplication.company.ilike(f'%{search_term}%')) |
             (JobApplication.location.ilike(f'%{search_term}%'))
         )
     
     # Order by application date, newest first
-    query = query.order_by(desc(JobApplication.application_date))
+    query = query.order_by(desc(JobApplication.created_at))
     
     # Paginate results
     paginated_apps = query.paginate(page=page, per_page=per_page, error_out=False)
@@ -152,11 +152,11 @@ def get_job_application_stats():
     
     # Count applications by company
     company_counts = db.session.query(
-        JobApplication.company_name, db.func.count(JobApplication.id)
+        JobApplication.company, db.func.count(JobApplication.id)
     ).filter(
         JobApplication.user_id == user_id
     ).group_by(
-        JobApplication.company_name
+        JobApplication.company
     ).order_by(
         db.func.count(JobApplication.id).desc()
     ).limit(10).all()

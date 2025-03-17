@@ -140,3 +140,15 @@ Requisitos Específicos: Adicione requisitos específicos ou restrições que o 
 Feedback Iterativo: Use os resultados de um prompt como entrada para o próximo, refinando o código com base no feedback e nos testes.
 
 Este roadmap estruturado ajudará os LLMs a entender melhor o contexto do seu projeto, o que já foi feito e o que precisa ser implementado, resultando em código mais coerente e adaptado às suas necessidades específicas.
+
+
+
+price_monthly
+price_yearly
+max_applications_per_day
+max_concurrent_sessions
+max_resumes
+max_job_configs
+has_priority_support
+has_advanced_analytics
+has_custom_resume_generation

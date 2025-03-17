@@ -170,8 +170,7 @@
 </div>
 
 <!-- Config Limit Alert -->
-{% if current_user.subscription and current_user.subscription.is_active() and configs|length >=
-current_user.subscription.plan.max_job_configs %}
+{% if current_user.subscription and current_user.subscription.is_active() and configs|length >= 5 %}
 <div class="alert alert-info mt-4" role="alert">
     <div class="d-flex align-items-center">
         <div class="flex-shrink-0">
@@ -180,8 +179,7 @@ current_user.subscription.plan.max_job_configs %}
         <div class="flex-grow-1">
             <h4 class="alert-heading">Configuration Limit Reached</h4>
             <p class="mb-0">You have reached the maximum number of job configurations allowed by your subscription plan
-                ({{ current_user.subscription.plan.max_job_configs }}). To create more configurations, please upgrade
-                your plan.</p>
+                (5). To create more configurations, please upgrade your plan.</p>
         </div>
         <div class="flex-shrink-0">
             <a href="{{ url_for('main.subscription') }}" class="btn btn-info">Upgrade Plan</a>
@@ -200,7 +198,7 @@ current_user.subscription.plan.max_job_configs %}
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <form id="jobConfigForm" action="{{ url_for('main.create_job_config') }}" method="POST"
+                <form id="jobConfigForm" action="{{ url_for('api.create_job_config') }}" method="POST"
                     class="needs-validation" novalidate>
                     <div class="mb-3">
                         <label for="configName" class="form-label">Configuration Name</label>
@@ -325,7 +323,7 @@ current_user.subscription.plan.max_job_configs %}
             <div class="modal-body">
                 <p>Are you sure you want to delete the configuration "<span id="configNameToDelete"></span>"?</p>
                 <p class="text-danger">This action cannot be undone.</p>
-                <form id="deleteConfigForm" action="{{ url_for('main.delete_job_config', config_id=0) }}" method="POST">
+                <form id="deleteConfigForm" action="{{ url_for('api.delete_job_config', config_id=0) }}" method="POST">
                     <!-- The action URL will be updated via JavaScript -->
                 </form>
             </div>
@@ -349,7 +347,7 @@ current_user.subscription.plan.max_job_configs %}
                 <p>Are you sure you want to run the job search "<span id="configNameToRun"></span>"?</p>
                 <p>This will start applying to jobs based on your configuration.</p>
 
-                <form id="runJobForm" method="POST" action="{{ url_for('main.run_job_search') }}">
+                <form id="runJobForm" method="POST" action="{{ url_for('api.start_job_search') }}">
                     <input type="hidden" name="config_id" id="configIdToRun">
                     <div class="mb-3">
                         <label for="resumeSelect" class="form-label">Select Resume</label>
@@ -424,7 +422,7 @@ current_user.subscription.plan.max_job_configs %}
                 const configName = button.getAttribute('data-config-name');
 
                 document.getElementById('configNameToDelete').textContent = configName;
-                document.getElementById('deleteConfigForm').action = "{{ url_for('main.delete_job_config', config_id=0) }}".replace('0', configId);
+                document.getElementById('deleteConfigForm').action = "{{ url_for('api.delete_job_config', config_id=0) }}".replace('0', configId);
             });
         }
 

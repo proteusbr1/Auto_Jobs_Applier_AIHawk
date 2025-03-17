@@ -21,7 +21,7 @@ def login():
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(email=form.email.data.lower()).first()
-        if user is None or not user.check_password(form.password.data):
+        if user is None or not user.verify_password(form.password.data):
             flash('Invalid email or password', 'danger')
             return redirect(url_for('auth.login'))
         
@@ -30,7 +30,7 @@ def login():
             return redirect(url_for('auth.login'))
         
         login_user(user, remember=form.remember_me.data)
-        user.update_last_login()
+        # Update last login time is not implemented in the User model
         
         next_page = request.args.get('next')
         if not next_page or url_parse(next_page).netloc != '':
@@ -72,27 +72,18 @@ def register():
             # Create a default free trial plan if it doesn't exist
             free_plan = SubscriptionPlan(
                 name='Free Trial',
-                description='Free trial subscription with limited features',
-                price_monthly=0.0,
-                price_yearly=0.0,
-                max_applications_per_day=5,
-                max_concurrent_sessions=1,
-                max_resumes=2,
-                max_job_configs=1,
-                has_priority_support=False,
-                has_advanced_analytics=False,
-                has_custom_resume_generation=False
+                price=0.0,
+                interval='month',
+                features='{"max_applications_per_day": 5, "max_resumes": 2, "max_job_configs": 1}',
+                is_active=True
             )
             db.session.add(free_plan)
             db.session.flush()
         
         subscription = Subscription(
             user_id=user.id,
-            plan_id=free_plan.id,
-            status='active',
-            is_trial=True,
-            start_date=datetime.utcnow(),
-            end_date=datetime.utcnow() + current_app.config.get('TRIAL_DURATION', 30)
+            plan=free_plan.name,
+            status='active'
         )
         db.session.add(subscription)
         
@@ -138,7 +129,7 @@ def reset_password(token):
     
     form = ResetPasswordForm()
     if form.validate_on_submit():
-        user.set_password(form.password.data)
+        user.password = form.password.data
         db.session.commit()
         flash('Your password has been reset.', 'success')
         return redirect(url_for('auth.login'))
@@ -179,7 +170,7 @@ def change_password():
     if not current_user.check_password(data.get('current_password')):
         return jsonify({'success': False, 'message': 'Current password is incorrect'}), 400
     
-    current_user.set_password(data.get('new_password'))
+    current_user.password = data.get('new_password')
     db.session.commit()
     
     return jsonify({'success': True, 'message': 'Password changed successfully'})

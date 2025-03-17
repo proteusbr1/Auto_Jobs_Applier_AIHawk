@@ -48,7 +48,7 @@ def start_job_application():
     # Check if user has reached their daily application limit
     today_applications = JobApplication.query.filter(
         JobApplication.user_id == user_id,
-        JobApplication.application_date >= db.func.date('now')
+        JobApplication.created_at >= db.func.date('now')
     ).count()
     
     max_applications = subscription.plan.max_applications_per_day if subscription.plan else 0
