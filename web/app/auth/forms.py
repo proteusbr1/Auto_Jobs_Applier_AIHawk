@@ -17,21 +17,14 @@ class LoginForm(FlaskForm):
 
 class RegistrationForm(FlaskForm):
     """Form for user registration."""
-    username = StringField('Username', validators=[DataRequired(), Length(min=3, max=64)])
     email = StringField('Email', validators=[DataRequired(), Email(), Length(max=120)])
-    first_name = StringField('First Name', validators=[Length(max=64)])
-    last_name = StringField('Last Name', validators=[Length(max=64)])
+    first_name = StringField('First Name', validators=[DataRequired(), Length(max=64)])
+    last_name = StringField('Last Name', validators=[DataRequired(), Length(max=64)])
     password = PasswordField('Password', validators=[DataRequired(), Length(min=8)])
     password2 = PasswordField(
         'Repeat Password', validators=[DataRequired(), EqualTo('password')]
     )
     submit = SubmitField('Register')
-
-    def validate_username(self, username):
-        """Validate that the username is not already taken."""
-        user = User.query.filter_by(username=username.data).first()
-        if user is not None:
-            raise ValidationError('Please use a different username.')
 
     def validate_email(self, email):
         """Validate that the email is not already registered."""

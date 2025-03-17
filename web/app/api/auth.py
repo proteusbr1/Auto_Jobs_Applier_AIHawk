@@ -57,7 +57,7 @@ def login():
         "refresh_token": refresh_token,
         "user": {
             "id": user.id,
-            "username": user.username,
+            "username": user.email,
             "email": user.email,
             "first_name": user.first_name,
             "last_name": user.last_name,
@@ -96,26 +96,21 @@ def register():
         return jsonify({"error": "Missing JSON in request"}), 400
     
     data = request.json
-    required_fields = ['username', 'email', 'password']
+    required_fields = ['email', 'password']
     
     for field in required_fields:
         if field not in data or not data[field]:
             return jsonify({"error": f"Missing {field}"}), 400
-    
-    # Check if username or email already exists
-    if User.query.filter_by(username=data['username']).first():
-        return jsonify({"error": "Username already exists"}), 400
     
     if User.query.filter_by(email=data['email'].lower()).first():
         return jsonify({"error": "Email already exists"}), 400
     
     # Create new user
     user = User(
-        username=data['username'],
         email=data['email'].lower(),
         password=data['password'],
-        first_name=data.get('first_name'),
-        last_name=data.get('last_name')
+        first_name=data.get('first_name', ''),
+        last_name=data.get('last_name', '')
     )
     
     db.session.add(user)
@@ -125,7 +120,7 @@ def register():
         "message": "User registered successfully",
         "user": {
             "id": user.id,
-            "username": user.username,
+            "username": user.email,
             "email": user.email
         }
     }), 201

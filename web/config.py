@@ -21,7 +21,7 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, 'app.db'))
     
     # Redis
-    REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
     
     # Celery
     CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', REDIS_URL)

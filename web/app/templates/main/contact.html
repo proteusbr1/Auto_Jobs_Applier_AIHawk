@@ -1,0 +1,223 @@
+{% extends "layout.html" %}
+
+{% block title %}Contact Us - AIHawk{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <h1 class="mb-4">Contact Us</h1>
+
+            <div class="card shadow mb-4">
+                <div class="card-body">
+                    <h2 class="h4 mb-3">Get in Touch</h2>
+                    <p>
+                        Have questions, feedback, or need assistance with AIHawk? We're here to help!
+                        Fill out the form below or use one of our alternative contact methods.
+                    </p>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-7">
+                    <div class="card shadow mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h3 class="h5 mb-0">Contact Form</h3>
+                        </div>
+                        <div class="card-body">
+                            <form id="contact-form">
+                                <div class="mb-3">
+                                    <label for="name" class="form-label">Your Name</label>
+                                    <input type="text" class="form-control" id="name" name="name" required>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="email" class="form-label">Email Address</label>
+                                    <input type="email" class="form-control" id="email" name="email" required>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="subject" class="form-label">Subject</label>
+                                    <select class="form-select" id="subject" name="subject" required>
+                                        <option value="" selected disabled>Select a subject</option>
+                                        <option value="general">General Inquiry</option>
+                                        <option value="support">Technical Support</option>
+                                        <option value="billing">Billing Question</option>
+                                        <option value="feedback">Feedback</option>
+                                        <option value="partnership">Partnership Opportunity</option>
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="message" class="form-label">Your Message</label>
+                                    <textarea class="form-control" id="message" name="message" rows="5"
+                                        required></textarea>
+                                </div>
+
+                                <div class="d-grid gap-2">
+                                    <button type="submit" class="btn btn-primary">Send Message</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-5">
+                    <div class="card shadow mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h3 class="h5 mb-0">Contact Information</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-4">
+                                <h4 class="h6"><i class="fas fa-envelope me-2"></i>Email</h4>
+                                <p class="mb-0">
+                                    <a href="mailto:support@aihawk.com">support@aihawk.com</a>
+                                </p>
+                            </div>
+
+                            <div class="mb-4">
+                                <h4 class="h6"><i class="fas fa-phone me-2"></i>Phone</h4>
+                                <p class="mb-0">
+                                    <a href="tel:+1-800-123-4567">+1 (800) 123-4567</a>
+                                </p>
+                            </div>
+
+                            <div class="mb-4">
+                                <h4 class="h6"><i class="fas fa-map-marker-alt me-2"></i>Address</h4>
+                                <p class="mb-0">
+                                    123 AI Street<br>
+                                    Tech City, TC 12345<br>
+                                    United States
+                                </p>
+                            </div>
+
+                            <div>
+                                <h4 class="h6"><i class="fas fa-clock me-2"></i>Business Hours</h4>
+                                <p class="mb-0">
+                                    Monday - Friday: 9:00 AM - 6:00 PM EST<br>
+                                    Saturday: 10:00 AM - 2:00 PM EST<br>
+                                    Sunday: Closed
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow">
+                        <div class="card-header bg-primary text-white">
+                            <h3 class="h5 mb-0">Connect With Us</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex justify-content-around">
+                                <a href="#" class="text-primary fs-3"><i class="fab fa-linkedin"></i></a>
+                                <a href="#" class="text-primary fs-3"><i class="fab fa-twitter"></i></a>
+                                <a href="#" class="text-primary fs-3"><i class="fab fa-facebook"></i></a>
+                                <a href="#" class="text-primary fs-3"><i class="fab fa-instagram"></i></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow mt-4">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="h5 mb-0">Frequently Asked Questions</h3>
+                </div>
+                <div class="card-body">
+                    <div class="accordion" id="faqAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faqHeading1">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#faqCollapse1" aria-expanded="false" aria-controls="faqCollapse1">
+                                    How does AIHawk work?
+                                </button>
+                            </h2>
+                            <div id="faqCollapse1" class="accordion-collapse collapse" aria-labelledby="faqHeading1"
+                                data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    AIHawk uses artificial intelligence to match your profile with job listings and
+                                    automatically apply to jobs on your behalf. Our system analyzes your resume, skills,
+                                    and preferences to find suitable job opportunities and submits applications with
+                                    customized cover letters.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faqHeading2">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#faqCollapse2" aria-expanded="false" aria-controls="faqCollapse2">
+                                    What subscription plans do you offer?
+                                </button>
+                            </h2>
+                            <div id="faqCollapse2" class="accordion-collapse collapse" aria-labelledby="faqHeading2"
+                                data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    We offer several subscription plans to meet different needs, including a free trial,
+                                    basic, premium, and enterprise plans. Each plan offers different features and
+                                    application limits. Visit our pricing page for detailed information about each plan.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faqHeading3">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#faqCollapse3" aria-expanded="false" aria-controls="faqCollapse3">
+                                    How do I cancel my subscription?
+                                </button>
+                            </h2>
+                            <div id="faqCollapse3" class="accordion-collapse collapse" aria-labelledby="faqHeading3"
+                                data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    You can cancel your subscription at any time from your account settings. Go to the
+                                    Subscription page, click on "Manage Subscription," and select "Cancel Subscription."
+                                    Your subscription will remain active until the end of the current billing period.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const contactForm = document.getElementById('contact-form');
+
+        contactForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            // In a real application, you would send the form data to the server
+            // For this example, we'll just show a success message
+
+            // Get form data
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            const subject = document.getElementById('subject').value;
+            const message = document.getElementById('message').value;
+
+            // Create a success alert
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-success alert-dismissible fade show mt-3';
+            alertDiv.role = 'alert';
+            alertDiv.innerHTML = `
+                <strong>Thank you, ${name}!</strong> Your message has been sent successfully. We'll get back to you soon.
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+
+            // Insert the alert before the form
+            contactForm.parentNode.insertBefore(alertDiv, contactForm);
+
+            // Reset the form
+            contactForm.reset();
+
+            // Scroll to the alert
+            alertDiv.scrollIntoView({ behavior: 'smooth' });
+        });
+    });
+</script>
+{% endblock %}

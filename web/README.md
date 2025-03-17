@@ -74,6 +74,18 @@ createdb aihawk_db
 
 # Run database migrations
 flask db upgrade
+
+# Create an admin user (optional)
+python scripts/create_admin.py --email admin@example.com --password securepassword --first-name Admin --last-name User
+```
+
+Alternatively, you can set the following environment variables in your `.env` file to create an admin user automatically when initializing the database:
+
+```
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=securepassword
+ADMIN_FIRST_NAME=Admin
+ADMIN_LAST_NAME=User
 ```
 
 #### 6. Run the development server
@@ -99,11 +111,23 @@ If you prefer to use Docker for development:
 docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-#### 2. Run database migrations
+#### 2. Run database migrations and create an admin user
 
 ```bash
 # Run migrations inside the container
 docker-compose exec web flask db upgrade
+
+# Create an admin user (optional)
+docker-compose exec web python scripts/create_admin.py --email admin@example.com --password securepassword --first-name Admin --last-name User
+```
+
+Alternatively, you can set the following environment variables in your `.env` file to create an admin user automatically when initializing the database:
+
+```
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=securepassword
+ADMIN_FIRST_NAME=Admin
+ADMIN_LAST_NAME=User
 ```
 
 The application will be available at http://localhost:5000

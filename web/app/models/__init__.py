@@ -8,6 +8,7 @@ from app.models.resume import Resume, GeneratedResume
 from app.models.job_application import JobApplication
 from app.models.application_status_history import JobApplicationStatusUpdate
 from app.models.application_note import ApplicationNote
+from app.models.notification import Notification
 
 __all__ = [
     'User',
@@ -18,5 +19,6 @@ __all__ = [
     'GeneratedResume',
     'JobApplication',
     'JobApplicationStatusUpdate',
-    'ApplicationNote'
+    'ApplicationNote',
+    'Notification'
 ]

@@ -63,7 +63,7 @@
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button"
                             data-bs-toggle="dropdown" aria-expanded="false">
-                            <i class="fas fa-user-circle me-1"></i>{{ current_user.username }}
+                            <i class="fas fa-user-circle me-1"></i>{{ current_user.email }}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarDropdown">
                             <li><a class="dropdown-item" href="{{ url_for('main.profile') }}"><i
@@ -129,7 +129,8 @@
                         Policy</a>
                     <a href="{{ url_for('main.terms') }}" class="text-decoration-none text-muted me-3">Terms of
                         Service</a>
-                    <a href="{{ url_for('main.contact') }}" class="text-decoration-none text-muted">Contact Us</a>
+                    <a href="{{ url_for('main.contact') }}" class="text-decoration-none text-muted">Contact
+                        Us</a>
                 </div>
             </div>
         </div>

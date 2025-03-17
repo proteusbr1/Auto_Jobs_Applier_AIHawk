@@ -1,0 +1,181 @@
+{% extends "layout.html" %}
+
+{% block title %}Profile - AIHawk{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Your Profile</h4>
+            </div>
+            <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-4 text-center text-md-end">
+                        <strong>Username:</strong>
+                    </div>
+                    <div class="col-md-8">
+                        {{ current_user.email }}
+                    </div>
+                </div>
+                <div class="row mb-4">
+                    <div class="col-md-4 text-center text-md-end">
+                        <strong>Email:</strong>
+                    </div>
+                    <div class="col-md-8">
+                        {{ current_user.email }}
+                    </div>
+                </div>
+                <div class="row mb-4">
+                    <div class="col-md-4 text-center text-md-end">
+                        <strong>Full Name:</strong>
+                    </div>
+                    <div class="col-md-8">
+                        {{ current_user.get_full_name() }}
+                    </div>
+                </div>
+                <div class="row mb-4">
+                    <div class="col-md-4 text-center text-md-end">
+                        <strong>Account Created:</strong>
+                    </div>
+                    <div class="col-md-8">
+                        {{ current_user.created_at.strftime('%B %d, %Y') }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Update Profile</h4>
+            </div>
+            <div class="card-body">
+                <form id="update-profile-form">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="first_name" class="form-label">First Name</label>
+                            <input type="text" class="form-control" id="first_name" name="first_name"
+                                value="{{ current_user.first_name }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="last_name" class="form-label">Last Name</label>
+                            <input type="text" class="form-control" id="last_name" name="last_name"
+                                value="{{ current_user.last_name }}">
+                        </div>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">Update Profile</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Change Password</h4>
+            </div>
+            <div class="card-body">
+                <form id="change-password-form">
+                    <div class="mb-3">
+                        <label for="current_password" class="form-label">Current Password</label>
+                        <input type="password" class="form-control" id="current_password" name="current_password"
+                            required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_password" class="form-label">New Password</label>
+                        <input type="password" class="form-control" id="new_password" name="new_password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirm_password" class="form-label">Confirm New Password</label>
+                        <input type="password" class="form-control" id="confirm_password" name="confirm_password"
+                            required>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">Change Password</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Update profile form submission
+        const updateProfileForm = document.getElementById('update-profile-form');
+        updateProfileForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            const formData = {
+                first_name: document.getElementById('first_name').value,
+                last_name: document.getElementById('last_name').value
+            };
+
+            fetch('{{ url_for("auth.update_profile") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Profile updated successfully!');
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while updating your profile.');
+                });
+        });
+
+        // Change password form submission
+        const changePasswordForm = document.getElementById('change-password-form');
+        changePasswordForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            const newPassword = document.getElementById('new_password').value;
+            const confirmPassword = document.getElementById('confirm_password').value;
+
+            if (newPassword !== confirmPassword) {
+                alert('New passwords do not match!');
+                return;
+            }
+
+            const formData = {
+                current_password: document.getElementById('current_password').value,
+                new_password: newPassword
+            };
+
+            fetch('{{ url_for("auth.change_password") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('Password changed successfully!');
+                        document.getElementById('current_password').value = '';
+                        document.getElementById('new_password').value = '';
+                        document.getElementById('confirm_password').value = '';
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while changing your password.');
+                });
+        });
+    });
+</script>
+{% endblock %}

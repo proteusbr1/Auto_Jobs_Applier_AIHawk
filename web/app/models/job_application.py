@@ -34,8 +34,8 @@ class JobApplication(db.Model):
 
     # Relationships
     user = db.relationship('User', back_populates='applications')
-    job_config = db.relationship('JobConfig', back_populates='applications')
-    resume = db.relationship('Resume', back_populates='applications')
+    job_config = db.relationship('JobConfig', back_populates='job_applications')
+    resume = db.relationship('Resume', back_populates='job_applications')
     notes = db.relationship('ApplicationNote', back_populates='application', cascade='all, delete-orphan')
     status_history = db.relationship('ApplicationStatusHistory', back_populates='application', cascade='all, delete-orphan')
 

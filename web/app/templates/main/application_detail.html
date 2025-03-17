@@ -362,7 +362,8 @@
             </div>
             <div class="modal-body">
                 <p>Are you sure you want to delete this application for <strong>{{ application.job_title }}</strong> at
-                    <strong>{{ application.company_name }}</strong>?</p>
+                    <strong>{{ application.company_name }}</strong>?
+                </p>
                 <p class="text-danger">This action cannot be undone.</p>
                 <form id="deleteApplicationForm"
                     action="{{ url_for('main.delete_application', application_id=application.id) }}" method="POST">

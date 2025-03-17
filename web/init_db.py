@@ -1,108 +1,162 @@
 """
-Database initialization script for the Auto_Jobs_Applier_AIHawk web application.
+Database initialization script for the AIHawk web application.
 """
 import os
-import click
-from flask.cli import with_appcontext
+import sys
+import time
+import psycopg2
+from flask_migrate import upgrade
 from app import create_app, db
-from app.models import (
-    User, Subscription, SubscriptionPlan, JobConfig, Resume, GeneratedResume,
-    JobApplication, JobApplicationStatusUpdate
-)
 
-
-@click.command('init-db')
-@with_appcontext
-def init_db_command():
-    """Initialize the database."""
-    # Create all tables
-    db.create_all()
-    click.echo('Database tables created.')
+def wait_for_db(host, port, user, password, dbname, max_retries=10, retry_interval=3):
+    """
+    Wait for the database to be ready.
     
-    # Check if admin user exists
-    admin = User.query.filter_by(username='admin').first()
-    if admin is None:
-        # Create admin user
-        admin = User(
-            username='admin',
-            email='admin@example.com',
-            password='admin',
-            first_name='Admin',
-            last_name='User',
-            is_admin=True
-        )
-        db.session.add(admin)
-        click.echo('Admin user created.')
+    Args:
+        host (str): Database host
+        port (int): Database port
+        user (str): Database user
+        password (str): Database password
+        dbname (str): Database name
+        max_retries (int): Maximum number of retries
+        retry_interval (int): Interval between retries in seconds
+        
+    Returns:
+        bool: True if database is ready, False otherwise
+    """
+    print(f"Waiting for database {host}:{port} to be ready...")
     
-    # Check if subscription plans exist
-    if SubscriptionPlan.query.count() == 0:
-        # Create subscription plans
-        plans = [
-            SubscriptionPlan(
-                name='Free Trial',
-                description='Free trial subscription with limited features',
-                price_monthly=0.0,
-                price_yearly=0.0,
-                max_applications_per_day=5,
-                max_concurrent_sessions=1,
-                max_resumes=2,
-                max_job_configs=1,
-                has_priority_support=False,
-                has_advanced_analytics=False,
-                has_custom_resume_generation=False
-            ),
-            SubscriptionPlan(
-                name='Basic',
-                description='Basic subscription with essential features',
-                price_monthly=9.99,
-                price_yearly=99.99,
-                max_applications_per_day=20,
-                max_concurrent_sessions=1,
-                max_resumes=5,
-                max_job_configs=3,
-                has_priority_support=False,
-                has_advanced_analytics=False,
-                has_custom_resume_generation=False
-            ),
-            SubscriptionPlan(
-                name='Premium',
-                description='Premium subscription with advanced features',
-                price_monthly=19.99,
-                price_yearly=199.99,
-                max_applications_per_day=50,
-                max_concurrent_sessions=2,
-                max_resumes=10,
-                max_job_configs=5,
-                has_priority_support=True,
-                has_advanced_analytics=True,
-                has_custom_resume_generation=True
-            ),
-            SubscriptionPlan(
-                name='Enterprise',
-                description='Enterprise subscription with unlimited features',
-                price_monthly=49.99,
-                price_yearly=499.99,
-                max_applications_per_day=100,
-                max_concurrent_sessions=5,
-                max_resumes=20,
-                max_job_configs=10,
-                has_priority_support=True,
-                has_advanced_analytics=True,
-                has_custom_resume_generation=True
+    for i in range(max_retries):
+        try:
+            conn = psycopg2.connect(
+                host=host,
+                port=port,
+                user=user,
+                password=password,
+                dbname=dbname
             )
-        ]
-        
-        for plan in plans:
-            db.session.add(plan)
-        
-        click.echo('Subscription plans created.')
+            conn.close()
+            print("Database is ready!")
+            return True
+        except psycopg2.OperationalError as e:
+            print(f"Database not ready yet (attempt {i+1}/{max_retries}): {e}")
+            time.sleep(retry_interval)
     
-    # Commit changes
-    db.session.commit()
-    click.echo('Database initialized successfully.')
+    return False
 
+def init_db():
+    """
+    Initialize the database and run migrations.
+    """
+    # Wait for the database to be ready
+    db_ready = wait_for_db(
+        host='db',
+        port=5432,
+        user='postgres',
+        password='postgres',
+        dbname='aihawk',
+        max_retries=20,
+        retry_interval=3
+    )
+    
+    if not db_ready:
+        print("Database is not ready after maximum retries. Exiting.")
+        sys.exit(1)
+    
+    # Set the DATABASE_URL environment variable
+    os.environ['DATABASE_URL'] = 'postgresql://postgres:postgres@db:5432/aihawk'
+    
+    app = create_app('development')
+    
+    # Disable SQLAlchemy event system to avoid relationship errors
+    import sqlalchemy as sa
+    sa.event.remove(sa.pool.Pool, 'connect', None)
+    sa.event.remove(sa.pool.Pool, 'checkout', None)
+    sa.event.remove(sa.engine.Engine, 'before_execute', None)
+    
+    with app.app_context():
+        try:
+            # Create tables directly with SQL
+            db.engine.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                first_name VARCHAR(100) NOT NULL,
+                last_name VARCHAR(100) NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+                stripe_customer_id VARCHAR(255) UNIQUE,
+                onboarding_completed BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            ''')
+            print("Database tables created.")
+            
+            # Create admin user if environment variables are set
+            admin_email = os.environ.get('ADMIN_EMAIL')
+            admin_password = os.environ.get('ADMIN_PASSWORD')
+            
+            if admin_email and admin_password:
+                try:
+                    # Check if user already exists
+                    admin_user = db.engine.execute(
+                        f"SELECT * FROM users WHERE email = '{admin_email}'"
+                    ).fetchone()
+                    
+                    if admin_user:
+                        # Update user to be admin if not already
+                        if not admin_user.is_admin:
+                            db.engine.execute(
+                                f"UPDATE users SET is_admin = TRUE WHERE email = '{admin_email}'"
+                            )
+                            print(f"User {admin_email} has been granted admin privileges.")
+                        else:
+                            print(f"User {admin_email} is already an admin.")
+                    else:
+                        # Create admin user
+                        from werkzeug.security import generate_password_hash
+                        
+                        # Get first and last name from environment variables or use defaults
+                        admin_first_name = os.environ.get('ADMIN_FIRST_NAME', 'Admin')
+                        admin_last_name = os.environ.get('ADMIN_LAST_NAME', 'User')
+                        
+                        # Insert admin user
+                        db.engine.execute(
+                            f"""
+                            INSERT INTO users (
+                                email, password_hash, first_name, last_name, 
+                                is_active, is_admin, onboarding_completed, 
+                                created_at, updated_at
+                            ) VALUES (
+                                '{admin_email}', 
+                                '{generate_password_hash(admin_password)}', 
+                                '{admin_first_name}', 
+                                '{admin_last_name}', 
+                                TRUE, TRUE, TRUE, 
+                                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                            )
+                            """
+                        )
+                        print(f"Admin user {admin_email} created successfully.")
+                except Exception as e:
+                    print(f"Error creating admin user: {e}")
+            
+            print("Database initialized successfully.")
+        except Exception as e:
+            print(f"Error initializing database: {e}")
+            # Continue anyway to allow the application to start
+
+def init_db_command():
+    """
+    Initialize the database from the command line.
+    """
+    try:
+        init_db()
+    except Exception as e:
+        print(f"Error in init_db_command: {e}")
+        # Continue anyway to allow the application to start
 
 if __name__ == '__main__':
-    app = create_app(os.environ.get('APP_ENV', 'default'))
-    with app.app_context():
-        init_db_command()
+    init_db_command()

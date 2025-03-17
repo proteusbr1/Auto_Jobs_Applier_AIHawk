@@ -40,7 +40,7 @@ def get_user():
     
     return jsonify({
         'id': user.id,
-        'username': user.username,
+        'username': user.email,
         'email': user.email,
         'first_name': user.first_name,
         'last_name': user.last_name,
@@ -72,7 +72,7 @@ def update_user():
         'message': 'User updated successfully',
         'user': {
             'id': user.id,
-            'username': user.username,
+            'username': user.email,
             'email': user.email,
             'first_name': user.first_name,
             'last_name': user.last_name,

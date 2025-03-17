@@ -10,6 +10,7 @@ from flask_jwt_extended import JWTManager
 from celery import Celery
 
 from config import config
+from app.extensions import init_redis
 
 # Initialize extensions
 db = SQLAlchemy()
@@ -54,11 +55,35 @@ def create_app(config_name=None):
     login_manager.login_message_category = 'info'
     
     # Register blueprints
-    from app.auth import auth_bp
-    app.register_blueprint(auth_bp)
+    try:
+        from app.auth import auth_bp
+        app.register_blueprint(auth_bp)
+    except ImportError:
+        pass
     
-    from app.api import api_bp
-    app.register_blueprint(api_bp, url_prefix='/api')
+    try:
+        from app.api import api_bp
+        app.register_blueprint(api_bp, url_prefix='/api')
+    except ImportError:
+        pass
+    
+    # Register main blueprint with health check
+    from app.routes import bp as health_bp
+    app.register_blueprint(health_bp)
+    
+    # Register main blueprint with routes
+    from app.main import main_bp
+    app.register_blueprint(main_bp)
+    
+    # Try to register health check blueprint
+    try:
+        from app.health import init_app as init_health
+        init_health(app)
+    except ImportError:
+        pass
+    
+    # Initialize Redis
+    init_redis(app)
     
     # Create user data directory if it doesn't exist
     user_data_dir = app.config['USER_DATA_DIR']

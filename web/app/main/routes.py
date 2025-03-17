@@ -17,7 +17,11 @@ def index():
         return redirect(url_for('main.dashboard'))
     
     # Get subscription plans for pricing section
-    plans = SubscriptionPlan.query.all()
+    try:
+        plans = SubscriptionPlan.query.all()
+    except Exception as e:
+        current_app.logger.error(f"Database error: {str(e)}")
+        plans = []  # Provide an empty list as fallback
     
     return render_template('main/index.html', plans=plans)
 
@@ -155,7 +159,12 @@ def profile():
 @login_required
 def subscription():
     """Render the subscription page."""
-    plans = SubscriptionPlan.query.all()
+    try:
+        plans = SubscriptionPlan.query.all()
+    except Exception as e:
+        current_app.logger.error(f"Database error: {str(e)}")
+        plans = []  # Provide an empty list as fallback
+    
     user_subscription = current_user.subscription
     return render_template('main/subscription.html', plans=plans, subscription=user_subscription)
 

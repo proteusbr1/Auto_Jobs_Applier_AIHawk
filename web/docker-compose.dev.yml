@@ -5,36 +5,51 @@ services:
       dockerfile: Dockerfile
       args:
         - ENVIRONMENT=development
+    restart: no
+    depends_on:
+      - db
+      - redis
+    command: flask run --host=0.0.0.0 --port=5000
     env_file:
       - .env
     environment:
+      - FLASK_APP=run.py
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - SECRET_KEY=dev_secret_key_for_development_only
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-adminpassword}
+      - ADMIN_FIRST_NAME=${ADMIN_FIRST_NAME:-Admin}
+      - ADMIN_LAST_NAME=${ADMIN_LAST_NAME:-User}
     volumes:
       - ./:/app
     ports:
       - "5000:5000"
-    command: flask run --host=0.0.0.0 --port=5000
-    depends_on:
-      - db
-    restart: unless-stopped
 
   db:
     image: postgres:14-alpine
+    restart: no
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-aihawk}
     volumes:
       - postgres_data:/var/lib/postgresql/data/
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}
     ports:
       - "5432:5432"
-    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
+    restart: no
     ports:
       - "6379:6379"
-    restart: unless-stopped
+    volumes:
+      - redis_data:/data
 
   celery:
     build:
@@ -42,18 +57,21 @@ services:
       dockerfile: Dockerfile
       args:
         - ENVIRONMENT=development
-    command: celery -A app.celery worker --loglevel=info
+    restart: no
+    command: celery -A app.celery worker --loglevel=debug
     volumes:
       - ./:/app
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db/${POSTGRES_DB}
+      - FLASK_APP=run.py
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db/${POSTGRES_DB:-aihawk}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
     depends_on:
-      - web
       - redis
       - db
-    restart: unless-stopped
 
   celery-beat:
     build:
@@ -61,21 +79,25 @@ services:
       dockerfile: Dockerfile
       args:
         - ENVIRONMENT=development
-    command: celery -A app.celery beat --loglevel=info
+    restart: no
+    command: celery -A app.celery beat --loglevel=debug
     volumes:
       - ./:/app
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db/${POSTGRES_DB}
+      - FLASK_APP=run.py
+      - FLASK_ENV=development
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db/${POSTGRES_DB:-aihawk}
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
     depends_on:
-      - web
       - redis
       - db
-    restart: unless-stopped
 
   pgadmin:
     image: dpage/pgadmin4
+    restart: no
     environment:
       - PGADMIN_DEFAULT_EMAIL=admin@aihawk.com
       - PGADMIN_DEFAULT_PASSWORD=Adm1nP4ssw0rd!
@@ -83,11 +105,10 @@ services:
       - "5050:80"
     depends_on:
       - db
-    restart: unless-stopped
 
   nginx:
     image: nginx:1.21-alpine
-    restart: unless-stopped
+    restart: no
     depends_on:
       - web
     ports:
@@ -104,3 +125,5 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:
+  resume_uploads:
