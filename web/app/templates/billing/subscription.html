@@ -1,0 +1,289 @@
+{% extends "layout.html" %}
+
+{% block title %}Subscription Details{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-4">Your Subscription</h1>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('billing.index') }}">Billing</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Subscription Details</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <!-- Subscription Overview -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Subscription Overview</h5>
+                    <span
+                        class="badge {% if details.status == 'active' %}bg-success{% elif details.status == 'canceled' %}bg-warning{% else %}bg-danger{% endif %}">
+                        {{ details.status|capitalize }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Plan</h6>
+                            <p class="h5 mb-4">{{ plans[details.plan]['name'] }}</p>
+
+                            <h6 class="text-muted">Status</h6>
+                            <p class="mb-4">
+                                {% if details.status == 'active' %}
+                                Active
+                                {% elif details.status == 'canceled' %}
+                                Canceled (ends on {{ details.current_period_end.strftime('%B %d, %Y') }})
+                                {% elif details.status == 'past_due' %}
+                                Past Due (payment required)
+                                {% else %}
+                                {{ details.status|capitalize }}
+                                {% endif %}
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Billing Period</h6>
+                            <p class="mb-4">
+                                {{ details.current_period_start.strftime('%B %d, %Y') }} to
+                                {{ details.current_period_end.strftime('%B %d, %Y') }}
+                            </p>
+
+                            <h6 class="text-muted">Next Billing Date</h6>
+                            <p class="mb-4">
+                                {% if details.cancel_at_period_end %}
+                                <span class="text-warning">Subscription will end on {{
+                                    details.current_period_end.strftime('%B %d, %Y') }}</span>
+                                {% else %}
+                                {{ details.current_period_end.strftime('%B %d, %Y') }}
+                                (in {{ details.days_until_renewal }} days)
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <h6 class="text-muted">Features</h6>
+                            <ul class="list-group list-group-flush">
+                                {% for feature in plans[details.plan]['features'] %}
+                                <li class="list-group-item px-0">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>{{ feature }}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between">
+                                <a href="{{ url_for('billing.customer_portal') }}" class="btn btn-primary">
+                                    <i class="bi bi-gear me-2"></i>Manage Subscription
+                                </a>
+
+                                {% if details.status == 'active' and not details.cancel_at_period_end %}
+                                <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal"
+                                    data-bs-target="#cancelModal">
+                                    <i class="bi bi-x-circle me-2"></i>Cancel Subscription
+                                </button>
+                                {% elif details.cancel_at_period_end %}
+                                <form action="{{ url_for('billing.reactivate_subscription_route') }}" method="post">
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="bi bi-arrow-repeat me-2"></i>Reactivate Subscription
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Usage Statistics -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Usage Statistics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Job Applications</h6>
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="progress flex-grow-1 me-3" style="height: 10px;">
+                                    {% set application_limit = plans[details.plan]['monthly_applications'] %}
+                                    {% set application_count = 25 %} <!-- This would be dynamic in a real app -->
+                                    {% if application_limit == float('inf') %}
+                                    {% set percentage = 25 %}
+                                    {% else %}
+                                    {% set percentage = (application_count / application_limit) * 100 %}
+                                    {% endif %}
+
+                                    <div class="progress-bar" role="progressbar" {% if percentage
+                                        %}style="width: {{ percentage }}%" {% else %}style="width: 0%" {% endif %}
+                                        aria-valuenow="{{ application_count }}" aria-valuemin="0"
+                                        aria-valuemax="{{ application_limit }}"></div>
+                                </div>
+                                <span>
+                                    {% if application_limit == float('inf') %}
+                                    {{ application_count }} / Unlimited
+                                    {% else %}
+                                    {{ application_count }} / {{ application_limit }}
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-muted">Resumes</h6>
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="progress flex-grow-1 me-3" style="height: 10px;">
+                                    {% set resume_limit = plans[details.plan]['resume_limit'] %}
+                                    {% set resume_count = 2 %} <!-- This would be dynamic in a real app -->
+                                    {% if resume_limit == float('inf') %}
+                                    {% set percentage = 20 %}
+                                    {% else %}
+                                    {% set percentage = (resume_count / resume_limit) * 100 %}
+                                    {% endif %}
+
+                                    <div class="progress-bar" role="progressbar" {% if percentage
+                                        %}style="width: {{ percentage }}%" {% else %}style="width: 0%" {% endif %}
+                                        aria-valuenow="{{ resume_count }}" aria-valuemin="0"
+                                        aria-valuemax="{{ resume_limit }}"></div>
+                                </div>
+                                <span>
+                                    {% if resume_limit == float('inf') %}
+                                    {{ resume_count }} / Unlimited
+                                    {% else %}
+                                    {{ resume_count }} / {{ resume_limit }}
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Invoice History -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Invoice History</h5>
+                </div>
+                <div class="card-body">
+                    {% if invoices %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Invoice #</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for invoice in invoices %}
+                                <tr>
+                                    <td>{{ invoice.created.strftime('%b %d, %Y') }}</td>
+                                    <td>{{ invoice.number }}</td>
+                                    <td>{{ invoice.amount_due }} {{ invoice.currency }}</td>
+                                    <td>
+                                        <span
+                                            class="badge {% if invoice.status == 'paid' %}bg-success{% elif invoice.status == 'open' %}bg-warning{% else %}bg-secondary{% endif %}">
+                                            {{ invoice.status|capitalize }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <a href="{{ invoice.hosted_invoice_url }}" target="_blank"
+                                                class="btn btn-outline-primary">
+                                                <i class="bi bi-eye"></i>
+                                            </a>
+                                            <a href="{{ invoice.pdf_url }}" target="_blank"
+                                                class="btn btn-outline-secondary">
+                                                <i class="bi bi-download"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No invoices found.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <!-- Plan Details -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">{{ plans[details.plan]['name'] }} Plan</h5>
+                </div>
+                <div class="card-body">
+                    <p>{{ plans[details.plan]['description'] }}</p>
+                    <hr>
+                    <h6>Plan Includes:</h6>
+                    <ul class="list-unstyled">
+                        {% for feature in plans[details.plan]['features'] %}
+                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success me-2"></i>{{ feature }}</li>
+                        {% endfor %}
+                    </ul>
+
+                    {% if details.plan != 'enterprise' %}
+                    <div class="mt-4">
+                        <h6>Upgrade Your Plan</h6>
+                        <p class="small text-muted">Need more features? Upgrade to a higher plan.</p>
+                        <a href="{{ url_for('billing.index') }}" class="btn btn-outline-primary btn-sm">View Plans</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Need Help? -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Need Help?</h5>
+                </div>
+                <div class="card-body">
+                    <p>If you have any questions about your subscription or billing, our support team is here to help.
+                    </p>
+                    <a href="#" class="btn btn-outline-primary">Contact Support</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cancel Subscription Modal -->
+<div class="modal fade" id="cancelModal" tabindex="-1" aria-labelledby="cancelModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cancelModalLabel">Cancel Subscription</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to cancel your subscription?</p>
+                <p>Your subscription will remain active until the end of your current billing period on <strong>{{
+                        details.current_period_end.strftime('%B %d, %Y') }}</strong>.</p>
+                <p>You can reactivate your subscription at any time before this date.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Keep Subscription</button>
+                <form action="{{ url_for('billing.cancel_subscription_route') }}" method="post">
+                    <button type="submit" class="btn btn-danger">Cancel Subscription</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

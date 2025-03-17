@@ -1,0 +1,338 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard - AIHawk{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h2 mb-0">Dashboard</h1>
+        <p class="text-muted">Welcome back, {{ current_user.first_name }}!</p>
+    </div>
+    <div class="col-auto">
+        <a href="{{ url_for('main.job_configs') }}" class="btn btn-primary">
+            <i class="fas fa-plus me-1"></i> New Job Search
+        </a>
+    </div>
+</div>
+
+<!-- Subscription Alert -->
+{% if not subscription or not subscription.is_active() %}
+<div class="alert alert-warning mb-4" role="alert">
+    <div class="d-flex align-items-center">
+        <div class="flex-shrink-0">
+            <i class="fas fa-exclamation-triangle fa-2x me-3"></i>
+        </div>
+        <div class="flex-grow-1">
+            <h4 class="alert-heading">Your subscription is inactive</h4>
+            <p class="mb-0">You need an active subscription to use AIHawk's job application automation features.</p>
+        </div>
+        <div class="flex-shrink-0">
+            <a href="{{ url_for('main.subscription') }}" class="btn btn-warning">View Plans</a>
+        </div>
+    </div>
+</div>
+{% elif subscription.is_trial() %}
+<div class="alert alert-info mb-4" role="alert">
+    <div class="d-flex align-items-center">
+        <div class="flex-shrink-0">
+            <i class="fas fa-info-circle fa-2x me-3"></i>
+        </div>
+        <div class="flex-grow-1">
+            <h4 class="alert-heading">Free Trial</h4>
+            <p class="mb-0">You have {{ subscription.days_remaining() }} days left in your free trial. Upgrade to
+                continue using AIHawk after your trial ends.</p>
+        </div>
+        <div class="flex-shrink-0">
+            <a href="{{ url_for('main.subscription') }}" class="btn btn-info">Upgrade Now</a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Stats Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="flex-shrink-0">
+                        <div class="bg-primary bg-gradient text-white rounded p-2">
+                            <i class="fas fa-briefcase fa-fw"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="card-title text-muted mb-0">Total Applications</h6>
+                    </div>
+                </div>
+                <h2 class="display-5 fw-bold mb-0">{{ total_applications }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="flex-shrink-0">
+                        <div class="bg-success bg-gradient text-white rounded p-2">
+                            <i class="fas fa-check-circle fa-fw"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="card-title text-muted mb-0">Applied Today</h6>
+                    </div>
+                </div>
+                <h2 class="display-5 fw-bold mb-0">{{ status_stats.get('applied', 0) }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="flex-shrink-0">
+                        <div class="bg-info bg-gradient text-white rounded p-2">
+                            <i class="fas fa-user-tie fa-fw"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="card-title text-muted mb-0">Interviews</h6>
+                    </div>
+                </div>
+                <h2 class="display-5 fw-bold mb-0">{{ status_stats.get('interviewed', 0) }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="flex-shrink-0">
+                        <div class="bg-warning bg-gradient text-white rounded p-2">
+                            <i class="fas fa-star fa-fw"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="card-title text-muted mb-0">Offers</h6>
+                    </div>
+                </div>
+                <h2 class="display-5 fw-bold mb-0">{{ status_stats.get('offered', 0) }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Recent Applications -->
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Recent Applications</h5>
+                <a href="{{ url_for('main.applications') }}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Job Title</th>
+                                <th>Company</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if recent_applications %}
+                            {% for app in recent_applications %}
+                            <tr>
+                                <td>{{ app.job_title }}</td>
+                                <td>{{ app.company_name }}</td>
+                                <td>{{ app.application_date.strftime('%Y-%m-%d') }}</td>
+                                <td>
+                                    <span class="badge bg-{{ app.status_color }}">{{ app.status }}</span>
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('main.application_detail', application_id=app.id) }}"
+                                        class="btn btn-sm btn-outline-secondary">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% else %}
+                            <tr>
+                                <td colspan="5" class="text-center py-4">
+                                    <p class="text-muted mb-0">No applications yet.</p>
+                                    <a href="{{ url_for('main.job_configs') }}"
+                                        class="btn btn-sm btn-primary mt-2">Start Applying</a>
+                                </td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Job Configs -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Active Job Searches</h5>
+                <a href="{{ url_for('main.job_configs') }}" class="btn btn-sm btn-outline-primary">Manage</a>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% if active_configs %}
+                    {% for config in active_configs %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1">{{ config.name }}</h6>
+                            <small class="text-muted">
+                                {% for search in config.searches[:1] %}
+                                {{ search.positions|join(', ') }} in {{ search.location }}
+                                {% if config.searches|length > 1 %}
+                                <span class="text-muted">(+{{ config.searches|length - 1 }} more)</span>
+                                {% endif %}
+                                {% endfor %}
+                            </small>
+                        </div>
+                        <div>
+                            <a href="{{ url_for('main.job_config_detail', config_id=config.id) }}"
+                                class="btn btn-sm btn-outline-secondary">
+                                <i class="fas fa-cog"></i>
+                            </a>
+                            <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal"
+                                data-bs-target="#runJobModal" data-config-id="{{ config.id }}"
+                                data-config-name="{{ config.name }}">
+                                <i class="fas fa-play"></i>
+                            </button>
+                        </div>
+                    </li>
+                    {% endfor %}
+                    {% else %}
+                    <li class="list-group-item text-center py-4">
+                        <p class="text-muted mb-0">No active job searches.</p>
+                        <a href="{{ url_for('main.job_configs') }}" class="btn btn-sm btn-primary mt-2">Create Job
+                            Search</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+
+        <!-- Subscription Status -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">Subscription Status</h5>
+            </div>
+            <div class="card-body">
+                {% if subscription and subscription.is_active() %}
+                <div class="d-flex align-items-center mb-3">
+                    <div class="flex-shrink-0">
+                        <div class="bg-success text-white rounded-circle p-2">
+                            <i class="fas fa-check"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="mb-0">{{ subscription.plan.name }}</h6>
+                        <small class="text-muted">
+                            {% if subscription.is_trial() %}
+                            Trial ends in {{ subscription.days_remaining() }} days
+                            {% else %}
+                            Renews on {{ subscription.end_date.strftime('%Y-%m-%d') }}
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+                <div class="progress mb-3" style="height: 8px;">
+                    <div class="progress-bar bg-success" role="progressbar"
+                        style="width: {{ (subscription.applications_today / subscription.plan.max_applications_per_day) * 100 }}%;">
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <small class="text-muted">Applications today</small>
+                    <small>{{ subscription.applications_today }} / {{ subscription.plan.max_applications_per_day
+                        }}</small>
+                </div>
+                <a href="{{ url_for('main.subscription') }}" class="btn btn-outline-primary btn-sm d-block">Manage
+                    Subscription</a>
+                {% else %}
+                <div class="text-center py-3">
+                    <div class="mb-3">
+                        <i class="fas fa-exclamation-circle text-warning fa-3x"></i>
+                    </div>
+                    <h6>No Active Subscription</h6>
+                    <p class="text-muted small">Subscribe to start applying to jobs automatically.</p>
+                    <a href="{{ url_for('main.subscription') }}" class="btn btn-primary">View Plans</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Run Job Modal -->
+<div class="modal fade" id="runJobModal" tabindex="-1" aria-labelledby="runJobModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="runJobModalLabel">Run Job Search</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to run the job search "<span id="configName"></span>"?</p>
+                <p>This will start applying to jobs based on your configuration.</p>
+
+                <form id="runJobForm" method="POST" action="{{ url_for('main.run_job_search') }}">
+                    <input type="hidden" name="config_id" id="configId">
+                    <div class="mb-3">
+                        <label for="resumeSelect" class="form-label">Select Resume</label>
+                        <select class="form-select" id="resumeSelect" name="resume_id" required>
+                            <option value="">Choose a resume...</option>
+                            {% for resume in current_user.resumes %}
+                            <option value="{{ resume.id }}" {% if resume.is_default %}selected{% endif %}>{{ resume.name
+                                }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="maxApplications" class="form-label">Maximum Applications</label>
+                        <input type="number" class="form-control" id="maxApplications" name="max_applications" min="1"
+                            max="100" value="20">
+                        <div class="form-text">Maximum number of applications to submit in this session.</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="startJobBtn">Start Job Search</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Run Job Modal
+        const runJobModal = document.getElementById('runJobModal');
+        if (runJobModal) {
+            runJobModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                const configId = button.getAttribute('data-config-id');
+                const configName = button.getAttribute('data-config-name');
+
+                document.getElementById('configId').value = configId;
+                document.getElementById('configName').textContent = configName;
+            });
+
+            document.getElementById('startJobBtn').addEventListener('click', function () {
+                document.getElementById('runJobForm').submit();
+            });
+        }
+    });
+</script>
+{% endblock %}

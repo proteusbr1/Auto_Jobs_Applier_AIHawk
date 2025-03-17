@@ -1,0 +1,445 @@
+{% extends "layout.html" %}
+
+{% block title %}Job Configurations - AIHawk{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h1 class="h2 mb-0">Job Configurations</h1>
+        <p class="text-muted">Configure your job search criteria for automated applications</p>
+    </div>
+    <div class="col-auto">
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createConfigModal">
+            <i class="fas fa-plus me-1"></i> New Configuration
+        </button>
+    </div>
+</div>
+
+<!-- Subscription Alert -->
+{% if not current_user.subscription or not current_user.subscription.is_active() %}
+<div class="alert alert-warning mb-4" role="alert">
+    <div class="d-flex align-items-center">
+        <div class="flex-shrink-0">
+            <i class="fas fa-exclamation-triangle fa-2x me-3"></i>
+        </div>
+        <div class="flex-grow-1">
+            <h4 class="alert-heading">Your subscription is inactive</h4>
+            <p class="mb-0">You need an active subscription to use AIHawk's job application automation features.</p>
+        </div>
+        <div class="flex-shrink-0">
+            <a href="{{ url_for('main.subscription') }}" class="btn btn-warning">View Plans</a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Job Configurations Grid -->
+<div class="row g-4">
+    {% if configs %}
+    {% for config in configs %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100 border-0 shadow-sm job-config-card">
+            {% if config.is_active %}
+            <span class="badge-active badge bg-success">Active</span>
+            {% endif %}
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">{{ config.name }}</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <h6 class="text-muted mb-2">Search Criteria</h6>
+                    <ul class="list-unstyled">
+                        {% for search in config.searches %}
+                        <li class="mb-2">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-search text-primary me-2"></i>
+                                <div>
+                                    <strong>{{ search.positions|join(', ') }}</strong>
+                                    <div class="small text-muted">in {{ search.location }}</div>
+                                </div>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                {% if config.keywords %}
+                <div class="mb-3">
+                    <h6 class="text-muted mb-2">Keywords</h6>
+                    <div>
+                        {% for keyword in config.keywords %}
+                        <span class="badge bg-primary me-1 mb-1">{{ keyword }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if config.blacklist %}
+                <div class="mb-3">
+                    <h6 class="text-muted mb-2">Blacklist</h6>
+                    <div>
+                        {% for keyword in config.blacklist %}
+                        <span class="badge bg-danger me-1 mb-1">{{ keyword }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <h6 class="text-muted mb-2">Settings</h6>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-calendar-alt text-secondary me-2"></i>
+                                <div class="small">
+                                    <div>Date Range</div>
+                                    <strong>{{ config.date_range }}</strong>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-briefcase text-secondary me-2"></i>
+                                <div class="small">
+                                    <div>Experience</div>
+                                    <strong>{{ config.experience_level }}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer bg-transparent border-0 p-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">Created: {{ config.created_at.strftime('%Y-%m-%d') }}</small>
+                    <div class="btn-group">
+                        <a href="{{ url_for('main.job_config_detail', config_id=config.id) }}"
+                            class="btn btn-sm btn-outline-secondary">
+                            <i class="fas fa-eye"></i>
+                        </a>
+                        <a href="{{ url_for('main.edit_job_config', config_id=config.id) }}"
+                            class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-edit"></i>
+                        </a>
+                        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal"
+                            data-bs-target="#deleteConfigModal" data-config-id="{{ config.id }}"
+                            data-config-name="{{ config.name }}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    {% if config.is_active %}
+                    <form action="{{ url_for('main.deactivate_job_config', config_id=config.id) }}" method="POST">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary w-100">Deactivate</button>
+                    </form>
+                    {% else %}
+                    <form action="{{ url_for('main.activate_job_config', config_id=config.id) }}" method="POST">
+                        <button type="submit" class="btn btn-sm btn-outline-success w-100">Activate</button>
+                    </form>
+                    {% endif %}
+                </div>
+                <div class="mt-2">
+                    <button type="button" class="btn btn-sm btn-primary w-100" data-bs-toggle="modal"
+                        data-bs-target="#runJobModal" data-config-id="{{ config.id }}"
+                        data-config-name="{{ config.name }}">
+                        <i class="fas fa-play me-1"></i> Run Now
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-5">
+                <div class="mb-4">
+                    <i class="fas fa-cogs text-muted fa-5x"></i>
+                </div>
+                <h3 class="h4 mb-3">No Job Configurations Yet</h3>
+                <p class="text-muted mb-4">Create a job configuration to start applying for jobs automatically.</p>
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal"
+                    data-bs-target="#createConfigModal">
+                    <i class="fas fa-plus me-1"></i> Create Your First Configuration
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Config Limit Alert -->
+{% if current_user.subscription and current_user.subscription.is_active() and configs|length >=
+current_user.subscription.plan.max_job_configs %}
+<div class="alert alert-info mt-4" role="alert">
+    <div class="d-flex align-items-center">
+        <div class="flex-shrink-0">
+            <i class="fas fa-info-circle fa-2x me-3"></i>
+        </div>
+        <div class="flex-grow-1">
+            <h4 class="alert-heading">Configuration Limit Reached</h4>
+            <p class="mb-0">You have reached the maximum number of job configurations allowed by your subscription plan
+                ({{ current_user.subscription.plan.max_job_configs }}). To create more configurations, please upgrade
+                your plan.</p>
+        </div>
+        <div class="flex-shrink-0">
+            <a href="{{ url_for('main.subscription') }}" class="btn btn-info">Upgrade Plan</a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Create Config Modal -->
+<div class="modal fade" id="createConfigModal" tabindex="-1" aria-labelledby="createConfigModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="createConfigModalLabel">Create Job Configuration</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="jobConfigForm" action="{{ url_for('main.create_job_config') }}" method="POST"
+                    class="needs-validation" novalidate>
+                    <div class="mb-3">
+                        <label for="configName" class="form-label">Configuration Name</label>
+                        <input type="text" class="form-control" id="configName" name="name"
+                            placeholder="e.g., Software Engineer Jobs" required>
+                        <div class="invalid-feedback">
+                            Please provide a name for your configuration.
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label">Search Criteria</label>
+                        <div id="searchCriteriaContainer">
+                            <div class="card mb-3 search-criteria-item">
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label for="positions0" class="form-label">Job Titles</label>
+                                            <input type="text" class="form-control" id="positions0"
+                                                name="searches[0][positions]"
+                                                placeholder="e.g., Software Engineer, Developer" required>
+                                            <div class="form-text">Separate multiple titles with commas</div>
+                                            <div class="invalid-feedback">
+                                                Please enter at least one job title.
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="location0" class="form-label">Location</label>
+                                            <input type="text" class="form-control" id="location0"
+                                                name="searches[0][location]" placeholder="e.g., San Francisco, CA"
+                                                required>
+                                            <div class="invalid-feedback">
+                                                Please enter a location.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" id="addSearchCriteria" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-plus me-1"></i> Add Another Search
+                        </button>
+                    </div>
+
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label">Keywords (Optional)</label>
+                            <div class="input-group mb-2">
+                                <input type="text" class="form-control" id="newKeyword" placeholder="Add a keyword">
+                                <button class="btn btn-outline-primary" type="button" id="addKeyword">Add</button>
+                            </div>
+                            <div class="form-text mb-2">Add keywords to prioritize jobs that match these terms</div>
+                            <div id="keywordsContainer" class="mb-2"></div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Blacklist (Optional)</label>
+                            <div class="input-group mb-2">
+                                <input type="text" class="form-control" id="newBlacklistKeyword"
+                                    placeholder="Add a blacklist term">
+                                <button class="btn btn-outline-danger" type="button"
+                                    id="addBlacklistKeyword">Add</button>
+                            </div>
+                            <div class="form-text mb-2">Add terms to exclude jobs containing these keywords</div>
+                            <div id="blacklistContainer" class="mb-2"></div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label for="dateRange" class="form-label">Date Range</label>
+                            <select class="form-select" id="dateRange" name="date_range">
+                                <option value="any">Any Time</option>
+                                <option value="1d" selected>Past 24 hours</option>
+                                <option value="1w">Past Week</option>
+                                <option value="1m">Past Month</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="experienceLevel" class="form-label">Experience Level</label>
+                            <select class="form-select" id="experienceLevel" name="experience_level">
+                                <option value="any">Any Experience Level</option>
+                                <option value="internship">Internship</option>
+                                <option value="entry" selected>Entry Level</option>
+                                <option value="associate">Associate</option>
+                                <option value="mid-senior">Mid-Senior Level</option>
+                                <option value="director">Director</option>
+                                <option value="executive">Executive</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="isActive" name="is_active" value="1"
+                                checked>
+                            <label class="form-check-label" for="isActive">
+                                Activate this configuration
+                            </label>
+                            <div class="form-text">Active configurations will be used for scheduled job applications
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" form="jobConfigForm" class="btn btn-primary">Create Configuration</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Config Modal -->
+<div class="modal fade" id="deleteConfigModal" tabindex="-1" aria-labelledby="deleteConfigModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteConfigModalLabel">Delete Configuration</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the configuration "<span id="configNameToDelete"></span>"?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+                <form id="deleteConfigForm" action="{{ url_for('main.delete_job_config', config_id=0) }}" method="POST">
+                    <!-- The action URL will be updated via JavaScript -->
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" form="deleteConfigForm" class="btn btn-danger">Delete Configuration</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Run Job Modal -->
+<div class="modal fade" id="runJobModal" tabindex="-1" aria-labelledby="runJobModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="runJobModalLabel">Run Job Search</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to run the job search "<span id="configNameToRun"></span>"?</p>
+                <p>This will start applying to jobs based on your configuration.</p>
+
+                <form id="runJobForm" method="POST" action="{{ url_for('main.run_job_search') }}">
+                    <input type="hidden" name="config_id" id="configIdToRun">
+                    <div class="mb-3">
+                        <label for="resumeSelect" class="form-label">Select Resume</label>
+                        <select class="form-select" id="resumeSelect" name="resume_id" required>
+                            <option value="">Choose a resume...</option>
+                            {% for resume in current_user.resumes %}
+                            <option value="{{ resume.id }}" {% if resume.is_default %}selected{% endif %}>{{ resume.name
+                                }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="invalid-feedback">
+                            Please select a resume.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="maxApplications" class="form-label">Maximum Applications</label>
+                        <input type="number" class="form-control" id="maxApplications" name="max_applications" min="1"
+                            max="100" value="20">
+                        <div class="form-text">Maximum number of applications to submit in this session.</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" form="runJobForm" class="btn btn-primary">Start Job Search</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search Criteria Template (hidden) -->
+<template id="searchCriteriaTemplate">
+    <div class="card mb-3 search-criteria-item">
+        <div class="card-body">
+            <div class="d-flex justify-content-between mb-2">
+                <h6 class="card-title mb-0">Additional Search</h6>
+                <button type="button" class="btn-close remove-search-criteria" aria-label="Remove"></button>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="positionsINDEX" class="form-label">Job Titles</label>
+                    <input type="text" class="form-control" id="positionsINDEX" name="searches[INDEX][positions]"
+                        placeholder="e.g., Software Engineer, Developer" required>
+                    <div class="form-text">Separate multiple titles with commas</div>
+                    <div class="invalid-feedback">
+                        Please enter at least one job title.
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label for="locationINDEX" class="form-label">Location</label>
+                    <input type="text" class="form-control" id="locationINDEX" name="searches[INDEX][location]"
+                        placeholder="e.g., San Francisco, CA" required>
+                    <div class="invalid-feedback">
+                        Please enter a location.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Delete Config Modal
+        const deleteConfigModal = document.getElementById('deleteConfigModal');
+        if (deleteConfigModal) {
+            deleteConfigModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                const configId = button.getAttribute('data-config-id');
+                const configName = button.getAttribute('data-config-name');
+
+                document.getElementById('configNameToDelete').textContent = configName;
+                document.getElementById('deleteConfigForm').action = "{{ url_for('main.delete_job_config', config_id=0) }}".replace('0', configId);
+            });
+        }
+
+        // Run Job Modal
+        const runJobModal = document.getElementById('runJobModal');
+        if (runJobModal) {
+            runJobModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                const configId = button.getAttribute('data-config-id');
+                const configName = button.getAttribute('data-config-name');
+
+                document.getElementById('configNameToRun').textContent = configName;
+                document.getElementById('configIdToRun').value = configId;
+            });
+        }
+    });
+</script>
+{% endblock %}

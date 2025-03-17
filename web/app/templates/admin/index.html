@@ -1,0 +1,212 @@
+{% extends "layout.html" %}
+
+{% block title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">Admin Dashboard</h1>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Admin</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Admin Navigation -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('admin.users') }}" class="btn btn-outline-primary">
+                            <i class="bi bi-people me-2"></i>User Management
+                        </a>
+                        <a href="{{ url_for('admin.subscriptions') }}" class="btn btn-outline-primary">
+                            <i class="bi bi-credit-card me-2"></i>Subscriptions
+                        </a>
+                        <a href="{{ url_for('admin.analytics') }}" class="btn btn-outline-primary">
+                            <i class="bi bi-graph-up me-2"></i>Analytics
+                        </a>
+                        <a href="{{ url_for('admin.system') }}" class="btn btn-outline-primary">
+                            <i class="bi bi-gear me-2"></i>System Health
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">Total Users</h5>
+                    <p class="display-4">{{ total_users }}</p>
+                    <p class="text-muted">{{ active_users }} active</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">Subscriptions</h5>
+                    <p class="display-4">{{ total_subscriptions }}</p>
+                    <p class="text-muted">{{ active_subscriptions }} active</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">Applications</h5>
+                    <p class="display-4">{{ total_applications }}</p>
+                    <p class="text-muted">All time</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">Revenue</h5>
+                    <p class="display-4">$<span id="revenue-counter">0</span></p>
+                    <p class="text-muted">Monthly recurring</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Subscriptions by Plan</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="subscriptionChart" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Applications by Status</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="applicationChart" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Recent Users</h5>
+                    <a href="{{ url_for('admin.users') }}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Joined</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in recent_users %}
+                                <tr>
+                                    <td>
+                                        <a href="{{ url_for('admin.user_detail', user_id=user.id) }}">
+                                            {{ user.get_full_name() }}
+                                        </a>
+                                    </td>
+                                    <td>{{ user.email }}</td>
+                                    <td>{{ user.created_at.strftime('%b %d, %Y') }}</td>
+                                    <td>
+                                        <span
+                                            class="badge {% if user.is_active %}bg-success{% else %}bg-danger{% endif %}">
+                                            {% if user.is_active %}Active{% else %}Inactive{% endif %}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Recent Subscriptions</h5>
+                    <a href="{{ url_for('admin.subscriptions') }}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Plan</th>
+                                    <th>Created</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for subscription in recent_subscriptions %}
+                                <tr>
+                                    <td>
+                                        <a href="{{ url_for('admin.user_detail', user_id=subscription.user_id) }}">
+                                            {{ subscription.user.get_full_name() }}
+                                        </a>
+                                    </td>
+                                    <td>{{ subscription.plan|capitalize }}</td>
+                                    <td>{{ subscription.created_at.strftime('%b %d, %Y') }}</td>
+                                    <td>
+                                        <span class="badge 
+                                            {% if subscription.status == 'active' %}bg-success
+                                            {% elif subscription.status == 'canceled' %}bg-warning
+                                            {% else %}bg-danger{% endif %}">
+                                            {{ subscription.status|capitalize }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Simple revenue counter animation
+    document.addEventListener('DOMContentLoaded', function () {
+        var revenueCounter = document.getElementById('revenue-counter');
+        var targetRevenue = 1250; // This would be dynamic in a real app
+
+        // Set the value immediately for now
+        revenueCounter.textContent = targetRevenue.toLocaleString();
+
+        // In the charts sections, display placeholder text
+        document.getElementById('subscriptionChart').innerHTML = '<div class="text-center p-5"><p class="text-muted">Subscription data visualization would appear here</p></div>';
+        document.getElementById('applicationChart').innerHTML = '<div class="text-center p-5"><p class="text-muted">Application data visualization would appear here</p></div>';
+    });
+</script>
+{% endblock %}

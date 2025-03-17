@@ -1,0 +1,174 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ resume.name }} - AIHawk{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('main.resumes') }}">Resumes</a></li>
+                <li class="breadcrumb-item active" aria-current="page">{{ resume.name }}</li>
+            </ol>
+        </nav>
+        <h1 class="h2 mb-0">{{ resume.name }}</h1>
+        <p class="text-muted">
+            {% if resume.is_default %}
+            <span class="badge bg-primary me-2">Default Resume</span>
+            {% endif %}
+            <span>Uploaded on {{ resume.created_at.strftime('%B %d, %Y') }}</span>
+        </p>
+    </div>
+    <div class="col-auto">
+        <div class="btn-group">
+            <a href="{{ url_for('main.download_resume', resume_id=resume.id) }}" class="btn btn-outline-primary">
+                <i class="fas fa-download me-1"></i> Download
+            </a>
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal"
+                data-bs-target="#deleteResumeModal" data-resume-id="{{ resume.id }}"
+                data-resume-name="{{ resume.name }}">
+                <i class="fas fa-trash me-1"></i> Delete
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Resume Preview -->
+    <div class="col-lg-8 mb-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">Resume Preview</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="resume-preview" style="height: 800px;">
+                    {% if resume.file_type == 'pdf' %}
+                    <object data="{{ url_for('main.resume_file', resume_id=resume.id) }}" type="application/pdf"
+                        width="100%" height="100%">
+                        <div class="text-center py-5">
+                            <i class="fas fa-file-pdf text-danger fa-5x mb-3"></i>
+                            <p>Your browser does not support PDF preview.</p>
+                            <a href="{{ url_for('main.download_resume', resume_id=resume.id) }}"
+                                class="btn btn-primary">Download PDF</a>
+                        </div>
+                    </object>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-file-word text-primary fa-5x mb-3"></i>
+                        <p>Word document preview is not available.</p>
+                        <a href="{{ url_for('main.download_resume', resume_id=resume.id) }}"
+                            class="btn btn-primary">Download Document</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resume Details -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">Resume Details</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span>File Type</span>
+                        <span class="badge bg-secondary">{{ resume.file_type|upper }}</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span>File Size</span>
+                        <span>{{ (resume.file_size / 1024)|round(1) }} KB</span>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span>Uploaded</span>
+                        <span>{{ resume.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    </li>
+                    {% if resume.last_used_at %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span>Last Used</span>
+                        <span>{{ resume.last_used_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    </li>
+                    {% endif %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+                        <span>Applications</span>
+                        <span class="badge bg-primary rounded-pill">{{ resume.applications|length }}</span>
+                    </li>
+                </ul>
+
+                {% if not resume.is_default %}
+                <form action="{{ url_for('main.set_default_resume', resume_id=resume.id) }}" method="POST" class="mt-3">
+                    <button type="submit" class="btn btn-primary w-100">Set as Default Resume</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Applications -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Recent Applications</h5>
+                <a href="{{ url_for('main.applications') }}?resume_id={{ resume.id }}"
+                    class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if resume.applications %}
+                <div class="list-group list-group-flush">
+                    {% for application in resume.applications[:5] %}
+                    <a href="{{ url_for('main.application_detail', application_id=application.id) }}"
+                        class="list-group-item list-group-item-action">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">{{ application.job_title }}</h6>
+                            <small class="text-muted">{{ application.application_date.strftime('%Y-%m-%d') }}</small>
+                        </div>
+                        <p class="mb-1">{{ application.company_name }}</p>
+                        <div>
+                            <span class="badge bg-{{ application.status_color }}">{{ application.status }}</span>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <p class="text-muted mb-0">No applications with this resume yet.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Resume Modal -->
+<div class="modal fade" id="deleteResumeModal" tabindex="-1" aria-labelledby="deleteResumeModalLabel"
+    aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteResumeModalLabel">Delete Resume</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the resume "<span id="resumeNameToDelete">{{ resume.name }}</span>"?
+                </p>
+                <p class="text-danger">This action cannot be undone.</p>
+                {% if resume.applications %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    This resume has been used in {{ resume.applications|length }} job applications. Deleting it may
+                    affect your application history.
+                </div>
+                {% endif %}
+                <form id="deleteResumeForm" action="{{ url_for('main.delete_resume', resume_id=resume.id) }}"
+                    method="POST">
+                    <!-- The form will be submitted via JavaScript -->
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" form="deleteResumeForm" class="btn btn-danger">Delete Resume</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

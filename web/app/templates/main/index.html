@@ -1,0 +1,298 @@
+{% extends "layout.html" %}
+
+{% block title %}AIHawk - Automate Your LinkedIn Job Applications{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="py-5">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-6">
+                <h1 class="display-4 fw-bold mb-4">Automate Your LinkedIn Job Search</h1>
+                <p class="lead mb-4">AIHawk helps you apply to hundreds of jobs on LinkedIn automatically, using AI to
+                    generate personalized responses and tailor your resume for each application.</p>
+                <div class="d-grid gap-2 d-md-flex justify-content-md-start">
+                    <a href="{{ url_for('auth.register') }}" class="btn btn-primary btn-lg px-4 me-md-2">Get Started</a>
+                    <a href="#features" class="btn btn-outline-secondary btn-lg px-4">Learn More</a>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <img src="{{ url_for('static', filename='img/hero-image.svg') }}"
+                    alt="AIHawk Job Application Automation" class="img-fluid">
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Features Section -->
+<section class="py-5 bg-light" id="features">
+    <div class="container">
+        <div class="text-center mb-5">
+            <h2 class="fw-bold">Key Features</h2>
+            <p class="lead">Save time and increase your chances of landing interviews</p>
+        </div>
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body text-center p-4">
+                        <div class="feature-icon bg-primary bg-gradient text-white rounded-circle mb-3">
+                            <i class="fas fa-robot fa-2x p-3"></i>
+                        </div>
+                        <h3 class="fs-4 fw-bold">Automated Applications</h3>
+                        <p class="mb-0">Apply to hundreds of jobs automatically with LinkedIn Easy Apply, saving you
+                            hours of repetitive work.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body text-center p-4">
+                        <div class="feature-icon bg-primary bg-gradient text-white rounded-circle mb-3">
+                            <i class="fas fa-brain fa-2x p-3"></i>
+                        </div>
+                        <h3 class="fs-4 fw-bold">AI-Powered Responses</h3>
+                        <p class="mb-0">Generate intelligent, personalized responses to application questions using
+                            advanced AI technology.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body text-center p-4">
+                        <div class="feature-icon bg-primary bg-gradient text-white rounded-circle mb-3">
+                            <i class="fas fa-file-alt fa-2x p-3"></i>
+                        </div>
+                        <h3 class="fs-4 fw-bold">Resume Optimization</h3>
+                        <p class="mb-0">Automatically tailor your resume for each job application to match the job
+                            description and increase your chances.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- How It Works Section -->
+<section class="py-5">
+    <div class="container">
+        <div class="text-center mb-5">
+            <h2 class="fw-bold">How It Works</h2>
+            <p class="lead">Three simple steps to automate your job search</p>
+        </div>
+        <div class="row">
+            <div class="col-md-4 mb-4 mb-md-0">
+                <div class="text-center">
+                    <div class="step-circle bg-primary text-white rounded-circle mb-3 mx-auto">1</div>
+                    <h3 class="fs-4 fw-bold">Configure Your Search</h3>
+                    <p>Set up your job search criteria, including job titles, locations, and other preferences.</p>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4 mb-md-0">
+                <div class="text-center">
+                    <div class="step-circle bg-primary text-white rounded-circle mb-3 mx-auto">2</div>
+                    <h3 class="fs-4 fw-bold">Upload Your Resume</h3>
+                    <p>Upload your resume and let our AI optimize it for each job application.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-center">
+                    <div class="step-circle bg-primary text-white rounded-circle mb-3 mx-auto">3</div>
+                    <h3 class="fs-4 fw-bold">Start Applying</h3>
+                    <p>Launch the automation and watch as AIHawk applies to jobs for you, tracking all applications.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Pricing Section -->
+<section class="py-5 bg-light" id="pricing">
+    <div class="container">
+        <div class="text-center mb-5">
+            <h2 class="fw-bold">Pricing Plans</h2>
+            <p class="lead">Choose the plan that fits your needs</p>
+        </div>
+        <div class="row g-4 justify-content-center">
+            {% for plan in plans %}
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm {% if plan.name == 'Premium' %}border-primary{% endif %}">
+                    <div
+                        class="card-header bg-transparent border-0 text-center pt-4 {% if plan.name == 'Premium' %}text-primary{% endif %}">
+                        <h3 class="fw-bold">{{ plan.name }}</h3>
+                    </div>
+                    <div class="card-body text-center">
+                        <h2 class="card-title pricing-card-title">
+                            ${{ "%.2f"|format(plan.price_monthly) }}<small class="text-muted fw-light">/mo</small>
+                        </h2>
+                        <p class="text-muted mb-4">or ${{ "%.2f"|format(plan.price_yearly) }} billed annually</p>
+                        <ul class="list-unstyled">
+                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{
+                                plan.max_applications_per_day }} applications per day</li>
+                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{
+                                plan.max_concurrent_sessions }} concurrent sessions</li>
+                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{ plan.max_resumes }}
+                                resumes</li>
+                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{ plan.max_job_configs }}
+                                job configurations</li>
+                            <li class="mb-2">
+                                {% if plan.has_priority_support %}
+                                <i class="fas fa-check text-success me-2"></i>Priority support
+                                {% else %}
+                                <i class="fas fa-times text-muted me-2"></i>Priority support
+                                {% endif %}
+                            </li>
+                            <li class="mb-2">
+                                {% if plan.has_advanced_analytics %}
+                                <i class="fas fa-check text-success me-2"></i>Advanced analytics
+                                {% else %}
+                                <i class="fas fa-times text-muted me-2"></i>Advanced analytics
+                                {% endif %}
+                            </li>
+                            <li class="mb-2">
+                                {% if plan.has_custom_resume_generation %}
+                                <i class="fas fa-check text-success me-2"></i>Custom resume generation
+                                {% else %}
+                                <i class="fas fa-times text-muted me-2"></i>Custom resume generation
+                                {% endif %}
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-footer bg-transparent border-0 text-center pb-4">
+                        <a href="{{ url_for('auth.register') }}"
+                            class="btn btn-lg {% if plan.name == 'Premium' %}btn-primary{% else %}btn-outline-primary{% endif %} w-100">Get
+                            Started</a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- Testimonials Section -->
+<section class="py-5">
+    <div class="container">
+        <div class="text-center mb-5">
+            <h2 class="fw-bold">What Our Users Say</h2>
+            <p class="lead">Join thousands of satisfied job seekers</p>
+        </div>
+        <div class="row">
+            <div class="col-md-4 mb-4 mb-md-0">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="d-flex mb-3">
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                        </div>
+                        <p class="card-text mb-3">"AIHawk helped me apply to over 200 jobs in just a week. I got 15
+                            interview requests and landed my dream job at a tech company!"</p>
+                        <div class="d-flex align-items-center">
+                            <div class="avatar bg-primary text-white rounded-circle me-3">JS</div>
+                            <div>
+                                <h5 class="mb-0 fw-bold">John Smith</h5>
+                                <small class="text-muted">Software Engineer</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-4 mb-md-0">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="d-flex mb-3">
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                        </div>
+                        <p class="card-text mb-3">"The AI-generated responses to application questions were incredibly
+                            personalized. It saved me hours of time and helped me stand out from other applicants."</p>
+                        <div class="d-flex align-items-center">
+                            <div class="avatar bg-primary text-white rounded-circle me-3">SD</div>
+                            <div>
+                                <h5 class="mb-0 fw-bold">Sarah Davis</h5>
+                                <small class="text-muted">Marketing Manager</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="d-flex mb-3">
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                            <i class="fas fa-star text-warning"></i>
+                        </div>
+                        <p class="card-text mb-3">"As a recent graduate, I was struggling to get interviews. AIHawk
+                            helped me optimize my resume for each job and I started getting callbacks within days!"</p>
+                        <div class="d-flex align-items-center">
+                            <div class="avatar bg-primary text-white rounded-circle me-3">MJ</div>
+                            <div>
+                                <h5 class="mb-0 fw-bold">Michael Johnson</h5>
+                                <small class="text-muted">Data Analyst</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Section -->
+<section class="py-5 bg-primary text-white">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-8 mx-auto text-center">
+                <h2 class="fw-bold mb-3">Ready to Supercharge Your Job Search?</h2>
+                <p class="lead mb-4">Join thousands of job seekers who are saving time and getting more interviews with
+                    AIHawk.</p>
+                <div class="d-grid gap-2 d-sm-flex justify-content-sm-center">
+                    <a href="{{ url_for('auth.register') }}" class="btn btn-light btn-lg px-4 me-sm-3">Get Started
+                        Now</a>
+                    <a href="#pricing" class="btn btn-outline-light btn-lg px-4">View Pricing</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block styles %}
+<style>
+    .feature-icon {
+        width: 70px;
+        height: 70px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .step-circle {
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: bold;
+    }
+
+    .avatar {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+    }
+</style>
+{% endblock %}

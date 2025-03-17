@@ -1,0 +1,163 @@
+{% extends "layout.html" %}
+
+{% block title %}Subscription Plans{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-4">Choose Your Subscription Plan</h1>
+            <p class="lead">Select the plan that best fits your job search needs. All plans include our core features to
+                help you find and apply to jobs efficiently.</p>
+        </div>
+    </div>
+
+    {% if has_subscription %}
+    <div class="alert alert-info mb-4">
+        <h4 class="alert-heading">You have an active subscription!</h4>
+        <p>You are currently subscribed to the <strong>{{ plans[subscription.plan]['name'] }}</strong> plan.</p>
+        <hr>
+        <p class="mb-0">
+            <a href="{{ url_for('billing.subscription_details') }}" class="btn btn-primary">View Subscription
+                Details</a>
+            <a href="{{ url_for('billing.customer_portal') }}" class="btn btn-outline-primary">Manage Subscription</a>
+        </p>
+    </div>
+    {% endif %}
+
+    <div class="row row-cols-1 row-cols-md-3 mb-3 text-center">
+        <!-- Basic Plan -->
+        <div class="col">
+            <div class="card mb-4 rounded-3 shadow-sm">
+                <div class="card-header py-3">
+                    <h4 class="my-0 fw-normal">{{ plans['basic']['name'] }}</h4>
+                </div>
+                <div class="card-body">
+                    <h1 class="card-title pricing-card-title">$9.99<small class="text-muted fw-light">/mo</small></h1>
+                    <p class="mt-3 mb-4">{{ plans['basic']['description'] }}</p>
+                    <ul class="list-unstyled mt-3 mb-4">
+                        {% for feature in plans['basic']['features'] %}
+                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success me-2"></i>{{ feature }}</li>
+                        {% endfor %}
+                    </ul>
+                    <a href="{{ url_for('billing.checkout', plan_id='basic') }}"
+                        class="w-100 btn btn-lg btn-outline-primary">Subscribe</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Professional Plan -->
+        <div class="col">
+            <div class="card mb-4 rounded-3 shadow-sm border-primary">
+                <div class="card-header py-3 text-white bg-primary border-primary">
+                    <h4 class="my-0 fw-normal">{{ plans['professional']['name'] }}</h4>
+                </div>
+                <div class="card-body">
+                    <h1 class="card-title pricing-card-title">$19.99<small class="text-muted fw-light">/mo</small></h1>
+                    <p class="mt-3 mb-4">{{ plans['professional']['description'] }}</p>
+                    <ul class="list-unstyled mt-3 mb-4">
+                        {% for feature in plans['professional']['features'] %}
+                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success me-2"></i>{{ feature }}</li>
+                        {% endfor %}
+                    </ul>
+                    <a href="{{ url_for('billing.checkout', plan_id='professional') }}"
+                        class="w-100 btn btn-lg btn-primary">Subscribe</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Enterprise Plan -->
+        <div class="col">
+            <div class="card mb-4 rounded-3 shadow-sm">
+                <div class="card-header py-3">
+                    <h4 class="my-0 fw-normal">{{ plans['enterprise']['name'] }}</h4>
+                </div>
+                <div class="card-body">
+                    <h1 class="card-title pricing-card-title">$39.99<small class="text-muted fw-light">/mo</small></h1>
+                    <p class="mt-3 mb-4">{{ plans['enterprise']['description'] }}</p>
+                    <ul class="list-unstyled mt-3 mb-4">
+                        {% for feature in plans['enterprise']['features'] %}
+                        <li class="mb-2"><i class="bi bi-check-circle-fill text-success me-2"></i>{{ feature }}</li>
+                        {% endfor %}
+                    </ul>
+                    <a href="{{ url_for('billing.checkout', plan_id='enterprise') }}"
+                        class="w-100 btn btn-lg btn-outline-primary">Subscribe</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-5">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="card-title">Frequently Asked Questions</h3>
+                    <div class="accordion mt-4" id="faqAccordion">
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faqOne">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#collapseOne" aria-expanded="false" aria-controls="collapseOne">
+                                    Can I change my plan later?
+                                </button>
+                            </h2>
+                            <div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="faqOne"
+                                data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    Yes, you can upgrade or downgrade your plan at any time. Changes will take effect at
+                                    the start of your next billing cycle.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faqTwo">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#collapseTwo" aria-expanded="false" aria-controls="collapseTwo">
+                                    How do I cancel my subscription?
+                                </button>
+                            </h2>
+                            <div id="collapseTwo" class="accordion-collapse collapse" aria-labelledby="faqTwo"
+                                data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    You can cancel your subscription at any time from your subscription details page.
+                                    Your subscription will remain active until the end of your current billing period.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faqThree">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#collapseThree" aria-expanded="false" aria-controls="collapseThree">
+                                    Do you offer refunds?
+                                </button>
+                            </h2>
+                            <div id="collapseThree" class="accordion-collapse collapse" aria-labelledby="faqThree"
+                                data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    We offer a 7-day money-back guarantee for all new subscriptions. If you're not
+                                    satisfied with our service, contact our support team within 7 days of your initial
+                                    purchase for a full refund.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="faqFour">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                    data-bs-target="#collapseFour" aria-expanded="false" aria-controls="collapseFour">
+                                    What payment methods do you accept?
+                                </button>
+                            </h2>
+                            <div id="collapseFour" class="accordion-collapse collapse" aria-labelledby="faqFour"
+                                data-bs-parent="#faqAccordion">
+                                <div class="accordion-body">
+                                    We accept all major credit cards (Visa, Mastercard, American Express, Discover)
+                                    through our secure payment processor, Stripe.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

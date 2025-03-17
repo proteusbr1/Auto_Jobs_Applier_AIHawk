@@ -1,0 +1,234 @@
+/* 
+ * AIHawk - LinkedIn Job Application Automation
+ * Custom CSS Styles
+ */
+
+/* Global Styles */
+:root {
+    --primary-color: #0d6efd;
+    --secondary-color: #6c757d;
+    --success-color: #198754;
+    --info-color: #0dcaf0;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --light-color: #f8f9fa;
+    --dark-color: #212529;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #333;
+    background-color: #f5f7fa;
+}
+
+/* Custom Card Styles */
+.card {
+    border-radius: 0.5rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.1);
+}
+
+.card-header {
+    border-top-left-radius: 0.5rem !important;
+    border-top-right-radius: 0.5rem !important;
+}
+
+/* Feature Icons */
+.feature-icon {
+    width: 70px;
+    height: 70px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Step Circles */
+.step-circle {
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+/* Avatar */
+.avatar {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+}
+
+/* Dashboard Styles */
+.stat-card {
+    border-left: 4px solid var(--primary-color);
+}
+
+.stat-card.success {
+    border-left-color: var(--success-color);
+}
+
+.stat-card.info {
+    border-left-color: var(--info-color);
+}
+
+.stat-card.warning {
+    border-left-color: var(--warning-color);
+}
+
+/* Status Badges */
+.badge.bg-applied {
+    background-color: var(--primary-color);
+}
+
+.badge.bg-viewed {
+    background-color: var(--info-color);
+}
+
+.badge.bg-interviewed {
+    background-color: var(--success-color);
+}
+
+.badge.bg-rejected {
+    background-color: var(--danger-color);
+}
+
+.badge.bg-offered {
+    background-color: var(--warning-color);
+    color: #212529;
+}
+
+/* Form Styles */
+.form-control:focus, .form-select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.form-label {
+    font-weight: 500;
+}
+
+/* Resume Card */
+.resume-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.resume-card .resume-actions {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.resume-card:hover .resume-actions {
+    opacity: 1;
+}
+
+.resume-card .resume-preview {
+    height: 200px;
+    overflow: hidden;
+    background-color: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Job Config Card */
+.job-config-card {
+    position: relative;
+}
+
+.job-config-card .badge-active {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+}
+
+/* Application Timeline */
+.application-timeline {
+    position: relative;
+    padding-left: 2rem;
+}
+
+.application-timeline::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0.5rem;
+    width: 2px;
+    background-color: #dee2e6;
+}
+
+.timeline-item {
+    position: relative;
+    margin-bottom: 1.5rem;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -2rem;
+    top: 0.25rem;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    background-color: var(--primary-color);
+    border: 2px solid #fff;
+}
+
+.timeline-item.success::before {
+    background-color: var(--success-color);
+}
+
+.timeline-item.warning::before {
+    background-color: var(--warning-color);
+}
+
+.timeline-item.danger::before {
+    background-color: var(--danger-color);
+}
+
+.timeline-item.info::before {
+    background-color: var(--info-color);
+}
+
+/* Loading Spinner */
+.spinner-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .card-title {
+        font-size: 1rem;
+    }
+    
+    .display-5 {
+        font-size: 2rem;
+    }
+    
+    .feature-icon, .step-circle {
+        width: 50px;
+        height: 50px;
+    }
+}
