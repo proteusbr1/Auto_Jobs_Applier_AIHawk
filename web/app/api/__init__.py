@@ -5,4 +5,4 @@ from flask import Blueprint
 
 api_bp = Blueprint('api', __name__)
 
-from app.api import routes, auth, job_configs, resumes, job_applications, job_tasks
+from app.api import routes, auth, auth_debug, job_configs, resumes, job_applications, job_tasks

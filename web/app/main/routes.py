@@ -159,14 +159,93 @@ def profile():
 @login_required
 def subscription():
     """Render the subscription page."""
+    import json
+    
     try:
         plans = SubscriptionPlan.query.all()
+        # Parse JSON features for each plan
+        for plan in plans:
+            if plan.features:
+                try:
+                    plan.features_dict = json.loads(plan.features)
+                except:
+                    plan.features_dict = {}
+            else:
+                plan.features_dict = {}
     except Exception as e:
         current_app.logger.error(f"Database error: {str(e)}")
         plans = []  # Provide an empty list as fallback
     
     user_subscription = current_user.subscription
-    return render_template('main/subscription.html', plans=plans, subscription=user_subscription)
+    # Get the current plan details if user has a subscription
+    current_plan = None
+    if user_subscription and user_subscription.is_active():
+        for plan in plans:
+            if plan.name == user_subscription.plan:
+                current_plan = plan
+                break
+    
+    return render_template('main/subscription.html', plans=plans, subscription=user_subscription, current_plan=current_plan)
+
+
+@main_bp.route('/subscription/subscribe', methods=['POST'])
+@login_required
+def subscribe():
+    """Subscribe to a plan."""
+    plan_id = request.form.get('plan_id')
+    if not plan_id:
+        flash('Invalid plan selected.', 'danger')
+        return redirect(url_for('main.subscription'))
+    
+    try:
+        plan = SubscriptionPlan.query.get(plan_id)
+        if not plan:
+            flash('Selected plan does not exist.', 'danger')
+            return redirect(url_for('main.subscription'))
+        
+        # Check if user already has a subscription
+        if current_user.subscription:
+            # Update existing subscription
+            current_user.subscription.plan = plan.name
+            current_user.subscription.status = 'active'
+            flash(f'Your subscription has been updated to {plan.name}.', 'success')
+        else:
+            # Create new subscription
+            subscription = Subscription(
+                user_id=current_user.id,
+                plan=plan.name,
+                status='active'
+            )
+            db.session.add(subscription)
+            flash(f'You have successfully subscribed to the {plan.name} plan.', 'success')
+        
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Subscription error: {str(e)}")
+        flash('An error occurred while processing your subscription. Please try again.', 'danger')
+    
+    return redirect(url_for('main.subscription'))
+
+
+@main_bp.route('/subscription/cancel', methods=['POST'])
+@login_required
+def cancel_subscription():
+    """Cancel a subscription."""
+    if not current_user.subscription:
+        flash('You do not have an active subscription to cancel.', 'warning')
+        return redirect(url_for('main.subscription'))
+    
+    try:
+        current_user.subscription.status = 'canceled'
+        db.session.commit()
+        flash('Your subscription has been canceled. You will still have access until the end of your billing period.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Subscription cancellation error: {str(e)}")
+        flash('An error occurred while canceling your subscription. Please try again.', 'danger')
+    
+    return redirect(url_for('main.subscription'))
 
 
 @main_bp.route('/privacy')
@@ -185,3 +264,10 @@ def terms():
 def contact():
     """Render the contact page."""
     return render_template('main/contact.html')
+
+
+@main_bp.route('/linkedin-auth')
+@login_required
+def linkedin_auth():
+    """Render the LinkedIn authentication page."""
+    return render_template('main/linkedin_auth.html')

@@ -75,6 +75,20 @@ def create_app(config_name=None):
     from app.main import main_bp
     app.register_blueprint(main_bp)
     
+    # Register admin blueprint
+    try:
+        from app.admin import admin_bp
+        app.register_blueprint(admin_bp)
+    except ImportError:
+        pass
+    
+    # Register LinkedIn blueprint
+    try:
+        from app.linkedin import init_app as init_linkedin
+        init_linkedin(app)
+    except ImportError:
+        pass
+    
     # Try to register health check blueprint
     try:
         from app.health import init_app as init_health

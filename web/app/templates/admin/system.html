@@ -1,0 +1,188 @@
+{% extends "layout.html" %}
+
+{% block title %}System Health - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">System Health</h1>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('admin.index') }}">Admin</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">System Health</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <!-- System Status -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Application Success Rate</h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <div class="progress" style="height: 30px;">
+                            <div class="progress-bar bg-success" role="progressbar" style="width: {{ success_rate }}%"
+                                aria-valuenow="{{ success_rate }}" aria-valuemin="0" aria-valuemax="100">
+                                {{ success_rate|round(1) }}%
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row text-center mt-4">
+                        <div class="col-6">
+                            <h5>{{ successful_applications }}</h5>
+                            <p class="text-muted">Successful Applications</p>
+                        </div>
+                        <div class="col-6">
+                            <h5>{{ total_applications }}</h5>
+                            <p class="text-muted">Total Applications</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Error Rates</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>Application Errors</span>
+                            <span>{{ error_rates.application_errors }}%</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar bg-danger" role="progressbar"
+                                style="width: {{ error_rates.application_errors }}%"
+                                aria-valuenow="{{ error_rates.application_errors }}" aria-valuemin="0"
+                                aria-valuemax="100"></div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>Payment Errors</span>
+                            <span>{{ error_rates.payment_errors }}%</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar bg-warning" role="progressbar"
+                                style="width: {{ error_rates.payment_errors }}%"
+                                aria-valuenow="{{ error_rates.payment_errors }}" aria-valuemin="0" aria-valuemax="100">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>API Errors</span>
+                            <span>{{ error_rates.api_errors }}%</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar bg-info" role="progressbar"
+                                style="width: {{ error_rates.api_errors }}%"
+                                aria-valuenow="{{ error_rates.api_errors }}" aria-valuemin="0" aria-valuemax="100">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">CPU Usage</h5>
+                    <p class="display-4">{{ cpu_usage|round(1) }}%</p>
+                    <p class="text-muted">Average over 24h</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">Memory Usage</h5>
+                    <p class="display-4">{{ memory_usage|round(1) }}%</p>
+                    <p class="text-muted">{{ memory_used|round(1) }} GB / {{ memory_total|round(1) }} GB</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">Disk Usage</h5>
+                    <p class="display-4">{{ disk_usage|round(1) }}%</p>
+                    <p class="text-muted">{{ disk_used|round(1) }} GB / {{ disk_total|round(1) }} GB</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">Response Time</h5>
+                    <p class="display-4">{{ response_time|round(1) }}ms</p>
+                    <p class="text-muted">Average response time</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Errors -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Recent Errors</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Type</th>
+                                    <th>Message</th>
+                                    <th>User</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if recent_errors %}
+                                {% for error in recent_errors %}
+                                <tr>
+                                    <td>{{ error.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                    <td>{{ error.type }}</td>
+                                    <td>{{ error.message }}</td>
+                                    <td>{{ error.user }}</td>
+                                    <td>
+                                        <span class="badge 
+                                                {% if error.status == 'Resolved' %}bg-success
+                                                {% elif error.status == 'Investigating' %}bg-warning
+                                                {% else %}bg-danger{% endif %}">
+                                            {{ error.status }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                {% else %}
+                                <tr>
+                                    <td colspan="5" class="text-center py-4">
+                                        <p class="text-muted mb-0">No recent errors found.</p>
+                                    </td>
+                                </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

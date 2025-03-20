@@ -1,0 +1,219 @@
+{% extends "layout.html" %}
+
+{% block title %}User Details - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">User Details</h1>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('admin.index') }}">Admin</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('admin.users') }}">Users</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ user.get_full_name() }}</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- User Information -->
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">User Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <div class="avatar-placeholder bg-primary text-white rounded-circle mb-3"
+                            style="width: 100px; height: 100px; line-height: 100px; font-size: 40px; margin: 0 auto;">
+                            {{ user.first_name[0] }}{{ user.last_name[0] }}
+                        </div>
+                        <h4>{{ user.get_full_name() }}</h4>
+                        <p class="text-muted">{{ user.email }}</p>
+                    </div>
+
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>User ID</span>
+                            <span class="text-muted">{{ user.id }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>Status</span>
+                            <span class="badge {% if user.is_active %}bg-success{% else %}bg-danger{% endif %}">
+                                {% if user.is_active %}Active{% else %}Inactive{% endif %}
+                            </span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>Admin</span>
+                            <span class="badge {% if user.is_admin %}bg-primary{% else %}bg-secondary{% endif %}">
+                                {% if user.is_admin %}Yes{% else %}No{% endif %}
+                            </span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>Joined</span>
+                            <span class="text-muted">{{ user.created_at.strftime('%Y-%m-%d') }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>Last Updated</span>
+                            <span class="text-muted">{{ user.updated_at.strftime('%Y-%m-%d') }}</span>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-footer">
+                    <div class="d-flex justify-content-between">
+                        <form action="{{ url_for('admin.toggle_user_active', user_id=user.id) }}" method="POST">
+                            <button type="submit"
+                                class="btn btn-sm {% if user.is_active %}btn-danger{% else %}btn-success{% endif %}" {%
+                                if user.id==current_user.id %}disabled{% endif %}>
+                                {% if user.is_active %}Deactivate{% else %}Activate{% endif %}
+                            </button>
+                        </form>
+                        <form action="{{ url_for('admin.toggle_user_admin', user_id=user.id) }}" method="POST">
+                            <button type="submit"
+                                class="btn btn-sm {% if user.is_admin %}btn-secondary{% else %}btn-primary{% endif %}"
+                                {% if user.id==current_user.id %}disabled{% endif %}>
+                                {% if user.is_admin %}Remove Admin{% else %}Make Admin{% endif %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Subscription Information -->
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Subscription</h5>
+                </div>
+                <div class="card-body">
+                    {% if subscription %}
+                    <div class="text-center mb-4">
+                        <div class="bg-success text-white rounded-circle mb-3"
+                            style="width: 60px; height: 60px; line-height: 60px; font-size: 24px; margin: 0 auto;">
+                            <i class="fas fa-check"></i>
+                        </div>
+                        <h4>{{ subscription.plan }}</h4>
+                        <p class="text-muted">{{ subscription.status|capitalize }}</p>
+                    </div>
+
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>Subscription ID</span>
+                            <span class="text-muted">{{ subscription.id }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>Status</span>
+                            <span class="badge 
+                                {% if subscription.status == 'active' %}bg-success
+                                {% elif subscription.status == 'canceled' %}bg-warning
+                                {% else %}bg-danger{% endif %}">
+                                {{ subscription.status|capitalize }}
+                            </span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>Created</span>
+                            <span class="text-muted">{{ subscription.created_at.strftime('%Y-%m-%d') }}</span>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>Last Updated</span>
+                            <span class="text-muted">{{ subscription.updated_at.strftime('%Y-%m-%d') }}</span>
+                        </li>
+                    </ul>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <div class="bg-secondary text-white rounded-circle mb-3"
+                            style="width: 60px; height: 60px; line-height: 60px; font-size: 24px; margin: 0 auto;">
+                            <i class="fas fa-times"></i>
+                        </div>
+                        <h4>No Subscription</h4>
+                        <p class="text-muted">This user does not have an active subscription.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Application Statistics -->
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Application Statistics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <div class="bg-info text-white rounded-circle mb-3"
+                            style="width: 60px; height: 60px; line-height: 60px; font-size: 24px; margin: 0 auto;">
+                            <i class="fas fa-chart-bar"></i>
+                        </div>
+                        <h4>{{ application_count }}</h4>
+                        <p class="text-muted">Total Applications</p>
+                    </div>
+
+                    <h6 class="mb-3">Applications by Status</h6>
+                    <ul class="list-group list-group-flush">
+                        {% for status, count in application_by_status %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>{{ status|capitalize }}</span>
+                            <span class="badge bg-primary">{{ count }}</span>
+                        </li>
+                        {% else %}
+                        <li class="list-group-item text-center">
+                            <span class="text-muted">No application data available</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Applications -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Recent Applications</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Job Title</th>
+                                    <th>Company</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for app in applications %}
+                                <tr>
+                                    <td>{{ app.id }}</td>
+                                    <td>{{ app.job_title }}</td>
+                                    <td>{{ app.company }}</td>
+                                    <td>{{ app.created_at.strftime('%Y-%m-%d') }}</td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{ app.status }}</span>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="5" class="text-center py-4">
+                                        <p class="text-muted mb-0">No applications yet.</p>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

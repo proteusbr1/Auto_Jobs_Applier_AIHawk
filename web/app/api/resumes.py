@@ -9,7 +9,7 @@ from werkzeug.utils import secure_filename
 
 from app import db
 from app.api import api_bp
-from app.models import User, Resume, GeneratedResume
+from app.models import User, Resume, GeneratedResume, SubscriptionPlan
 
 
 def allowed_file(filename):
@@ -64,12 +64,20 @@ def upload_resume():
     
     # Check if user has reached the maximum number of resumes
     subscription = user.subscription
-    if subscription and subscription.plan:
-        max_resumes = subscription.plan.max_resumes
-        if max_resumes and user.resumes.count() >= max_resumes:
-            return jsonify({
-                'error': f'You have reached the maximum number of resumes ({max_resumes}) allowed by your subscription plan.'
-            }), 403
+    if subscription and subscription.is_active():
+        # Get the subscription plan
+        plan = SubscriptionPlan.query.filter_by(name=subscription.plan).first()
+        if plan and plan.features:
+            import json
+            try:
+                features = json.loads(plan.features)
+                max_resumes = features.get('max_resumes')
+                if max_resumes and user.resumes.count() >= int(max_resumes):
+                    return jsonify({
+                        'error': f'You have reached the maximum number of resumes ({max_resumes}) allowed by your subscription plan.'
+                    }), 403
+            except (json.JSONDecodeError, ValueError) as e:
+                current_app.logger.error(f"Error parsing subscription plan features: {e}")
     
     # Check if the post request has the file part
     if 'file' not in request.files:

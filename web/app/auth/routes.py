@@ -74,7 +74,7 @@ def register():
                 name='Free Trial',
                 price=0.0,
                 interval='month',
-                features='{"max_applications_per_day": 5, "max_resumes": 2, "max_job_configs": 1}',
+                features='{"max_applications_per_day": 5, "max_resumes": 1, "max_job_configs": 1}',
                 is_active=True
             )
             db.session.add(free_plan)
@@ -167,7 +167,7 @@ def change_password():
     """Change user password."""
     data = request.json
     
-    if not current_user.check_password(data.get('current_password')):
+    if not current_user.verify_password(data.get('current_password')):
         return jsonify({'success': False, 'message': 'Current password is incorrect'}), 400
     
     current_user.password = data.get('new_password')

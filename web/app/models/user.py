@@ -22,6 +22,8 @@ class User(UserMixin, db.Model):
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
     stripe_customer_id = db.Column(db.String(255), unique=True, nullable=True)
     onboarding_completed = db.Column(db.Boolean, default=False, nullable=False)
+    linkedin_authenticated = db.Column(db.Boolean, default=False, nullable=False)
+    linkedin_session = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -102,6 +104,7 @@ class User(UserMixin, db.Model):
             'is_admin': self.is_admin,
             'has_subscription': self.has_active_subscription(),
             'subscription_plan': self.get_subscription_plan(),
+            'linkedin_authenticated': self.linkedin_authenticated,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

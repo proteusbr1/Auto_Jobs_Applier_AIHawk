@@ -1,0 +1,102 @@
+{% extends "layout.html" %}
+
+{% block title %}Add Subscription Plan - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">Add Subscription Plan</h1>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('admin.index') }}">Admin</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('admin.subscriptions') }}">Subscriptions</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Add Plan</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">New Subscription Plan</h5>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('admin.add_subscription_plan') }}" method="POST">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Plan Name</label>
+                            <input type="text" class="form-control" id="name" name="name" required>
+                            <div class="form-text">A unique name for the subscription plan (e.g., "Free Trial", "Basic",
+                                "Premium").</div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="price" class="form-label">Price</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" class="form-control" id="price" name="price" step="0.01"
+                                        min="0" required>
+                                </div>
+                                <div class="form-text">The price of the plan (e.g., 0.00, 9.99, 19.99).</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="interval" class="form-label">Billing Interval</label>
+                                <select class="form-select" id="interval" name="interval" required>
+                                    <option value="month">Monthly</option>
+                                    <option value="year">Yearly</option>
+                                </select>
+                                <div class="form-text">How often the user will be billed.</div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="stripe_price_id" class="form-label">Stripe Price ID</label>
+                            <input type="text" class="form-control" id="stripe_price_id" name="stripe_price_id">
+                            <div class="form-text">The Stripe Price ID for this plan (e.g., price_1NxYZ2ABC123DEF456).
+                                Leave empty for free plans.</div>
+                        </div>
+
+                        <h5 class="mt-4 mb-3">Plan Features</h5>
+
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="max_applications_per_day" class="form-label">Max Applications Per
+                                    Day</label>
+                                <input type="number" class="form-control" id="max_applications_per_day"
+                                    name="max_applications_per_day" min="1" value="5" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="max_resumes" class="form-label">Max Resumes</label>
+                                <input type="number" class="form-control" id="max_resumes" name="max_resumes" min="1"
+                                    value="1" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="max_job_configs" class="form-label">Max Job Configs</label>
+                                <input type="number" class="form-control" id="max_job_configs" name="max_job_configs"
+                                    min="1" value="1" required>
+                            </div>
+                        </div>
+
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="has_custom_resume_generation"
+                                name="has_custom_resume_generation">
+                            <label class="form-check-label" for="has_custom_resume_generation">Has Custom Resume
+                                Generation</label>
+                            <div class="form-text">Enable AI-powered custom resume generation for this plan.</div>
+                        </div>
+
+                        <div class="d-flex justify-content-between mt-4">
+                            <a href="{{ url_for('admin.subscriptions') }}" class="btn btn-secondary">Cancel</a>
+                            <button type="submit" class="btn btn-primary">Create Plan</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

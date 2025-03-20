@@ -1,0 +1,194 @@
+{% extends "layout.html" %}
+
+{% block title %}Analytics - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">Analytics Dashboard</h1>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('admin.index') }}">Admin</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Analytics</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Date Range Selector -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <form class="row g-3">
+                        <div class="col-md-4">
+                            <label for="dateRange" class="form-label">Date Range</label>
+                            <select class="form-select" id="dateRange" name="range">
+                                <option value="7" {% if request.args.get('range')=='7' %}selected{% endif %}>Last 7 days
+                                </option>
+                                <option value="30" {% if request.args.get('range', '30' )=='30' %}selected{% endif %}>
+                                    Last 30 days</option>
+                                <option value="90" {% if request.args.get('range')=='90' %}selected{% endif %}>Last 90
+                                    days</option>
+                                <option value="365" {% if request.args.get('range')=='365' %}selected{% endif %}>Last
+                                    year</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="startDate" class="form-label">Start Date</label>
+                            <input type="date" class="form-control" id="startDate" name="start_date"
+                                value="{{ request.args.get('start_date', '') }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="endDate" class="form-label">End Date</label>
+                            <input type="date" class="form-control" id="endDate" name="end_date"
+                                value="{{ request.args.get('end_date', '') }}">
+                        </div>
+                        <div class="col-12 text-end">
+                            <button type="submit" class="btn btn-primary">Apply Filters</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Growth Charts -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">User Growth</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="userGrowthChart" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Subscription Growth</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="subscriptionGrowthChart" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">Application Growth</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="applicationGrowthChart" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">New Users</h5>
+                    <p class="display-4">{{ user_growth_counts|sum }}</p>
+                    <p class="text-muted">In selected period</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">New Subscriptions</h5>
+                    <p class="display-4">{{ subscription_growth_counts|sum }}</p>
+                    <p class="text-muted">In selected period</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">Applications</h5>
+                    <p class="display-4">{{ application_growth_counts|sum }}</p>
+                    <p class="text-muted">In selected period</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-muted">Conversion Rate</h5>
+                    <p class="display-4">
+                        {% if user_growth_counts|sum > 0 %}
+                        {{ ((subscription_growth_counts|sum / user_growth_counts|sum) * 100)|round(1) }}%
+                        {% else %}
+                        0%
+                        {% endif %}
+                    </p>
+                    <p class="text-muted">Users to subscribers</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Tables -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Daily Data</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>New Users</th>
+                                    <th>New Subscriptions</th>
+                                    <th>Applications</th>
+                                    <th>Conversion Rate</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for i in range(user_growth_dates|length) %}
+                                <tr>
+                                    <td>{{ user_growth_dates[i] }}</td>
+                                    <td>{{ user_growth_counts[i] }}</td>
+                                    <td>{{ subscription_growth_counts[i] if i < subscription_growth_counts|length else 0
+                                            }}</td>
+                                    <td>{{ application_growth_counts[i] if i < application_growth_counts|length else 0
+                                            }}</td>
+                                    <td>
+                                        {% if user_growth_counts[i] > 0 and i < subscription_growth_counts|length %} {{
+                                            ((subscription_growth_counts[i] / user_growth_counts[i]) * 100)|round(1) }}%
+                                            {% else %} 0% {% endif %} </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Passa os dados do Flask para o JavaScript
+    var userGrowthDates = {{ user_growth_dates| tojson | safe }};
+    var userGrowthCounts = {{ user_growth_counts| tojson | safe }};
+    var subscriptionGrowthDates = {{ subscription_growth_dates| tojson | safe }};
+    var subscriptionGrowthCounts = {{ subscription_growth_counts| tojson | safe }};
+    var applicationGrowthDates = {{ application_growth_dates| tojson | safe }};
+    var applicationGrowthCounts = {{ application_growth_counts| tojson | safe }};
+</script>
+<script src="{{ url_for('static', filename='js/admin-charts.js') }}"></script>
+{% endblock %}

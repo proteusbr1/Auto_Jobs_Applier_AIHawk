@@ -412,7 +412,167 @@
 
 {% block scripts %}
 <script>
+    // Function to create a job configuration
+    function createJobConfig(jsonData) {
+        apiClient.createJobConfig(jsonData)
+            .then(response => {
+                // Close modal and reload page on success
+                const modal = bootstrap.Modal.getInstance(document.getElementById('createConfigModal'));
+                modal.hide();
+                window.location.reload();
+            })
+            .catch(error => {
+                console.error('Error creating job config:', error);
+
+                // Create or show error message in the modal instead of alert
+                let errorDiv = document.querySelector('#createConfigModal .modal-body .alert-danger');
+                if (!errorDiv) {
+                    errorDiv = document.createElement('div');
+                    errorDiv.className = 'alert alert-danger mt-3';
+                    errorDiv.role = 'alert';
+                    document.querySelector('#createConfigModal .modal-body').prepend(errorDiv);
+                }
+
+                errorDiv.textContent = 'Error creating job configuration: ' + error.message;
+                errorDiv.style.display = 'block';
+            });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
+        // Create Config Form
+        const jobConfigForm = document.getElementById('jobConfigForm');
+        if (jobConfigForm) {
+            jobConfigForm.addEventListener('submit', function (event) {
+                event.preventDefault();
+
+                if (!this.checkValidity()) {
+                    event.stopPropagation();
+                    this.classList.add('was-validated');
+                    return;
+                }
+
+                // Collect form data
+                const formData = new FormData(this);
+                const jsonData = {};
+
+                // Convert form data to JSON
+                for (const [key, value] of formData.entries()) {
+                    // Handle arrays like searches[0][positions]
+                    if (key.includes('[')) {
+                        const matches = key.match(/([^\[]+)\[([^\]]+)\](?:\[([^\]]+)\])?/);
+                        if (matches) {
+                            const mainKey = matches[1];
+                            const index = matches[2];
+                            const subKey = matches[3];
+
+                            if (!jsonData[mainKey]) {
+                                jsonData[mainKey] = [];
+                            }
+
+                            if (!jsonData[mainKey][index]) {
+                                jsonData[mainKey][index] = {};
+                            }
+
+                            if (subKey) {
+                                // Handle comma-separated values for positions
+                                if (subKey === 'positions') {
+                                    jsonData[mainKey][index][subKey] = value.split(',').map(item => item.trim());
+                                } else {
+                                    jsonData[mainKey][index][subKey] = value;
+                                }
+                            } else {
+                                jsonData[mainKey][index] = value;
+                            }
+                        }
+                    } else {
+                        jsonData[key] = value;
+                    }
+                }
+
+                // Convert searches from object to array
+                if (jsonData.searches) {
+                    jsonData.searches = Object.values(jsonData.searches);
+                }
+
+                // Add keywords and blacklist
+                const keywordsContainer = document.getElementById('keywordsContainer');
+                const blacklistContainer = document.getElementById('blacklistContainer');
+
+                if (keywordsContainer) {
+                    const keywordInputs = keywordsContainer.querySelectorAll('input[name="keywords[]"]');
+                    jsonData.keywords = Array.from(keywordInputs).map(input => input.value);
+                }
+
+                if (blacklistContainer) {
+                    const blacklistInputs = blacklistContainer.querySelectorAll('input[name="blacklist[]"]');
+                    jsonData.blacklist = Array.from(blacklistInputs).map(input => input.value);
+                }
+
+                // Convert checkbox values
+                jsonData.is_active = document.getElementById('isActive').checked;
+
+                // Check if user is authenticated with AIHawk
+                if (!apiClient.isAuthenticated()) {
+                    // Close the modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('createConfigModal'));
+                    modal.hide();
+
+                    // Redirect to login page
+                    window.location.href = "{{ url_for('auth.login') }}";
+                    return;
+                }
+
+                // Check if user is authenticated with LinkedIn
+                fetch('/linkedin/auth/status')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.authenticated) {
+                            // Close the modal
+                            const modal = bootstrap.Modal.getInstance(document.getElementById('createConfigModal'));
+                            modal.hide();
+
+                            // Redirect to LinkedIn auth page
+                            window.location.href = "{{ url_for('main.linkedin_auth') }}";
+                            return;
+                        } else {
+                            // User is authenticated with LinkedIn, proceed with creating job config
+                            createJobConfig(jsonData);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error checking LinkedIn auth status:', error);
+                        // Proceed with creating job config anyway, the API will handle the error
+                        createJobConfig(jsonData);
+                    });
+
+                return;
+
+                // User is authenticated, proceed with creating job config
+                apiClient.createJobConfig(jsonData)
+                    .then(response => {
+                        // Close modal and reload page on success
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('createConfigModal'));
+                        modal.hide();
+                        window.location.reload();
+                    })
+                    .catch(error => {
+                        console.error('Error creating job config:', error);
+
+                        // Create or show error message in the modal instead of alert
+                        let errorDiv = document.querySelector('#createConfigModal .modal-body .alert-danger');
+                        if (!errorDiv) {
+                            errorDiv = document.createElement('div');
+                            errorDiv.className = 'alert alert-danger mt-3';
+                            errorDiv.role = 'alert';
+                            document.querySelector('#createConfigModal .modal-body').prepend(errorDiv);
+                        }
+
+                        errorDiv.textContent = 'Error creating job configuration: ' + error.message;
+                        errorDiv.style.display = 'block';
+                    });
+            });
+        }
+
         // Delete Config Modal
         const deleteConfigModal = document.getElementById('deleteConfigModal');
         if (deleteConfigModal) {
@@ -422,7 +582,35 @@
                 const configName = button.getAttribute('data-config-name');
 
                 document.getElementById('configNameToDelete').textContent = configName;
-                document.getElementById('deleteConfigForm').action = "{{ url_for('api.delete_job_config', config_id=0) }}".replace('0', configId);
+
+                // Update delete form to use API client
+                const deleteForm = document.getElementById('deleteConfigForm');
+                deleteForm.addEventListener('submit', function (event) {
+                    event.preventDefault();
+
+                    apiClient.deleteJobConfig(configId)
+                        .then(response => {
+                            // Close modal and reload page on success
+                            const modal = bootstrap.Modal.getInstance(deleteConfigModal);
+                            modal.hide();
+                            window.location.reload();
+                        })
+                        .catch(error => {
+                            console.error('Error deleting job config:', error);
+
+                            // Create or show error message in the modal instead of alert
+                            let errorDiv = document.querySelector('#deleteConfigModal .modal-body .alert-danger');
+                            if (!errorDiv) {
+                                errorDiv = document.createElement('div');
+                                errorDiv.className = 'alert alert-danger mt-3';
+                                errorDiv.role = 'alert';
+                                document.querySelector('#deleteConfigModal .modal-body').prepend(errorDiv);
+                            }
+
+                            errorDiv.textContent = 'Error deleting job configuration: ' + error.message;
+                            errorDiv.style.display = 'block';
+                        });
+                });
             });
         }
 
@@ -436,6 +624,52 @@
 
                 document.getElementById('configNameToRun').textContent = configName;
                 document.getElementById('configIdToRun').value = configId;
+
+                // Update run job form to use API client
+                const runJobForm = document.getElementById('runJobForm');
+                runJobForm.addEventListener('submit', function (event) {
+                    event.preventDefault();
+
+                    const formData = new FormData(this);
+                    const jsonData = {
+                        config_id: formData.get('config_id'),
+                        resume_id: formData.get('resume_id'),
+                        max_applications: formData.get('max_applications')
+                    };
+
+                    fetch('/api/job-tasks/start', {
+                        method: 'POST',
+                        headers: apiClient.getHeaders(),
+                        body: JSON.stringify(jsonData)
+                    })
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error('Failed to start job search');
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            // Close modal and redirect to dashboard
+                            const modal = bootstrap.Modal.getInstance(runJobModal);
+                            modal.hide();
+                            window.location.href = "{{ url_for('main.dashboard') }}";
+                        })
+                        .catch(error => {
+                            console.error('Error starting job search:', error);
+
+                            // Create or show error message in the modal instead of alert
+                            let errorDiv = document.querySelector('#runJobModal .modal-body .alert-danger');
+                            if (!errorDiv) {
+                                errorDiv = document.createElement('div');
+                                errorDiv.className = 'alert alert-danger mt-3';
+                                errorDiv.role = 'alert';
+                                document.querySelector('#runJobModal .modal-body').prepend(errorDiv);
+                            }
+
+                            errorDiv.textContent = 'Error starting job search: ' + error.message;
+                            errorDiv.style.display = 'block';
+                        });
+                });
             });
         }
     });

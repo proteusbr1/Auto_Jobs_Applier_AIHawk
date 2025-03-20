@@ -180,7 +180,13 @@
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">Active Job Searches</h5>
-                <a href="{{ url_for('main.job_configs') }}" class="btn btn-sm btn-outline-primary">Manage</a>
+                <div>
+                    <a href="{{ url_for('main.linkedin_auth') }}" class="btn btn-sm btn-outline-primary me-2"
+                        data-bs-toggle="tooltip" title="Connect LinkedIn Account">
+                        <i class="fab fa-linkedin"></i>
+                    </a>
+                    <a href="{{ url_for('main.job_configs') }}" class="btn btn-sm btn-outline-primary">Manage</a>
+                </div>
             </div>
             <div class="card-body p-0">
                 <ul class="list-group list-group-flush">
@@ -280,6 +286,19 @@
                 <p>Are you sure you want to run the job search "<span id="configName"></span>"?</p>
                 <p>This will start applying to jobs based on your configuration.</p>
 
+                <div class="alert alert-info mb-3">
+                    <div class="d-flex">
+                        <div class="flex-shrink-0">
+                            <i class="fab fa-linkedin text-primary fa-2x me-2"></i>
+                        </div>
+                        <div>
+                            <h6 class="alert-heading">LinkedIn Authentication Required</h6>
+                            <p class="mb-0">You'll need to log in to your LinkedIn account when prompted. <a
+                                    href="{{ url_for('main.linkedin_auth') }}" target="_blank">Learn more</a></p>
+                        </div>
+                    </div>
+                </div>
+
                 <form id="runJobForm" method="POST" action="{{ url_for('api.start_job_search') }}">
                     <input type="hidden" name="config_id" id="configId">
                     <div class="mb-3">
@@ -309,9 +328,87 @@
 </div>
 {% endblock %}
 
+<!-- API Authentication Alert -->
+<div class="modal fade" id="apiAuthModal" tabindex="-1" aria-labelledby="apiAuthModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="apiAuthModalLabel">API Authentication Required</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    You need to authenticate with the API to use job configuration features.
+                </div>
+                <p>Please enter your credentials to authenticate with the API:</p>
+                <form id="apiAuthForm">
+                    <div class="mb-3">
+                        <label for="apiEmail" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="apiEmail" value="{{ current_user.email }}"
+                            required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="apiPassword" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="apiPassword" required>
+                    </div>
+                </form>
+                <div id="apiAuthError" class="alert alert-danger mt-3" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="apiAuthBtn">Authenticate</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        // Check API authentication
+        if (typeof apiClient !== 'undefined') {
+            if (!apiClient.isAuthenticated()) {
+                console.log('API client is not authenticated');
+                // Add API auth button to the page
+                const authBtn = document.createElement('button');
+                authBtn.textContent = 'API Login';
+                authBtn.className = 'btn btn-warning position-fixed';
+                authBtn.style.bottom = '10px';
+                authBtn.style.left = '10px';
+                authBtn.style.zIndex = '9998';
+                authBtn.onclick = function () {
+                    const apiAuthModal = new bootstrap.Modal(document.getElementById('apiAuthModal'));
+                    apiAuthModal.show();
+                };
+                document.body.appendChild(authBtn);
+            }
+        }
+
+        // API Auth Modal
+        const apiAuthBtn = document.getElementById('apiAuthBtn');
+        if (apiAuthBtn) {
+            apiAuthBtn.addEventListener('click', function () {
+                const email = document.getElementById('apiEmail').value;
+                const password = document.getElementById('apiPassword').value;
+                const errorDiv = document.getElementById('apiAuthError');
+
+                apiClient.login(email, password)
+                    .then(data => {
+                        console.log('API login successful');
+                        // Hide the modal
+                        bootstrap.Modal.getInstance(document.getElementById('apiAuthModal')).hide();
+                        // Reload the page
+                        window.location.reload();
+                    })
+                    .catch(error => {
+                        console.error('API login failed:', error);
+                        errorDiv.textContent = error.message || 'Authentication failed. Please check your credentials.';
+                        errorDiv.style.display = 'block';
+                    });
+            });
+        }
+
         // Run Job Modal
         const runJobModal = document.getElementById('runJobModal');
         if (runJobModal) {

@@ -77,10 +77,11 @@ function setupLoadingSpinner() {
     });
 
     // Show spinner on AJAX requests
-    const originalFetch = window.fetch;
+    // Check if fetch was already wrapped by debug tools
+    const debugFetch = window.fetch;
     window.fetch = function () {
         document.getElementById('loadingSpinner').style.display = 'flex';
-        return originalFetch.apply(this, arguments)
+        return debugFetch.apply(this, arguments)
             .finally(() => {
                 document.getElementById('loadingSpinner').style.display = 'none';
             });
@@ -102,8 +103,7 @@ function setupTaskPolling() {
         taskStatusElements.forEach(element => {
             const taskId = element.getAttribute('data-task-id');
 
-            fetch(`/api/job-tasks/${taskId}`)
-                .then(response => response.json())
+            apiClient.getJobTask(taskId)
                 .then(data => {
                     // Update status
                     const statusElement = element.querySelector('.task-status');

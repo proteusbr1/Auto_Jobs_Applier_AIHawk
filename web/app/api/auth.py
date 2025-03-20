@@ -38,7 +38,7 @@ def login():
     
     user = User.query.filter_by(email=email.lower()).first()
     
-    if not user or not user.check_password(password):
+    if not user or not user.verify_password(password):
         return jsonify({"error": "Invalid email or password"}), 401
     
     if not user.is_active:

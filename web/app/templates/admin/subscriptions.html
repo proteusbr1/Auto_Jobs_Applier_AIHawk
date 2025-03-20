@@ -1,0 +1,378 @@
+{% extends "layout.html" %}
+
+{% block title %}Subscription Management - Admin{% endblock %}
+
+{% block styles %}
+{{ super() }}
+<style>
+    /* Custom modal styles */
+    .custom-modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 1050;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .custom-modal-overlay.show {
+        display: flex;
+    }
+
+    .custom-modal {
+        background-color: white;
+        border-radius: 5px;
+        width: 500px;
+        max-width: 90%;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+    }
+
+    .custom-modal-header {
+        padding: 1rem;
+        border-bottom: 1px solid #dee2e6;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .custom-modal-body {
+        padding: 1rem;
+    }
+
+    .custom-modal-footer {
+        padding: 1rem;
+        border-top: 1px solid #dee2e6;
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+    }
+
+    .custom-modal-close {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        cursor: pointer;
+    }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+    // Custom modal implementation
+    document.addEventListener('DOMContentLoaded', function () {
+        // Create a single modal overlay
+        const modalOverlay = document.createElement('div');
+        modalOverlay.className = 'custom-modal-overlay';
+        document.body.appendChild(modalOverlay);
+
+        // Get all delete buttons
+        const deleteButtons = document.querySelectorAll('.delete-plan-btn');
+
+        // Add click event listener to each button
+        deleteButtons.forEach(function (button) {
+            button.addEventListener('click', function (e) {
+                e.preventDefault();
+                const planId = button.getAttribute('data-plan-id');
+                const planName = button.getAttribute('data-plan-name');
+
+                // Create modal content
+                const modalContent = `
+                    <div class="custom-modal">
+                        <div class="custom-modal-header">
+                            <h5>Confirm Delete</h5>
+                            <button type="button" class="custom-modal-close" data-action="close">&times;</button>
+                        </div>
+                        <div class="custom-modal-body">
+                            <p>Are you sure you want to delete the subscription plan "${planName}"?</p>
+                            <p class="text-danger mt-2">
+                                <strong>Warning:</strong> This action cannot be undone. If there are active subscriptions using this plan, the deletion will fail.
+                            </p>
+                        </div>
+                        <div class="custom-modal-footer">
+                            <button type="button" class="btn btn-secondary" data-action="close">Cancel</button>
+                            <form action="{{ url_for('admin.delete_subscription_plan', plan_id=0) }}" method="POST" class="d-inline delete-form">
+                                <input type="hidden" name="plan_id" value="${planId}">
+                                <button type="submit" class="btn btn-danger">Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                `;
+
+                // Set modal content and show
+                modalOverlay.innerHTML = modalContent;
+                modalOverlay.classList.add('show');
+
+                // Update form action URL
+                const deleteForm = modalOverlay.querySelector('.delete-form');
+                const formAction = deleteForm.getAttribute('action');
+                deleteForm.setAttribute('action', formAction.replace('0', planId));
+
+                // Add event listeners for close buttons
+                const closeButtons = modalOverlay.querySelectorAll('[data-action="close"]');
+                closeButtons.forEach(function (closeBtn) {
+                    closeBtn.addEventListener('click', function () {
+                        modalOverlay.classList.remove('show');
+                    });
+                });
+
+                // Close modal when clicking outside
+                modalOverlay.addEventListener('click', function (event) {
+                    if (event.target === modalOverlay) {
+                        modalOverlay.classList.remove('show');
+                    }
+                });
+            });
+        });
+    });
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="mb-3">Subscription Management</h1>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('admin.index') }}">Admin</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Subscriptions</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">All Subscriptions</h5>
+            <div>
+                <form class="d-inline-block me-2">
+                    <div class="input-group">
+                        <input type="text" class="form-control" placeholder="Search subscriptions..." name="q"
+                            value="{{ request.args.get('q', '') }}">
+                        <button class="btn btn-outline-secondary" type="submit">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>User</th>
+                            <th>Plan</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Updated</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for subscription in subscriptions.items %}
+                        <tr>
+                            <td>{{ subscription.id }}</td>
+                            <td>
+                                <a href="{{ url_for('admin.user_detail', user_id=subscription.user_id) }}">
+                                    {{ subscription.user.get_full_name() }}
+                                </a>
+                            </td>
+                            <td>{{ subscription.plan }}</td>
+                            <td>
+                                <span class="badge 
+                                    {% if subscription.status == 'active' %}bg-success
+                                    {% elif subscription.status == 'canceled' %}bg-warning
+                                    {% else %}bg-danger{% endif %}">
+                                    {{ subscription.status|capitalize }}
+                                </span>
+                            </td>
+                            <td>{{ subscription.created_at.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ subscription.updated_at.strftime('%Y-%m-%d') }}</td>
+                            <td>
+                                <a href="{{ url_for('admin.user_detail', user_id=subscription.user_id) }}"
+                                    class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center py-4">
+                                <p class="text-muted mb-0">No subscriptions found.</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer">
+            <nav aria-label="Page navigation">
+                <ul class="pagination justify-content-center mb-0">
+                    <li class="page-item {% if not subscriptions.has_prev %}disabled{% endif %}">
+                        <a class="page-link"
+                            href="{{ url_for('admin.subscriptions', page=subscriptions.prev_num) if subscriptions.has_prev else '#' }}">
+                            <i class="fas fa-chevron-left"></i>
+                        </a>
+                    </li>
+                    {% for page_num in subscriptions.iter_pages(left_edge=1, right_edge=1, left_current=2,
+                    right_current=2) %}
+                    {% if page_num %}
+                    <li class="page-item {% if page_num == subscriptions.page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('admin.subscriptions', page=page_num) }}">{{ page_num
+                            }}</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+                    <li class="page-item {% if not subscriptions.has_next %}disabled{% endif %}">
+                        <a class="page-link"
+                            href="{{ url_for('admin.subscriptions', page=subscriptions.next_num) if subscriptions.has_next else '#' }}">
+                            <i class="fas fa-chevron-right"></i>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Subscription Plans -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Subscription Plans</h5>
+                    <div>
+                        <a href="{{ url_for('admin.add_subscription_plan') }}" class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus"></i> Add New Plan
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Price</th>
+                                    <th>Interval</th>
+                                    <th>Stripe Price ID</th>
+                                    <th>Features</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for plan in subscription_plans %}
+                                <tr>
+                                    <td>{{ plan.id }}</td>
+                                    <td>{{ plan.name }}</td>
+                                    <td>${{ plan.price }}</td>
+                                    <td>{{ plan.interval }}</td>
+                                    <td>{{ plan.stripe_price_id or '-' }}</td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {% if plan.features_dict.max_applications_per_day is defined %}
+                                            max_applications_per_day: {{ plan.features_dict.max_applications_per_day
+                                            }}<br>
+                                            {% endif %}
+
+                                            {% if plan.features_dict.max_resumes is defined %}
+                                            max_resumes: {{ plan.features_dict.max_resumes }}<br>
+                                            {% endif %}
+
+                                            {% if plan.features_dict.max_job_configs is defined %}
+                                            max_job_configs: {{ plan.features_dict.max_job_configs }}<br>
+                                            {% endif %}
+
+                                            {% if plan.features_dict.has_custom_resume_generation is defined and
+                                            plan.features_dict.has_custom_resume_generation %}
+                                            has_custom_resume_generation: true
+                                            {% endif %}
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <span
+                                            class="badge {% if plan.is_active %}bg-success{% else %}bg-danger{% endif %}">
+                                            {% if plan.is_active %}Active{% else %}Inactive{% endif %}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group">
+                                            <a href="{{ url_for('admin.edit_subscription_plan', plan_id=plan.id) }}"
+                                                class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-sm btn-outline-danger delete-plan-btn"
+                                                data-plan-id="{{ plan.id }}" data-plan-name="{{ plan.name }}">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+
+                                        <!-- Delete Confirmation Modal -->
+                                        <div class="modal fade" id="deletePlanModal{{ plan.id }}" tabindex="-1"
+                                            aria-labelledby="deletePlanModalLabel{{ plan.id }}"
+                                            data-bs-backdrop="static" data-bs-keyboard="false">
+                                            <div class="modal-dialog">
+                                                <div class="modal-content">
+                                                    <div class="modal-header">
+                                                        <h5 class="modal-title" id="deletePlanModalLabel{{ plan.id }}">
+                                                            Confirm Delete</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                                            aria-label="Close"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        Are you sure you want to delete the subscription plan "{{
+                                                        plan.name }}"?
+                                                        <p class="text-danger mt-2">
+                                                            <strong>Warning:</strong> This action cannot be undone. If
+                                                            there are active subscriptions using this plan, the deletion
+                                                            will fail.
+                                                        </p>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary"
+                                                            data-bs-dismiss="modal">Cancel</button>
+                                                        <form
+                                                            action="{{ url_for('admin.delete_subscription_plan', plan_id=plan.id) }}"
+                                                            method="POST" class="d-inline">
+                                                            <button type="submit" class="btn btn-danger">Delete</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="8" class="text-center py-4">
+                                        <p class="text-muted mb-0">No subscription plans found.</p>
+                                        <a href="{{ url_for('admin.add_subscription_plan') }}"
+                                            class="btn btn-primary mt-3">
+                                            <i class="fas fa-plus"></i> Add New Plan
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

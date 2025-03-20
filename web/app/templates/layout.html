@@ -56,6 +56,14 @@
                             <i class="fas fa-briefcase me-1"></i>Applications
                         </a>
                     </li>
+                    {% if current_user.is_admin %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint.startswith('admin.') %}active{% endif %}"
+                            href="{{ url_for('admin.index') }}">
+                            <i class="fas fa-user-shield me-1"></i>Admin
+                        </a>
+                    </li>
+                    {% endif %}
                     {% endif %}
                 </ul>
                 <ul class="navbar-nav">
@@ -70,6 +78,10 @@
                                         class="fas fa-id-card me-2"></i>Profile</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('main.subscription') }}"><i
                                         class="fas fa-credit-card me-2"></i>Subscription</a></li>
+                            {% if current_user.is_admin %}
+                            <li><a class="dropdown-item" href="{{ url_for('admin.index') }}"><i
+                                        class="fas fa-user-shield me-2"></i>Admin Dashboard</a></li>
+                            {% endif %}
                             <li>
                                 <hr class="dropdown-divider">
                             </li>
@@ -142,8 +154,19 @@
     <!-- jQuery -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 
+    <!-- API Client -->
+    <script src="{{ url_for('static', filename='js/api-client.js') }}"></script>
+
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+
+    <!-- Test API (for debugging) -->
+    <script src="{{ url_for('static', filename='js/test-api.js') }}"></script>
+
+    {% if config.DEBUG %}
+    <!-- Auth Debug Tool (only in debug mode) -->
+    <script src="{{ url_for('static', filename='js/debug-auth.js') }}"></script>
+    {% endif %}
 
     {% block scripts %}{% endblock %}
 </body>

@@ -1,12 +1,12 @@
 """
 API routes for job configurations in the Auto_Jobs_Applier_AIHawk web application.
 """
-from flask import jsonify, request
+from flask import jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from app import db
 from app.api import api_bp
-from app.models import User, JobConfig
+from app.models import User, JobConfig, SubscriptionPlan
 
 
 @api_bp.route('/job-configs', methods=['GET'])
@@ -41,12 +41,20 @@ def create_job_config():
     
     # Check if user has reached the maximum number of job configs
     subscription = user.subscription
-    if subscription and subscription.plan:
-        max_configs = subscription.plan.max_job_configs
-        if max_configs and user.job_configs.count() >= max_configs:
-            return jsonify({
-                'error': f'You have reached the maximum number of job configurations ({max_configs}) allowed by your subscription plan.'
-            }), 403
+    if subscription and subscription.is_active():
+        # Get the subscription plan
+        plan = SubscriptionPlan.query.filter_by(name=subscription.plan).first()
+        if plan and plan.features:
+            import json
+            try:
+                features = json.loads(plan.features)
+                max_configs = features.get('max_job_configs')
+                if max_configs and user.job_configs.count() >= int(max_configs):
+                    return jsonify({
+                        'error': f'You have reached the maximum number of job configurations ({max_configs}) allowed by your subscription plan.'
+                    }), 403
+            except (json.JSONDecodeError, ValueError) as e:
+                current_app.logger.error(f"Error parsing subscription plan features: {e}")
     
     data = request.json
     

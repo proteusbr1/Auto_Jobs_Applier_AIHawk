@@ -73,7 +73,7 @@
             <div class="card text-center h-100">
                 <div class="card-body">
                     <h5 class="card-title text-muted">Revenue</h5>
-                    <p class="display-4">$<span id="revenue-counter">0</span></p>
+                    <p class="display-4">$<span id="revenue-counter">{{ monthly_revenue }}</span></p>
                     <p class="text-muted">Monthly recurring</p>
                 </div>
             </div>
@@ -195,18 +195,68 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
 <script>
-    // Simple revenue counter animation
     document.addEventListener('DOMContentLoaded', function () {
-        var revenueCounter = document.getElementById('revenue-counter');
-        var targetRevenue = 1250; // This would be dynamic in a real app
-
-        // Set the value immediately for now
-        revenueCounter.textContent = targetRevenue.toLocaleString();
-
-        // In the charts sections, display placeholder text
-        document.getElementById('subscriptionChart').innerHTML = '<div class="text-center p-5"><p class="text-muted">Subscription data visualization would appear here</p></div>';
-        document.getElementById('applicationChart').innerHTML = '<div class="text-center p-5"><p class="text-muted">Application data visualization would appear here</p></div>';
+        // Subscription Chart
+        var subscriptionCtx = document.getElementById('subscriptionChart').getContext('2d');
+        var subscriptionChart = new Chart(subscriptionCtx, {
+            type: 'pie',
+            data: {
+                labels: {{ plan_labels| tojson }},
+        datasets: [{
+            data: {{ plan_data| tojson }},
+        backgroundColor: [
+            'rgba(75, 192, 192, 0.7)',
+            'rgba(54, 162, 235, 0.7)',
+            'rgba(255, 206, 86, 0.7)',
+            'rgba(255, 99, 132, 0.7)',
+            'rgba(153, 102, 255, 0.7)'
+        ],
+        borderWidth: 1
+            }]
+        },
+        options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'right'
+            }
+        }
+    }
     });
+
+    // Application Chart
+    var applicationCtx = document.getElementById('applicationChart').getContext('2d');
+    var applicationChart = new Chart(applicationCtx, {
+        type: 'bar',
+        data: {
+            labels: {{ status_labels| tojson }},
+    datasets: [{
+        label: 'Applications',
+        data: {{ status_data| tojson }},
+        backgroundColor: [
+        'rgba(75, 192, 192, 0.7)',
+        'rgba(54, 162, 235, 0.7)',
+        'rgba(255, 206, 86, 0.7)',
+        'rgba(255, 99, 132, 0.7)',
+        'rgba(153, 102, 255, 0.7)'
+    ],
+        borderWidth: 1
+            }]
+        },
+    options: {
+        responsive: true,
+            scales: {
+            y: {
+                beginAtZero: true,
+                    ticks: {
+                    precision: 0
+                }
+            }
+        }
+    }
+    });
+});
 </script>
 {% endblock %}

@@ -110,47 +110,111 @@
     <div class="container">
         <div class="text-center mb-5">
             <h2 class="fw-bold">Pricing Plans</h2>
-            <p class="lead">Choose the plan that fits your needs</p>
+            <p class="lead">Choose the plan that fits your job search needs</p>
         </div>
+
         <div class="row g-4 justify-content-center">
-            {% for plan in plans %}
-            <div class="col-md-4">
-                <div class="card h-100 border-0 shadow-sm {% if plan.name == 'Premium' %}border-primary{% endif %}">
-                    <div
-                        class="card-header bg-transparent border-0 text-center pt-4 {% if plan.name == 'Premium' %}text-primary{% endif %}">
-                        <h3 class="fw-bold">{{ plan.name }}</h3>
+            <!-- Starter Plan (Free) -->
+            <div class="col-lg-3 col-md-6">
+                <div class="card h-100 border-0 shadow-sm pricing-card">
+                    <div class="card-header bg-transparent border-0 text-center pt-4">
+                        <h3 class="fw-bold">Starter</h3>
+                        <span class="badge bg-light text-dark mb-3">Free Trial</span>
                     </div>
                     <div class="card-body text-center">
-                        <h2 class="card-title pricing-card-title">
-                            ${{ "%.2f"|format(plan.price) }}<small class="text-muted fw-light">/{{ plan.interval
-                                }}</small>
+                        <h2 class="card-title pricing-card-title mb-4">
+                            $0<small class="text-muted fw-light">/month</small>
                         </h2>
-                        <p class="text-muted mb-4">Subscription plan</p>
-                        <ul class="list-unstyled">
-                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple applications per day
+                        <ul class="list-unstyled mt-3 mb-4">
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>1 Resume Upload</li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>1 Search Configuration
                             </li>
-                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Concurrent sessions</li>
-                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple resumes</li>
-                            <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Job configurations</li>
-                            <li class="mb-2">
-                                <i class="fas fa-check text-success me-2"></i>Support
-                            </li>
-                            <li class="mb-2">
-                                <i class="fas fa-check text-success me-2"></i>Analytics
-                            </li>
-                            <li class="mb-2">
-                                <i class="fas fa-check text-success me-2"></i>Resume generation
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>5 Applications/Day</li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Basic Dashboard</li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Standard Support</li>
+                            <li class="mb-3 text-muted"><i class="fas fa-times text-danger me-2"></i>Cover Letter
+                                Generation</li>
+                            <li class="mb-3 text-muted"><i class="fas fa-times text-danger me-2"></i>Advanced Analytics
                             </li>
                         </ul>
                     </div>
                     <div class="card-footer bg-transparent border-0 text-center pb-4">
-                        <a href="{{ url_for('auth.register') }}"
-                            class="btn btn-lg {% if plan.name == 'Premium' %}btn-primary{% else %}btn-outline-primary{% endif %} w-100">Get
+                        <a href="{{ url_for('auth.register') }}" class="btn btn-outline-primary btn-lg w-100">Get
                             Started</a>
                     </div>
                 </div>
             </div>
-            {% endfor %}
+
+
+            <!-- Job Seeker Plan (Professional) -->
+            <div class="col-lg-3 col-md-6">
+                <div class="card h-100 border-0 shadow-sm pricing-card border-primary">
+                    <div class="card-header bg-transparent border-0 text-center pt-4 text-primary">
+                        <h3 class="fw-bold">Job Seeker</h3>
+                        <span class="badge bg-primary mb-3">Most Popular</span>
+                    </div>
+                    <div class="card-body text-center">
+                        <h2 class="card-title pricing-card-title mb-4">
+                            $19.99<small class="text-muted fw-light">/month</small>
+                        </h2>
+                        <ul class="list-unstyled mt-3 mb-4">
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>3 Resume Uploads</li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>3 Search Configurations
+                            </li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>25 Applications/day</li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Advanced Resume Management
+                            </li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Advanced Priority Support
+                            </li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Advanced AI-Powered Cover
+                                Letter
+                                Generation</li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Advanced Application Tracking
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-footer bg-transparent border-0 text-center pb-4">
+                        <a href="{{ url_for('auth.register') }}" class="btn btn-primary btn-lg w-100">Get Started</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Career Pro Plan (Enterprise) -->
+            <div class="col-lg-3 col-md-6">
+                <div class="card h-100 border-0 shadow-sm pricing-card">
+                    <div class="card-header bg-transparent border-0 text-center pt-4">
+                        <h3 class="fw-bold">Career Pro</h3>
+                        <span class="badge bg-light text-dark mb-3">Ultimate</span>
+                    </div>
+                    <div class="card-body text-center">
+                        <h2 class="card-title pricing-card-title mb-4">
+                            $29.99<small class="text-muted fw-light">/month</small>
+                        </h2>
+                        <ul class="list-unstyled mt-3 mb-4">
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>10 Resume Uploads</li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>10 Job Search Configurations
+                            </li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>50 Applications/day</li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Premium Resume Management
+                            </li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Premium Priority Support</li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Premium AI-Powered Cover
+                                Letter
+                                Generation</li>
+                            <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Premium Analytics Dashboard
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-footer bg-transparent border-0 text-center pb-4">
+                        <a href="{{ url_for('auth.register') }}" class="btn btn-outline-primary btn-lg w-100">Get
+                            Started</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-5">
+            <p class="text-muted">All plans include a 14-day money-back guarantee. No contracts, cancel anytime.</p>
         </div>
     </div>
 </section>
@@ -279,6 +343,45 @@
         align-items: center;
         justify-content: center;
         font-weight: bold;
+    }
+
+    /* Pricing section styles */
+    .pricing-card {
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .pricing-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1) !important;
+    }
+
+    .pricing-card.border-primary {
+        border-width: 2px !important;
+        box-shadow: 0 5px 15px rgba(0, 123, 255, 0.1) !important;
+    }
+
+    .pricing-card .badge {
+        padding: 0.5rem 1rem;
+        font-weight: 500;
+    }
+
+    .pricing-card .card-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+    }
+
+    .pricing-card .card-title small {
+        font-size: 1rem;
+        font-weight: 400;
+    }
+
+    .pricing-card ul li {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .pricing-card ul li:last-child {
+        border-bottom: none;
     }
 </style>
 {% endblock %}

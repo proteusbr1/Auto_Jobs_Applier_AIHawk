@@ -39,6 +39,92 @@
                 <div class="mb-3">
                     <h6>Features</h6>
                     <ul class="list-unstyled">
+                        {% if current_plan and current_plan.features_dict %}
+
+                        {% if current_plan.features_dict.max_applications_per_day is defined %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{
+                            current_plan.features_dict.max_applications_per_day }} applications per day</li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.max_applications_per_month is defined %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{
+                            current_plan.features_dict.max_applications_per_month }} applications per month</li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.max_resumes is defined %}
+                        {% if current_plan.features_dict.max_resumes == -1 %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Unlimited resume uploads</li>
+                        {% else %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{
+                            current_plan.features_dict.max_resumes
+                            }} resume
+                            uploads</li>
+                        {% endif %}
+                        {% endif %}
+
+                        {% if current_plan.features_dict.max_job_configs is defined %}
+                        {% if current_plan.features_dict.max_job_configs == -1 %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Unlimited job configurations</li>
+                        {% else %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>{{
+                            current_plan.features_dict.max_job_configs }}
+                            job configurations</li>
+                        {% endif %}
+                        {% endif %}
+
+                        {% if current_plan.features_dict.has_basic_dashboard is defined and
+                        current_plan.features_dict.has_basic_dashboard %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Basic dashboard</li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.has_standard_support is defined and
+                        current_plan.features_dict.has_standard_support %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Standard support</li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.has_priority_support is defined and
+                        current_plan.features_dict.has_priority_support %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Priority support</li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.has_priority_support_24_7 is defined and
+                        current_plan.features_dict.has_priority_support_24_7 %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>24/7 Priority support</li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.has_application_tracking is defined and
+                        current_plan.features_dict.has_application_tracking %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Application tracking</li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.has_enhanced_tracking is defined and
+                        current_plan.features_dict.has_enhanced_tracking %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Enhanced application tracking
+                        </li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.has_custom_cover_letter is defined and
+                        current_plan.features_dict.has_custom_cover_letter %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Custom cover letter generation
+                        </li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.has_ai_cover_letter is defined and
+                        current_plan.features_dict.has_ai_cover_letter %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>AI-powered cover letter
+                            generation</li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.has_advanced_analytics is defined and
+                        current_plan.features_dict.has_advanced_analytics %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Advanced analytics dashboard</li>
+                        {% endif %}
+
+                        {% if current_plan.features_dict.has_api_access is defined and
+                        current_plan.features_dict.has_api_access %}
+                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>API access for integrations</li>
+                        {% endif %}
+                        {% else %}
                         <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple applications per day
                         </li>
                         <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Concurrent sessions</li>
@@ -47,6 +133,7 @@
                         <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Support</li>
                         <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Analytics</li>
                         <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Resume generation</li>
+                        {% endif %}
                     </ul>
                 </div>
             </div>
@@ -54,6 +141,7 @@
                 <div class="card border-0 bg-light">
                     <div class="card-body">
                         <h5 class="card-title">Usage Statistics</h5>
+                        {% if current_plan and current_plan.features_dict %}
                         <div class="mb-3">
                             <label class="form-label">Applications Today</label>
                             <div class="progress mb-2" style="height: 8px;">
@@ -61,7 +149,16 @@
                             </div>
                             <div class="d-flex justify-content-between">
                                 <small class="text-muted">0 used</small>
-                                <small class="text-muted">20 total</small>
+                                <small class="text-muted">
+                                    {% if current_plan.features_dict.max_applications_per_day is defined %}
+                                    {{ current_plan.features_dict.max_applications_per_day }}
+                                    {% elif current_plan.features_dict.max_applications_per_month is defined %}
+                                    {{ current_plan.features_dict.max_applications_per_month // 30 }}
+                                    {% else %}
+                                    Unlimited
+                                    {% endif %}
+                                    total
+                                </small>
                             </div>
                         </div>
                         <div class="mb-3">
@@ -71,7 +168,18 @@
                             </div>
                             <div class="d-flex justify-content-between">
                                 <small class="text-muted">0 used</small>
-                                <small class="text-muted">3 total</small>
+                                <small class="text-muted">
+                                    {% if current_plan.features_dict.max_resumes is defined %}
+                                    {% if current_plan.features_dict.max_resumes == -1 %}
+                                    Unlimited
+                                    {% else %}
+                                    {{ current_plan.features_dict.max_resumes }}
+                                    {% endif %}
+                                    {% else %}
+                                    1
+                                    {% endif %}
+                                    total
+                                </small>
                             </div>
                         </div>
                         <div class="mb-3">
@@ -81,16 +189,61 @@
                             </div>
                             <div class="d-flex justify-content-between">
                                 <small class="text-muted">0 used</small>
+                                <small class="text-muted">
+                                    {% if current_plan.features_dict.max_job_configs is defined %}
+                                    {% if current_plan.features_dict.max_job_configs == -1 %}
+                                    Unlimited
+                                    {% else %}
+                                    {{ current_plan.features_dict.max_job_configs }}
+                                    {% endif %}
+                                    {% else %}
+                                    1
+                                    {% endif %}
+                                    total
+                                </small>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="mb-3">
+                            <label class="form-label">Applications Today</label>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: 0%;"></div>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <small class="text-muted">0 used</small>
                                 <small class="text-muted">5 total</small>
                             </div>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label">Resumes</label>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: 0%;"></div>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <small class="text-muted">0 used</small>
+                                <small class="text-muted">1 total</small>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Job Configurations</label>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: 0%;"></div>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <small class="text-muted">0 used</small>
+                                <small class="text-muted">1 total</small>
+                            </div>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
                 <div class="mt-3">
-                    <button type="button" class="btn btn-outline-danger"
-                        onclick="alert('Subscription cancellation is not available in the demo version.')">
-                        Cancel Subscription
-                    </button>
+                    <form action="{{ url_for('main.cancel_subscription') }}" method="POST"
+                        onsubmit="return confirm('Are you sure you want to cancel your subscription? You will still have access until the end of your billing period.');">
+                        <button type="submit" class="btn btn-outline-danger">
+                            Cancel Subscription
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
@@ -109,45 +262,108 @@
 <!-- Available Plans -->
 <div class="mb-4">
     <h2 class="h3 mb-4">Available Plans</h2>
-    <div class="row g-4">
+    <div class="row g-4 justify-content-center">
         {% if plans %}
         {% for plan in plans %}
-        <div class="col-md-4">
+        <div class="col-lg-3 col-md-6">
             <div
-                class="card h-100 border-0 shadow-sm {% if subscription and subscription.plan == plan.name %}border-primary{% endif %}">
-                <div
-                    class="card-header bg-transparent border-0 text-center pt-4 {% if subscription and subscription.plan == plan.name %}text-primary{% endif %}">
+                class="card h-100 border-0 shadow-sm pricing-card {% if subscription and subscription.plan == plan.name %}border-primary{% endif %}">
+                {% if plan.name == "Starter" %}
+                <div class="card-header bg-transparent border-0 text-center pt-4">
+                    <h3 class="fw-bold">Starter</h3>
+                    <span class="badge bg-light text-dark mb-3">Free Trial</span>
+                </div>
+                <div class="card-body text-center">
+                    <h2 class="card-title pricing-card-title mb-4">
+                        $0<small class="text-muted fw-light">/month</small>
+                    </h2>
+                    <ul class="list-unstyled mt-3 mb-4">
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>1 Resume Upload</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>1 Search Configuration</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>5 Applications/Day</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Basic Dashboard</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Standard Support</li>
+                        <li class="mb-3 text-muted"><i class="fas fa-times text-danger me-2"></i>Cover Letter Generation
+                        </li>
+                        <li class="mb-3 text-muted"><i class="fas fa-times text-danger me-2"></i>Advanced Analytics</li>
+                    </ul>
+                </div>
+                {% elif plan.name == "Job Seeker" %}
+                <div class="card-header bg-transparent border-0 text-center pt-4 text-primary">
+                    <h3 class="fw-bold">Job Seeker</h3>
+                    <span class="badge bg-primary mb-3">Most Popular</span>
+                </div>
+                <div class="card-body text-center">
+                    <h2 class="card-title pricing-card-title mb-4">
+                        $19.99<small class="text-muted fw-light">/month</small>
+                    </h2>
+                    <ul class="list-unstyled mt-3 mb-4">
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>3 Resume Uploads</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>3 Search Configurations</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>25 Applications/day</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Advanced Resume Management</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Advanced Priority Support</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Advanced AI-Powered Cover Letter
+                            Generation</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Advanced Application Tracking
+                        </li>
+                    </ul>
+                </div>
+                {% elif plan.name == "Career Pro" %}
+                <div class="card-header bg-transparent border-0 text-center pt-4">
+                    <h3 class="fw-bold">Career Pro</h3>
+                    <span class="badge bg-light text-dark mb-3">Ultimate</span>
+                </div>
+                <div class="card-body text-center">
+                    <h2 class="card-title pricing-card-title mb-4">
+                        $29.99<small class="text-muted fw-light">/month</small>
+                    </h2>
+                    <ul class="list-unstyled mt-3 mb-4">
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>10 Resume Uploads</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>10 Job Search Configurations</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>50 Applications/day</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Premium Resume Management</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Premium Priority Support</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Premium AI-Powered Cover Letter
+                            Generation</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Premium Analytics Dashboard</li>
+                    </ul>
+                </div>
+                {% else %}
+                <div class="card-header bg-transparent border-0 text-center pt-4">
                     <h3 class="fw-bold">{{ plan.name }}</h3>
                 </div>
                 <div class="card-body text-center">
-                    <h2 class="card-title pricing-card-title">
+                    <h2 class="card-title pricing-card-title mb-4">
                         ${{ "%.2f"|format(plan.price) }}<small class="text-muted fw-light">/{{ plan.interval }}</small>
                     </h2>
-                    <p class="text-muted mb-4">Subscription plan</p>
-                    <ul class="list-unstyled">
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple applications per day
+                    <ul class="list-unstyled mt-3 mb-4">
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Multiple applications per day
                         </li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Concurrent sessions</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Multiple resumes</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Job configurations</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Support</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Analytics</li>
-                        <li class="mb-2"><i class="fas fa-check text-success me-2"></i>Resume generation</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Concurrent sessions</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Multiple resumes</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Job configurations</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Support</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Analytics</li>
+                        <li class="mb-3"><i class="fas fa-check text-success me-2"></i>Resume generation</li>
                     </ul>
                 </div>
+                {% endif %}
                 <div class="card-footer bg-transparent border-0 text-center pb-4">
                     {% if subscription and subscription.plan == plan.name %}
                     <button class="btn btn-lg btn-outline-primary w-100" disabled>Current Plan</button>
                     {% else %}
-                    <button type="button"
-                        class="btn btn-lg {% if plan.name == 'Premium' %}btn-primary{% else %}btn-outline-primary{% endif %} w-100"
-                        onclick="alert('Subscription functionality is not available in the demo version.')">
-                        {% if subscription %}
-                        Switch to {{ plan.name }}
-                        {% else %}
-                        Subscribe
-                        {% endif %}
-                    </button>
+                    <form action="{{ url_for('main.subscribe') }}" method="POST">
+                        <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                        <button type="submit"
+                            class="btn btn-lg {% if plan.name == 'Job Seeker' %}btn-primary{% else %}btn-outline-primary{% endif %} w-100">
+                            {% if subscription %}
+                            Switch to {{ plan.name }}
+                            {% else %}
+                            Subscribe
+                            {% endif %}
+                        </button>
+                    </form>
                     {% endif %}
                 </div>
             </div>
@@ -193,4 +409,46 @@
     </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block styles %}
+<style>
+    .pricing-card {
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .pricing-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1) !important;
+    }
+
+    .pricing-card.border-primary {
+        border-width: 2px !important;
+        box-shadow: 0 5px 15px rgba(0, 123, 255, 0.1) !important;
+    }
+
+    .pricing-card .badge {
+        padding: 0.5rem 1rem;
+        font-weight: 500;
+    }
+
+    .pricing-card .card-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+    }
+
+    .pricing-card .card-title small {
+        font-size: 1rem;
+        font-weight: 400;
+    }
+
+    .pricing-card ul li {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .pricing-card ul li:last-child {
+        border-bottom: none;
+    }
+</style>
 {% endblock %}
