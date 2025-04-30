@@ -58,10 +58,8 @@ class ApiClient {
     async handleResponse(response) {
         // Check if the response is a redirect
         if (response.redirected) {
-            // Don't redirect if on job_configs page
-            if (!window.location.pathname.includes('/job-configs')) {
-                window.location.href = response.url;
-            }
+            // Always follow redirects
+            window.location.href = response.url;
             return {};
         }
 
@@ -74,8 +72,8 @@ class ApiClient {
                 // Handle 401 Unauthorized - token expired or invalid
                 if (response.status === 401) {
                     this.clearToken();
-                    // Redirect to login page if not already there and not on job_configs page
-                    if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/job-configs')) {
+                    // Always redirect to login page if not already there
+                    if (!window.location.pathname.includes('/login')) {
                         window.location.href = '/login';
                     }
                 }
@@ -90,8 +88,8 @@ class ApiClient {
                 // Handle 401 Unauthorized - token expired or invalid
                 if (response.status === 401) {
                     this.clearToken();
-                    // Redirect to login page if not already there and not on job_configs page
-                    if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/job-configs')) {
+                    // Always redirect to login page if not already there
+                    if (!window.location.pathname.includes('/login')) {
                         window.location.href = '/login';
                     }
                 }

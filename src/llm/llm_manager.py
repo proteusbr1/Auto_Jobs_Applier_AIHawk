@@ -7,7 +7,7 @@ import os
 from dotenv import load_dotenv
 from loguru import logger
 
-from src.llm.gpt_answerer import GPTAnswerer
+from src.llm.gpt_answerer import LLMAnswerer
 
 # Load environment variables
 load_dotenv()
@@ -26,11 +26,13 @@ def get_api_key(llm_model_type: str) -> str:
     Raises:
         ValueError: If the API key for the specified model type is not found.
     """
+    # Map model types to their corresponding environment variable names
     api_key_map = {
         "openai": "OPENAI_API_KEY",
         "claude": "ANTHROPIC_API_KEY",
-        "gemini": "GOOGLE_API_KEY",
+        "gemini": "GOOGLE_API_KEY",  # Added Gemini key
         "huggingface": "HUGGINGFACE_API_KEY",
+        # Add other model types and their keys here if needed
     }
 
     env_var = api_key_map.get(llm_model_type)
@@ -46,15 +48,15 @@ def get_api_key(llm_model_type: str) -> str:
     return api_key
 
 
-def create_gpt_answerer(config: dict) -> GPTAnswerer:
+def create_gpt_answerer(config: dict) -> LLMAnswerer:
     """
-    Create a GPTAnswerer instance with the specified configuration.
+    Create a LLMAnswerer instance with the specified configuration.
 
     Args:
         config (dict): Configuration dictionary containing model details.
 
     Returns:
-        GPTAnswerer: An instance of GPTAnswerer.
+        LLMAnswerer: An instance of LLMAnswerer.
 
     Raises:
         ValueError: If the model type is not supported or the API key is not found.
@@ -67,5 +69,5 @@ def create_gpt_answerer(config: dict) -> GPTAnswerer:
     else:
         api_key = get_api_key(llm_model_type)
     
-    logger.debug(f"Creating GPTAnswerer with model type: {llm_model_type}")
-    return GPTAnswerer(config, api_key)
+    logger.debug(f"Creating LLMAnswerer with model type: {llm_model_type}")
+    return LLMAnswerer(config, api_key)

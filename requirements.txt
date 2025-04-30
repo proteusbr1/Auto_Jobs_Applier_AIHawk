@@ -1,8 +1,11 @@
 # Activate the virtual environment
-# source virtual/bin/activate
+# source .venv/bin/activate
+# python -m pip install -r requirements.txt
+# echo $VIRTUAL_ENV
+
 
 click
-git+https://github.com/feder-cr/lib_resume_builder_AIHawk.git
+# Removed resume builder library dependency - using direct HTML resume instead
 httpx
 inputimeout
 jsonschema
@@ -16,10 +19,11 @@ langchain-google-genai
 langchain-ollama
 langchain-openai
 langchain-text-splitters
+# google-generativeai removed (replaced with langchain-google-genai)
 langsmith
 Levenshtein
 loguru
-openai
+# openai removed (using langchain-openai instead)
 pdfminer.six
 pytest
 python-dotenv

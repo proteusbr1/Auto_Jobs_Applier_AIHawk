@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Dict, Optional, List
 
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 from flask import current_app
 from loguru import logger
 
@@ -25,13 +25,13 @@ class BrowserSession:
     Represents a browser session for a specific user.
     """
     
-    def __init__(self, user_id: int, driver: webdriver.Chrome, created_at: float):
+    def __init__(self, user_id: int, driver: webdriver.Remote, created_at: float):
         """
         Initialize a browser session.
         
         Args:
             user_id (int): The ID of the user who owns this session.
-            driver (webdriver.Chrome): The Selenium WebDriver instance.
+            driver (webdriver.Remote): The Selenium WebDriver instance.
             created_at (float): The timestamp when the session was created.
         """
         self.user_id = user_id
@@ -95,7 +95,7 @@ class SessionManager:
         
         logger.debug(f"Session manager initialized with max_sessions={max_sessions}, session_timeout={session_timeout}")
     
-    def get_session(self, user_id: int) -> Optional[webdriver.Chrome]:
+    def get_session(self, user_id: int) -> Optional[webdriver.Remote]:
         """
         Get a browser session for a user.
         
@@ -103,7 +103,7 @@ class SessionManager:
             user_id (int): The ID of the user.
             
         Returns:
-            Optional[webdriver.Chrome]: The WebDriver instance, or None if no session could be created.
+            Optional[webdriver.Remote]: The WebDriver instance, or None if no session could be created.
         """
         with self.lock:
             # Check if user has an existing session
@@ -192,39 +192,70 @@ class SessionManager:
         
         return True
     
-    def _create_browser_session(self, user_id: int) -> Optional[webdriver.Chrome]:
+    def _create_browser_session(self, user_id: int) -> Optional[webdriver.Remote]:
         """
-        Create a new browser session.
+        Create a new browser session using Selenium Grid.
         
         Args:
             user_id (int): The ID of the user.
             
         Returns:
-            Optional[webdriver.Chrome]: The WebDriver instance, or None if the session could not be created.
+            Optional[webdriver.Remote]: The WebDriver instance, or None if the session could not be created.
         """
         try:
-            # Get user-specific data directory
-            user_data_dir = self._get_user_data_dir(user_id)
-            
-            # Set up Chrome options
-            options = Options()
-            options.add_argument(f"--user-data-dir={user_data_dir}")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--disable-gpu")
-            options.add_argument("--disable-extensions")
-            options.add_argument("--disable-notifications")
-            options.add_argument("--disable-infobars")
-            options.add_argument("--mute-audio")
-            
-            # Create Chrome service
-            service = ChromeService(ChromeDriverManager().install())
-            
-            # Create Chrome driver
-            driver = webdriver.Chrome(service=service, options=options)
-            driver.set_window_size(1920, 1080)
-            
-            return driver
+            # Try to use Selenium Grid first
+            try:
+                from selenium.webdriver.firefox.options import Options as FirefoxOptions
+                from selenium.webdriver import Remote
+                
+                # Set up Firefox options
+                firefox_options = FirefoxOptions()
+                firefox_options.add_argument("--disable-notifications")
+                firefox_options.add_argument("--mute-audio")
+                
+                # Set user agent to avoid detection
+                firefox_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/90.0")
+                
+                # Connect to Selenium Grid hub
+                driver = Remote(
+                    command_executor='http://selenium-hub:4444/wd/hub',
+                    options=firefox_options
+                )
+                
+                driver.set_window_size(1920, 1080)
+                logger.info(f"Created Firefox session via Selenium Grid for user {user_id}")
+                
+                return driver
+            except Exception as e:
+                logger.warning(f"Failed to create Firefox session via Selenium Grid for user {user_id}: {e}")
+                logger.warning("Falling back to local Firefox driver")
+                
+                # Fall back to local Firefox driver
+                # Get user-specific data directory
+                user_data_dir = self._get_user_data_dir(user_id)
+                
+                # Set up Firefox options
+                options = FirefoxOptions()
+                options.add_argument("--disable-notifications")
+                options.add_argument("--mute-audio")
+                
+                # Set user agent to avoid detection
+                options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/90.0")
+                
+                try:
+                    # Try to use geckodriver directly
+                    from selenium.webdriver.firefox.service import Service as FirefoxService
+                    
+                    # Create Firefox driver
+                    driver = webdriver.Firefox(options=options)
+                    driver.set_window_size(1920, 1080)
+                    logger.info(f"Created local Firefox session for user {user_id}")
+                    
+                    return driver
+                except Exception as firefox_error:
+                    logger.warning(f"Failed to create local Firefox session for user {user_id}: {firefox_error}")
+                    logger.warning("No available WebDriver found. Authentication will fail.")
+                    return None
         except Exception as e:
             logger.exception(f"Error creating browser session for user {user_id}: {e}")
             return None
@@ -241,12 +272,12 @@ class SessionManager:
         """
         user_data_dir = current_app.config['USER_DATA_DIR']
         user_dir = Path(user_data_dir, str(user_id))
-        chrome_profile_dir = user_dir / 'chrome_profile'
+        firefox_profile_dir = user_dir / 'firefox_profile'
         
         # Create directories if they don't exist
-        os.makedirs(chrome_profile_dir, exist_ok=True)
+        os.makedirs(firefox_profile_dir, exist_ok=True)
         
-        return chrome_profile_dir
+        return firefox_profile_dir
     
     def _cleanup_sessions(self):
         """

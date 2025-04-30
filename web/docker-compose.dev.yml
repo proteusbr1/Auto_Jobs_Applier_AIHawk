@@ -123,6 +123,36 @@ services:
       - NGINX_HOST=localhost
       - NGINX_PORT=80
 
+  selenium-hub:
+    image: selenium/hub:4.10.0
+    container_name: AIHawk-Selenium_Hub
+    restart: no
+    networks:
+      - default
+    environment:
+      - TZ=America/New_York
+
+  selenium-firefox:
+    container_name: AIHawk-Selenium
+    restart: no
+    image: selenium/node-firefox:4.10.0
+    ports:
+      - "127.0.0.1:7900:7900"
+    volumes:
+      - ./downloads:/downloads
+    networks:
+      - default
+    shm_size: 2g
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=5
+      - SE_NODE_SESSION_TIMEOUT=300
+      - TZ=America/New_York
+    depends_on:
+      - selenium-hub
+
 volumes:
   postgres_data:
   redis_data:

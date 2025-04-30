@@ -11,7 +11,7 @@ import logging
 from flask import current_app, session, redirect, url_for, render_template, flash, request
 from flask_login import current_user, login_required
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -37,27 +37,52 @@ class LinkedInAuth:
         self.is_authenticated = False
     
     def setup_driver(self):
-        """Set up the Chrome driver for LinkedIn authentication."""
-        chrome_options = Options()
-        if self.headless:
-            chrome_options.add_argument("--headless")
-        
-        # Add additional options for stability
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
-        
-        # Set user agent to avoid detection
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36")
-        
-        # Create a new Chrome driver
-        self.driver = webdriver.Chrome(options=chrome_options)
-        
-        # Set timeout for page loads
-        self.driver.set_page_load_timeout(30)
-        
-        return self.driver
+        """Set up the remote WebDriver for LinkedIn authentication."""
+        try:
+            # Use Remote WebDriver to connect to Selenium Grid
+            from selenium.webdriver.firefox.options import Options as FirefoxOptions
+            from selenium.webdriver import Remote
+            
+            firefox_options = FirefoxOptions()
+            if self.headless:
+                firefox_options.add_argument("--headless")
+            
+            # Set user agent to avoid detection
+            firefox_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/90.0")
+            
+            # Connect to Selenium Grid hub
+            self.driver = Remote(
+                command_executor='http://selenium-hub:4444/wd/hub',
+                options=firefox_options
+            )
+            
+            # Set timeout for page loads
+            self.driver.set_page_load_timeout(30)
+            
+            return self.driver
+        except Exception as e:
+            logger.error(f"Error setting up WebDriver: {str(e)}")
+            # Fallback to local Firefox driver if available
+            try:
+                from selenium.webdriver.firefox.options import Options as FirefoxOptions
+                
+                firefox_options = FirefoxOptions()
+                if self.headless:
+                    firefox_options.add_argument("--headless")
+                
+                # Set user agent to avoid detection
+                firefox_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/90.0")
+                
+                # Create a new Firefox driver
+                self.driver = webdriver.Firefox(options=firefox_options)
+                
+                # Set timeout for page loads
+                self.driver.set_page_load_timeout(30)
+                
+                return self.driver
+            except Exception as e2:
+                logger.error(f"Error setting up fallback WebDriver: {str(e2)}")
+                raise
     
     def open_linkedin(self):
         """Open LinkedIn in the browser."""
@@ -116,14 +141,14 @@ class LinkedInAuth:
             return False
     
     def close_driver(self):
-        """Close the Chrome driver."""
+        """Close the browser driver."""
         if self.driver:
             try:
                 self.driver.quit()
                 self.driver = None
-                logger.info("Closed Chrome driver")
+                logger.info("Closed browser driver")
             except Exception as e:
-                logger.error(f"Error closing Chrome driver: {str(e)}")
+                logger.error(f"Error closing browser driver: {str(e)}")
     
     def get_session_cookies(self):
         """Get the session cookies from the browser.

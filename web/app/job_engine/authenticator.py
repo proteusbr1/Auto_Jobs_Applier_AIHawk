@@ -59,18 +59,18 @@ class LinkedInAuthenticator:
         """
         user_data_dir = current_app.config['USER_DATA_DIR']
         user_dir = Path(user_data_dir, str(self.user_id))
-        chrome_profile_dir = user_dir / 'chrome_profile'
+        firefox_profile_dir = user_dir / 'firefox_profile'
         
         # Create directories if they don't exist
-        os.makedirs(chrome_profile_dir, exist_ok=True)
+        os.makedirs(firefox_profile_dir, exist_ok=True)
         
-        return chrome_profile_dir
+        return firefox_profile_dir
 
     def start(self):
         """
         Start the authentication process.
         """
-        logger.debug(f"Starting Chrome browser to log in to LinkedIn for user {self.user_id}")
+        logger.debug(f"Starting browser to log in to LinkedIn for user {self.user_id}")
         
         if self.is_logged_in():
             logger.debug(f"User {self.user_id} is already logged in. Skipping login process.")
@@ -85,6 +85,35 @@ class LinkedInAuthenticator:
         """
         logger.debug(f"Navigating to the LinkedIn login page for user {self.user_id}...")
         try:
+            # Check if we have stored LinkedIn session cookies
+            if self.user.linkedin_session:
+                try:
+                    # Try to restore the session from cookies
+                    logger.debug(f"Attempting to restore LinkedIn session from cookies for user {self.user_id}")
+                    self.driver.get("https://www.linkedin.com")
+                    
+                    # Add cookies to the driver
+                    import json
+                    cookies = json.loads(self.user.linkedin_session)
+                    for cookie in cookies:
+                        try:
+                            self.driver.add_cookie(cookie)
+                        except Exception as cookie_error:
+                            logger.warning(f"Error adding cookie for user {self.user_id}: {cookie_error}")
+                    
+                    # Refresh the page to apply cookies
+                    self.driver.refresh()
+                    
+                    # Check if we're logged in
+                    if self.is_logged_in():
+                        logger.debug(f"Successfully restored LinkedIn session for user {self.user_id}")
+                        return
+                    else:
+                        logger.warning(f"Failed to restore LinkedIn session for user {self.user_id}. Proceeding with manual login.")
+                except Exception as session_error:
+                    logger.warning(f"Error restoring LinkedIn session for user {self.user_id}: {session_error}. Proceeding with manual login.")
+            
+            # If we don't have stored cookies or failed to restore the session, proceed with manual login
             self.driver.get("https://www.linkedin.com/login")
             if 'feed' in self.driver.current_url:
                 logger.debug(f"User {self.user_id} is already logged in.")
@@ -94,6 +123,9 @@ class LinkedInAuthenticator:
             # This could be enhanced with stored credentials in a secure way
             self.enter_credentials()
             self.handle_security_check()
+            
+            # Save the session cookies for future use
+            self._save_session_cookies()
             
             # Update user's last LinkedIn login time
             self._update_linkedin_login_time()
@@ -211,6 +243,26 @@ class LinkedInAuthenticator:
         except Exception as e:
             logger.exception(f"An unexpected error occurred in is_logged_in for user {self.user_id}: {e}")
             return False
+
+    def _save_session_cookies(self):
+        """
+        Save the LinkedIn session cookies to the user's record.
+        """
+        try:
+            # Get cookies from the driver
+            cookies = self.driver.get_cookies()
+            if cookies:
+                # Save cookies to the user's record
+                import json
+                self.user.linkedin_session = json.dumps(cookies)
+                self.user.linkedin_authenticated = True
+                db.session.commit()
+                logger.debug(f"Saved LinkedIn session cookies for user {self.user_id}")
+            else:
+                logger.warning(f"No cookies found to save for user {self.user_id}")
+        except Exception as e:
+            logger.exception(f"Error saving LinkedIn session cookies for user {self.user_id}: {e}")
+            db.session.rollback()
 
     def _update_linkedin_login_time(self):
         """

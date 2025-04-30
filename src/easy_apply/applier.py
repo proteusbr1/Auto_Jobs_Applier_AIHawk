@@ -10,7 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 
 from src.job import Job, JobCache
-from src.llm.llm_manager import GPTAnswerer
+from src.llm.llm_manager import LLMAnswerer
 import src.utils as utils
 from app_config import (
     MIN_SCORE_APPLY,
@@ -35,8 +35,8 @@ class AIHawkEasyApplier:
         driver: WebDriver,
         resume_manager,
         set_old_answers: List[Tuple[str, str, str]],
-        gpt_answerer: GPTAnswerer,
-        resume_generator_manager,
+        gpt_answerer: LLMAnswerer,
+        resume_generator_manager=None,
         wait_time: int = 10,
         cache: JobCache = None,
     ):
@@ -47,8 +47,9 @@ class AIHawkEasyApplier:
             driver (WebDriver): The Selenium WebDriver instance.
             resume_manager: The resume manager instance.
             set_old_answers (List[Tuple[str, str, str]]): List of pre-defined answers.
-            gpt_answerer (GPTAnswerer): The GPT answerer instance.
+            gpt_answerer (LLMAnswerer): The GPT answerer instance.
             resume_generator_manager: The resume generator manager instance.
+                                    Can be None if using direct HTML resume.
             wait_time (int): The maximum time to wait for elements to appear.
             cache (JobCache): The job cache instance.
         """
@@ -87,7 +88,7 @@ class AIHawkEasyApplier:
             logger.error("Job object is None. Cannot apply.")
             return False
         
-        # Set up the job in the GPTAnswerer before any evaluation or form filling
+        # Set up the job in the LLMAnswerer before any evaluation or form filling
         self.gpt_answerer.set_job(
             title=job.title,
             company=job.company,
@@ -100,7 +101,7 @@ class AIHawkEasyApplier:
             gpt_salary=job.gpt_salary,
             search_country=job.search_country,
         )
-        logger.debug("Job successfully set up in GPTAnswerer.")
+        logger.debug("Job successfully set up in LLMAnswerer.")
         
         try:
             self.driver.get(job.link)

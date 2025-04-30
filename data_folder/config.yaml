@@ -24,321 +24,17 @@ date:
   24 hours: true
 
 searches:
-  - location: 'Worldwide'
+  - location: "Worldwide"
     positions:
-      - 'Health'
-      - 'Medical'
-      - 'Medicine'
-      - 'Healthcare'
-      - 'Physician'
-      - 'Paralegal'
-      - 'HealthTech'
+      - "Health"
+      - "Medical"
+      - "Medicine"
+      - "Healthcare"
+      - "Physician"
+      - "Paralegal"
+      - "HealthTech"
 
-  # - location: 'United States'
-  #   positions:
-  #     - 'Injury'
-  #     - 'Witness'
-  
-  # - location: 'Germany'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Japan'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'India'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'United Kingdom'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'France'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Italy'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Canada'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Brazil'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-   
-  # - location: 'South Korea'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-
-  
-  # - location: 'Mexico'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Australia'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Spain'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Indonesia'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-
-  # - location: 'Turkey'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Netherlands'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Saudi Arabia'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Switzerland'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Taiwan'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Belgium'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Sweden'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Argentina'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Ireland'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'United Arab Emirates'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Austria'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Singapore'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Israel'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Norway'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-
-  # - location: 'Qatar'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Denmark'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Hong Kong'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  
-  # - location: 'Portugal'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-
-  
-  # - location: 'Chile'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'New Zealand'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-
-  # - location: 'Iceland'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Finland'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-  
-  # - location: 'Liechtenstein'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-
-  # - location: 'Luxembourg'
-  #   positions:
-  #     - 'Health'
-  #     - 'Medical'
-  #     - 'Medicine'
-  #     - 'Healthcare'
-  #     - 'Physician'
-
-apply_once_at_company: false 
+apply_once_at_company: false
 
 distance: 100
 
@@ -386,13 +82,24 @@ title_blacklist:
   - Therapists
   - Sales
   - Telesales
-  - Sales-
+  - Tourism
+  - Sales
+  - No experience required
+
+description_blacklist:
+  # Add keywords or phrases here that should cause a job to be skipped if found in the description.
+  # Examples:
+  # - "requires 5+ years experience"
+  # - "on-site"
+  # - "relocation assistance not provided"
+  - Tourism
+  - Sales Representative
 
 job_applicants_threshold:
   min_applicants: 0
   max_applicants: 30
 
-llm_model_type: openai
-llm_model: 'gpt-4o-mini'
+llm_model_type: gemini
+llm_model: "gemini-2.5-flash-preview-04-17"
 
 resume_style: "Modern Grey"

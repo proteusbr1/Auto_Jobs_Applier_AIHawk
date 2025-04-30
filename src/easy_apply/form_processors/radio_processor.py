@@ -62,11 +62,11 @@ class RadioProcessor(BaseProcessor):
                 question_text = legend.text.strip()
                 logger.debug(f"Question text from legend: {question_text}")
                 
-                # Find all radio options
-                radio_options = fieldset.find_elements(By.XPATH, f".//div[contains(@class, '{self.selectors['new']['radio_option_container']}')]")
+                # Find all radio options using the data-test attribute for stability
+                radio_options = fieldset.find_elements(By.XPATH, f".//{self.selectors['new']['radio_option_container']}")
                 
                 if radio_options:
-                    logger.debug(f"Found {len(radio_options)} radio options in new structure")
+                    logger.debug(f"Found {len(radio_options)} radio options in new structure using data-test attribute")
                     
                     # Get the labels and inputs for each radio option
                     options = []
@@ -74,11 +74,11 @@ class RadioProcessor(BaseProcessor):
                     
                     for option in radio_options:
                         try:
-                            # Find the input element
+                            # Find the input element using its specific data-test attribute
                             input_elem = option.find_element(By.XPATH, f".//input[@{self.selectors['new']['radio_input']}]")
                             radio_inputs.append(input_elem)
                             
-                            # Find the label element
+                            # Find the label element using its specific data-test attribute
                             label_elem = option.find_element(By.XPATH, f".//label[@{self.selectors['new']['radio_label']}]")
                             option_text = label_elem.text.strip().lower()
                             options.append(option_text)
@@ -105,8 +105,8 @@ class RadioProcessor(BaseProcessor):
                             except Exception as js_click_error:
                                 logger.warning(f"Failed to click radio input with JavaScript: {js_click_error}")
                                 try:
-                                    # Try clicking the label instead
-                                    label = radio_options[i].find_element(By.XPATH, ".//label")
+                                    # Try clicking the label instead, finding it by its specific data-test attribute
+                                    label = radio_options[i].find_element(By.XPATH, f".//label[@{self.selectors['new']['radio_label']}]")
                                     self.driver.execute_script("arguments[0].click();", label)
                                     logger.debug(f"Selected radio option '{option}' by clicking label with JavaScript")
                                     selected = True
@@ -125,8 +125,8 @@ class RadioProcessor(BaseProcessor):
                         except Exception as first_js_click_error:
                             logger.warning(f"Failed to click first radio input with JavaScript: {first_js_click_error}")
                             try:
-                                # Try clicking the first label with JavaScript
-                                first_label = radio_options[0].find_element(By.XPATH, ".//label")
+                                # Try clicking the first label with JavaScript, finding it by its specific data-test attribute
+                                first_label = radio_options[0].find_element(By.XPATH, f".//label[@{self.selectors['new']['radio_label']}]")
                                 self.driver.execute_script("arguments[0].click();", first_label)
                                 logger.debug(f"Selected first radio option by clicking label with JavaScript as fallback")
                                 return True

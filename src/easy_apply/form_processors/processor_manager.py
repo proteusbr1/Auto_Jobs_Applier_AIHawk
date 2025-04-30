@@ -6,7 +6,7 @@ from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
 
 from src.job import Job
-from src.llm.llm_manager import GPTAnswerer
+from src.llm.llm_manager import LLMAnswerer
 from src.easy_apply.answer_storage import AnswerStorage
 from src.easy_apply.form_processors.base_processor import BaseProcessor
 from src.easy_apply.form_processors.textbox_processor import TextboxProcessor
@@ -22,13 +22,13 @@ class FormProcessorManager:
     Manager for form field processors in LinkedIn Easy Apply forms.
     """
     
-    def __init__(self, driver: WebDriver, gpt_answerer: GPTAnswerer, answer_storage: AnswerStorage, wait_time: int = 10):
+    def __init__(self, driver: WebDriver, gpt_answerer: LLMAnswerer, answer_storage: AnswerStorage, wait_time: int = 10):
         """
         Initialize the FormProcessorManager with necessary components.
         
         Args:
             driver (WebDriver): The Selenium WebDriver instance.
-            gpt_answerer (GPTAnswerer): The GPT answerer instance for generating answers.
+            gpt_answerer (LLMAnswerer): The GPT answerer instance for generating answers.
             answer_storage (AnswerStorage): The answer storage instance for saving and retrieving answers.
             wait_time (int): The maximum time to wait for elements to appear.
         """
@@ -46,14 +46,16 @@ class FormProcessorManager:
         """
         Initialize all form field processors.
         """
-        # Create processor instances
+        # Create processor instances - order matters for processing priority
         self.processors = [
-            TypeaheadProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
-            # Put checkbox processors first to handle them before other processors
+            # Prioritize checkbox processor for language questions and required checkboxes
             CheckboxProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
-            TermsOfServiceProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
+            # Handle radio buttons next - these often include language selection too
             RadioProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
+            # Then handle other form elements
+            TermsOfServiceProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
             TextboxProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
+            TypeaheadProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
             DateProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time),
             DropdownProcessor(self.driver, self.gpt_answerer, self.answer_storage, self.wait_time)
         ]

@@ -11,7 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from src.job import Job
-from src.llm.llm_manager import GPTAnswerer
+from src.llm.llm_manager import LLMAnswerer
 from src.easy_apply.answer_storage import AnswerStorage
 
 # HTML class names and selectors for different form elements
@@ -26,7 +26,7 @@ SELECTORS = {
         "select_container": "text-entity-list-form-component",
         "required_label": "fb-dash-form-element__label-title--is-required",
         "radio_fieldset": "data-test-form-builder-radio-button-form-component",
-        "radio_option_container": "qwbzuAdmnzzPszIBvGgzZoJXWONMrhTWs",
+        "radio_option_container": "div[@data-test-text-selectable-option]", # Using data-test attribute for stability
         "radio_input": "data-test-text-selectable-option__input",
         "radio_label": "data-test-text-selectable-option__label"
     },
@@ -44,6 +44,13 @@ SELECTORS = {
         "date_field": ".//input[@placeholder='mm/dd/yyyy']",
         "date_field_alt": ".//input[@name='artdeco-date']",
         "file_input": ".//input[@type='file']"
+    },
+    # Checkbox selectors
+    "checkbox": {
+        "standard": ".//input[@type='checkbox']",
+        "data_test": ".//input[contains(@data-test, 'selectable-option__input')]",
+        "class_name": "fb-form-element__checkbox",
+        "label_xpath": "./following-sibling::label"
     }
 }
 
@@ -52,13 +59,13 @@ class BaseProcessor:
     Base class for form field processors with common functionality.
     """
     
-    def __init__(self, driver: WebDriver, gpt_answerer: GPTAnswerer, answer_storage: AnswerStorage, wait_time: int = 10):
+    def __init__(self, driver: WebDriver, gpt_answerer: LLMAnswerer, answer_storage: AnswerStorage, wait_time: int = 10):
         """
         Initialize the BaseProcessor with common dependencies.
         
         Args:
             driver (WebDriver): The Selenium WebDriver instance.
-            gpt_answerer (GPTAnswerer): The GPT answerer instance for generating answers.
+            gpt_answerer (LLMAnswerer): The GPT answerer instance for generating answers.
             answer_storage (AnswerStorage): The answer storage instance for saving and retrieving answers.
             wait_time (int): The maximum time to wait for elements to appear.
         """

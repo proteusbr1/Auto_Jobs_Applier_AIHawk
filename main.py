@@ -9,9 +9,9 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException
-from lib_resume_builder_AIHawk import Resume, StyleManager, FacadeManager, ResumeGenerator
+# Resume builder library no longer used - direct HTML resume used instead
 from src.utils import chrome_browser_options
-from src.llm.llm_manager import GPTAnswerer
+from src.llm.llm_manager import LLMAnswerer
 from src.aihawk_authenticator import AIHawkAuthenticator
 from src.aihawk_bot_facade import AIHawkBotFacade
 from src.aihawk_job_manager import AIHawkJobManager
@@ -96,20 +96,21 @@ class ConfigValidator:
             'distance': int,
             'company_blacklist': list,
             'title_blacklist': list,
+            'description_blacklist': list,  # Added for description-based filtering
             'llm_model_type': str,
             'llm_model': str
         }
 
         for key, expected_type in required_keys.items():
             if key not in parameters:
-                if key in ['company_blacklist', 'title_blacklist']:
+                if key in ['company_blacklist', 'title_blacklist', 'description_blacklist']:
                     parameters[key] = []
                     logger.warning(f"Missing key '{key}' in config. Setting default empty list.")
                 else:
                     logger.error(f"Missing or invalid key '{key}' in config file {config_yaml_path}")
                     raise ConfigError(f"Missing or invalid key '{key}' in config file {config_yaml_path}")
             elif not isinstance(parameters[key], expected_type):
-                if key in ['company_blacklist', 'title_blacklist'] and parameters[key] is None:
+                if key in ['company_blacklist', 'title_blacklist', 'description_blacklist'] and parameters[key] is None:
                     parameters[key] = []
                     logger.warning(f"Key '{key}' is None in config. Setting to empty list.")
                 else:
@@ -180,8 +181,8 @@ class ConfigValidator:
             raise ConfigError(f"Invalid distance value in config file {config_yaml_path}. Must be one of: {approved_distances}")
         logger.debug(f"Distance value '{parameters['distance']}' is valid.")
 
-        # Validate blacklists
-        for blacklist in ['company_blacklist', 'title_blacklist']:
+        # Validate blacklists and description_blacklist
+        for blacklist in ['company_blacklist', 'title_blacklist', 'description_blacklist']:
             if not isinstance(parameters.get(blacklist), list):
                 logger.error(f"'{blacklist}' must be a list in config file {config_yaml_path}")
                 raise ConfigError(f"'{blacklist}' must be a list in config file {config_yaml_path}")
@@ -194,35 +195,43 @@ class ConfigValidator:
         return parameters
 
     @staticmethod
-    def validate_secrets(env_path: Path = Path('.env')) -> str:
+    def validate_secrets(env_path: Path = Path('.env'), llm_model_type: str = None) -> str:
         """
         Validates the required secrets from the environment file.
 
         Args:
             env_path (Path): Path to the environment file.
+            llm_model_type (str): The type of LLM model being used (e.g., 'openai', 'gemini').
 
         Returns:
-            str: The LLM API key.
+            str: The appropriate API key for the specified model type.
 
         Raises:
             ConfigError: If any mandatory secret is missing or empty.
         """
         logger.debug(f"Validating secrets from environment file: {env_path}")
         load_dotenv(dotenv_path=env_path)
-        mandatory_secrets = ['LLM_API_KEY']
-
-        for secret in mandatory_secrets:
-            value = os.getenv(secret)
-            if value is None:
-                logger.error(f"Missing environment variable '{secret}' in {env_path}.")
-                raise ConfigError(f"Missing environment variable '{secret}' in {env_path}.")
-            if not value.strip():
-                logger.error(f"Environment variable '{secret}' cannot be empty in {env_path}.")
-                raise ConfigError(f"Environment variable '{secret}' cannot be empty in {env_path}.")
-            logger.debug(f"Environment variable '{secret}' is set.")
-
+        
+        # Determine which API key to use based on model type
+        api_key_env_var = 'OPENAI_API_KEY'  # Default
+        if llm_model_type == 'gemini':
+            api_key_env_var = 'GOOGLE_API_KEY'
+        
+        logger.debug(f"Using API key environment variable: {api_key_env_var} for model type: {llm_model_type}")
+        
+        # Validate the required API key
+        value = os.getenv(api_key_env_var)
+        if value is None:
+            logger.error(f"Missing environment variable '{api_key_env_var}' in {env_path}.")
+            raise ConfigError(f"Missing environment variable '{api_key_env_var}' in {env_path}.")
+        if not value.strip():
+            logger.error(f"Environment variable '{api_key_env_var}' cannot be empty in {env_path}.")
+            raise ConfigError(f"Environment variable '{api_key_env_var}' cannot be empty in {env_path}.")
+        
+        logger.debug(f"Environment variable '{api_key_env_var}' is set.")
         logger.debug("All required secrets are validated.")
-        return os.getenv('LLM_API_KEY')
+        
+        return value
 
 
 class FileManager:
@@ -363,6 +372,7 @@ def init_browser() -> webdriver.Chrome:
 def create_and_run_bot(parameters: dict, llm_api_key: str, resume_manager: ResumeManager):
     """
     Creates and runs the AIHawk bot with the provided parameters and API key.
+    Uses direct HTML resume instead of PDF generator library.
 
     Args:
         parameters (dict): Configuration parameters.
@@ -376,33 +386,16 @@ def create_and_run_bot(parameters: dict, llm_api_key: str, resume_manager: Resum
     """
     logger.debug("Creating and running the bot.")
     try:
-        logger.debug("Initializing StyleManager and ResumeGenerator.")
-        style_manager = StyleManager()
-        resume_generator = ResumeGenerator()
-
         # Access plainTextResume from parameters['uploads']
         plain_text_path = parameters['uploads']['plainTextResume']
         logger.debug(f"Reading plain text resume from: {plain_text_path}")
-        with open(plain_text_resume_file := plain_text_path, "r", encoding='utf-8') as file:
+        with open(plain_text_path, "r", encoding='utf-8') as file:
             plain_text_resume = file.read()
         logger.debug("Plain text resume read successfully.")
 
-        logger.debug("Creating Resume object.")
-        resume_object = Resume(plain_text_resume)
-        logger.debug("Resume object created.")
-
-        logger.debug("Initializing FacadeManager.")
-        resume_generator_manager = FacadeManager(
-            llm_api_key,
-            style_manager,
-            resume_generator,
-            resume_object,
-            Path("data_folder/output")
-        )
-        logger.debug("FacadeManager initialized.")
-
-        logger.debug("Choosing resume style.")
-        resume_generator_manager.choose_style()
+        # Using direct HTML resume from resume_manager instead of PDF generator library
+        resume_html_path = resume_manager.get_resume()
+        logger.debug(f"Using direct HTML resume from: {resume_html_path}")
 
         logger.debug("Creating JobApplicationProfile object.")
         job_application_profile_object = JobApplicationProfile(plain_text_resume)
@@ -415,13 +408,15 @@ def create_and_run_bot(parameters: dict, llm_api_key: str, resume_manager: Resum
         logger.debug("Initializing bot components.")
         login_component = AIHawkAuthenticator(browser)
         apply_component = AIHawkJobManager(browser)
-        gpt_answerer_component = GPTAnswerer(parameters, llm_api_key)
+        gpt_answerer_component = LLMAnswerer(parameters, llm_api_key)
         logger.debug("Bot components initialized.")
 
         logger.debug("Setting up AIHawkBotFacade.")
         bot = AIHawkBotFacade(login_component, apply_component)
-        bot.set_job_application_profile_and_resume(job_application_profile_object, resume_object)
-        bot.set_gpt_answerer_and_resume_generator(gpt_answerer_component, resume_generator_manager)
+        # Set only the job application profile; we don't need the resume_object anymore
+        bot.set_job_application_profile_and_resume(job_application_profile_object, None)
+        # Set only the GPT answerer; we don't need resume_generator_manager anymore
+        bot.set_gpt_answerer_and_resume_generator(gpt_answerer_component, None)
         bot.set_parameters(parameters, resume_manager)
         logger.debug("AIHawkBotFacade setup complete.")
 
@@ -491,7 +486,7 @@ def main(resume: Optional[Path] = None):
         parameters = ConfigValidator.validate_config(config_file)
 
         logger.debug("Validating secrets.")
-        llm_api_key = ConfigValidator.validate_secrets(Path('.env'))
+        llm_api_key = ConfigValidator.validate_secrets(Path('.env'), parameters['llm_model_type'])
 
         logger.debug("Initializing ResumeManager.")
         default_html_resume = Path("resumes/resume.html")

@@ -517,12 +517,12 @@
                     const modal = bootstrap.Modal.getInstance(document.getElementById('createConfigModal'));
                     modal.hide();
 
-                    // Redirect to login page
+                    // Redirect to AIHawk login page
                     window.location.href = "{{ url_for('auth.login') }}";
                     return;
                 }
 
-                // Check if user is authenticated with LinkedIn
+                // Check if user is authenticated with LinkedIn first, before proceeding with API authentication
                 fetch('/linkedin/auth/status')
                     .then(response => response.json())
                     .then(data => {
@@ -535,41 +535,23 @@
                             window.location.href = "{{ url_for('main.linkedin_auth') }}";
                             return;
                         } else {
-                            // User is authenticated with LinkedIn, proceed with creating job config
-                            createJobConfig(jsonData);
+                            // Continue with the rest of the form submission
+                            continueFormSubmission();
                         }
                     })
                     .catch(error => {
                         console.error('Error checking LinkedIn auth status:', error);
-                        // Proceed with creating job config anyway, the API will handle the error
-                        createJobConfig(jsonData);
+                        // Continue with the form submission anyway
+                        continueFormSubmission();
                     });
 
                 return;
 
-                // User is authenticated, proceed with creating job config
-                apiClient.createJobConfig(jsonData)
-                    .then(response => {
-                        // Close modal and reload page on success
-                        const modal = bootstrap.Modal.getInstance(document.getElementById('createConfigModal'));
-                        modal.hide();
-                        window.location.reload();
-                    })
-                    .catch(error => {
-                        console.error('Error creating job config:', error);
-
-                        // Create or show error message in the modal instead of alert
-                        let errorDiv = document.querySelector('#createConfigModal .modal-body .alert-danger');
-                        if (!errorDiv) {
-                            errorDiv = document.createElement('div');
-                            errorDiv.className = 'alert alert-danger mt-3';
-                            errorDiv.role = 'alert';
-                            document.querySelector('#createConfigModal .modal-body').prepend(errorDiv);
-                        }
-
-                        errorDiv.textContent = 'Error creating job configuration: ' + error.message;
-                        errorDiv.style.display = 'block';
-                    });
+                // Function to continue with form submission after LinkedIn auth check
+                function continueFormSubmission() {
+                    // User is authenticated with LinkedIn, proceed with creating job config
+                    createJobConfig(jsonData);
+                }
             });
         }
 

@@ -179,19 +179,19 @@ if [[ ! -f "$ENV_EXAMPLE_FILE" ]]; then
     cat <<EOL > "$ENV_EXAMPLE_FILE"
 # .env.example
 
-LLM_API_KEY=your_actual_api_key_here
+OPENAI_API_KEY=your_actual_api_key_here
 EOL
 fi
 
 # Check if .env already exists to prevent overwriting
 if [[ ! -f "$ENV_FILE" ]]; then
-    # Prompt user to enter their LLM_API_KEY
-    echo_info "Please enter your LLM_API_KEY (OpenAI, Ollama, or Gemini):"
-    read -rsp "LLM_API_KEY: " LLM_API_KEY
+    # Prompt user to enter their OPENAI_API_KEY
+    echo_info "Please enter your OPENAI_API_KEY (OpenAI, Ollama, or Gemini):"
+    read -rsp "OPENAI_API_KEY: " OPENAI_API_KEY
     echo
 
-    # Write the LLM_API_KEY to the .env file
-    echo "LLM_API_KEY=$LLM_API_KEY" > "$ENV_FILE"
+    # Write the OPENAI_API_KEY to the .env file
+    echo "OPENAI_API_KEY=$OPENAI_API_KEY" > "$ENV_FILE"
 
     echo_info ".env file has been set up successfully."
 else

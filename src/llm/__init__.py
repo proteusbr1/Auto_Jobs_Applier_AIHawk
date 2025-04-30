@@ -2,8 +2,8 @@
 LLM package initialization.
 """
 
-from src.llm.gpt_answerer import GPTAnswerer
+from src.llm.gpt_answerer import LLMAnswerer
 
 __all__ = [
-    'GPTAnswerer',
+    'LLMAnswerer',
 ]

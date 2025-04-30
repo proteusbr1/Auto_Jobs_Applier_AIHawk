@@ -84,26 +84,27 @@ class AIHawkBotFacade:
 
         Args:
             job_application_profile (Any): The user's job application profile.
-            resume (Any): The user's resume.
+            resume (Any): The user's resume. Can be None if using direct HTML resume.
 
         Raises:
-            ValueError: If either the job application profile or resume is empty.
+            ValueError: If the job application profile is empty.
         """
         logger.debug("Setting job application profile and resume")
         self._validate_non_empty(job_application_profile, "Job application profile")
-        self._validate_non_empty(resume, "Resume")
+        # Resume can be None when using direct HTML resume
         self.job_application_profile = job_application_profile
         self.resume = resume
         self.state.job_application_profile_set = True
         logger.debug("Job application profile and resume set successfully")
 
-    def set_gpt_answerer_and_resume_generator(self, gpt_answerer_component: Any, resume_generator_manager: Any):
+    def set_gpt_answerer_and_resume_generator(self, gpt_answerer_component: Any, resume_generator_manager: Any = None):
         """
         Sets up the GPT answerer and resume generator components.
 
         Args:
             gpt_answerer_component (Any): Component responsible for generating answers using GPT.
-            resume_generator_manager (Any): Component responsible for generating resumes.
+            resume_generator_manager (Any, optional): Component responsible for generating resumes.
+                                                     Can be None if using direct HTML resume.
 
         Raises:
             ValueError: If the job application profile and resume are not set before this method is called.
@@ -111,11 +112,17 @@ class AIHawkBotFacade:
         logger.debug("Setting GPT answerer and resume generator")
         self._ensure_job_profile_and_resume_set()
         gpt_answerer_component.set_job_application_profile(self.job_application_profile)
-        gpt_answerer_component.set_resume(self.resume)
+        
+        # Always use USER_RESUME_CHATGPT directly from personal_info.py
+        from data_folder.personal_info import USER_RESUME_CHATGPT
+        gpt_answerer_component.set_resume(USER_RESUME_CHATGPT)
+        
         self.apply_component.set_gpt_answerer(gpt_answerer_component)
-        self.apply_component.set_resume_generator_manager(resume_generator_manager)
+        # Only set resume_generator_manager if it's provided
+        if resume_generator_manager is not None:
+            self.apply_component.set_resume_generator_manager(resume_generator_manager)
         self.state.gpt_answerer_set = True
-        logger.debug("GPT answerer and resume generator set successfully")
+        logger.debug("GPT answerer and resume generator set successfully using USER_RESUME_CHATGPT")
 
     def set_parameters(self, parameters: dict, resume_manager: Any):
         """

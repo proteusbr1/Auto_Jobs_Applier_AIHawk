@@ -16,7 +16,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 import src.utils as utils
 from src.job import Job
-from src.llm.llm_manager import GPTAnswerer
+from src.llm.llm_manager import LLMAnswerer
 from data_folder.personal_info import USER_RESUME_SUMMARY, USER_RESUME_CHATGPT
 from src.easy_apply.file_utils import generate_humanized_filename, check_file_size
 from src.easy_apply.pdf_generator import render_resume_html, generate_pdf_from_html, generate_pdf_from_text
@@ -26,13 +26,13 @@ class FileUploader:
     Handles file uploads in LinkedIn Easy Apply forms.
     """
     
-    def __init__(self, driver: WebDriver, gpt_answerer: GPTAnswerer, resume_path: Optional[str] = None, wait_time: int = 10):
+    def __init__(self, driver: WebDriver, gpt_answerer: LLMAnswerer, resume_path: Optional[str] = None, wait_time: int = 10):
         """
         Initialize the FileUploader with a WebDriver instance.
         
         Args:
             driver (WebDriver): The Selenium WebDriver instance.
-            gpt_answerer (GPTAnswerer): The GPT answerer instance for generating personalized content.
+            gpt_answerer (LLMAnswerer): The GPT answerer instance for generating personalized content.
             resume_path (Optional[str]): The path to the resume file.
             wait_time (int): The maximum time to wait for elements to appear.
         """

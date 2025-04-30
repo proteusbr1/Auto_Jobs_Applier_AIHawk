@@ -119,6 +119,37 @@ class JobExtractor:
             logger.error(f"Unexpected error while fetching job elements: {e}", exc_info=True)
             return []
 
+    def _is_job_tile_loaded(self, job_tile):
+        """
+        Validates if a job tile is fully loaded with content.
+        
+        Args:
+            job_tile (WebElement): The Selenium WebElement representing the job tile.
+            
+        Returns:
+            bool: True if the job tile appears to be fully loaded, False otherwise.
+        """
+        # Check if the job tile has meaningful content
+        try:
+            # Get the HTML content of the job tile
+            html_content = job_tile.get_attribute('outerHTML')
+            
+            # Check if the job tile has meaningful content (not just an empty container)
+            if html_content and len(html_content) > 200:  # A properly loaded job tile should have substantial HTML
+                # Check if essential elements are present
+                title_element = job_tile.find_elements(By.XPATH, './/a[contains(@class, "job-card-list__title--link")]')
+                if title_element:
+                    return True
+            
+            # If we reach here, the job tile appears to be empty or not fully loaded
+            logger.warning("Job tile appears to be incompletely loaded due to connection instability.")
+            logger.debug(f"Incomplete job tile HTML: {html_content}")
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error checking if job tile is loaded: {e}")
+            return False
+
     def extract_job_information_from_tile(self, job_tile):
         """
         Extracts job information from a job tile element.
@@ -128,8 +159,20 @@ class JobExtractor:
 
         Returns:
             Tuple[str, str, str, str, str, str]: A tuple containing job_title, company, job_location, link, apply_method, job_state.
+            None if the job tile is not properly loaded or information extraction fails.
         """
         logger.debug("Starting extraction of job information from tile.")
+        
+        # First check if the job tile is properly loaded
+        if not self._is_job_tile_loaded(job_tile):
+            # Get the job ID if possible for logging purposes
+            try:
+                job_id = job_tile.get_attribute('data-occludable-job-id')
+                logger.warning(f"Skipping incompletely loaded job tile (ID: {job_id}) - likely due to connection instability")
+            except:
+                logger.warning("Skipping incompletely loaded job tile - likely due to connection instability")
+            
+            return None
 
         try:
             job_title = self._extract_job_title(job_tile)
@@ -155,16 +198,44 @@ class JobExtractor:
         """
         logger.debug("Extracting job title.")
         job_title = ""
+        
+        # Get the job ID for better error logging
         try:
-            job_title_element = job_tile.find_element(By.XPATH, './/a[contains(@class, "job-card-list__title--link")]')
-            job_title = job_title_element.text.strip()
-            logger.debug(f"Extracted Job Title: '{job_title}'")
+            job_id = job_tile.get_attribute('data-occludable-job-id')
+        except:
+            job_id = "unknown"
+            
+        try:
+            # Try the primary selector
+            try:
+                job_title_element = job_tile.find_element(By.XPATH, './/a[contains(@class, "job-card-list__title--link")]')
+                job_title = job_title_element.text.strip()
+            except NoSuchElementException:
+                # Try alternative selectors
+                try:
+                    # Try generic strong tag within a link
+                    job_title_element = job_tile.find_element(By.XPATH, './/a//strong')
+                    job_title = job_title_element.text.strip()
+                except NoSuchElementException:
+                    # Try any link with descriptive text
+                    links = job_tile.find_elements(By.TAG_NAME, 'a')
+                    for link in links:
+                        link_text = link.text.strip()
+                        if link_text and len(link_text) > 5:  # Avoid short/empty text
+                            job_title = link_text
+                            break
+            
+            if job_title:
+                logger.debug(f"Extracted Job Title: '{job_title}'")
+            else:
+                logger.warning(f"Job title element found but contains no text (Job ID: {job_id}). Possible connection issue.")
+                logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
         except NoSuchElementException:
-            logger.error("Job title element not found.")
+            logger.warning(f"Job title element not found (Job ID: {job_id}). This may be due to connection instability.")
             logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
             utils.capture_screenshot(self.driver, "job_title_error")
         except Exception as e:
-            logger.error(f"Unexpected error in _extract_job_title: {e}", exc_info=True)
+            logger.error(f"Unexpected error in _extract_job_title (Job ID: {job_id}): {e}", exc_info=True)
             logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
             utils.capture_screenshot(self.driver, "job_title_error")
         return job_title
@@ -226,18 +297,57 @@ class JobExtractor:
         """
         logger.debug("Extracting job link.")
         link = ""
+        
+        # Get the job ID for better error logging
         try:
-            # Use a more robust selector to find the job link, matching any anchor with '/jobs/view/' in its href
-            job_title_element = job_tile.find_element(By.CSS_SELECTOR, "a[href*='/jobs/view/']")
-            link_attr = job_title_element.get_attribute('href') or job_title_element.get_property('href') or ""
-            link = link_attr.split('?')[0] if link_attr else ""
-            logger.debug(f"Extracted Link: '{link}'")
+            job_id = job_tile.get_attribute('data-occludable-job-id')
+        except:
+            job_id = "unknown"
+            
+        try:
+            # First try: Use a selector to find the job link, matching any anchor with '/jobs/view/' in its href
+            try:
+                job_title_element = job_tile.find_element(By.CSS_SELECTOR, "a[href*='/jobs/view/']")
+                link_attr = job_title_element.get_attribute('href') or job_title_element.get_property('href') or ""
+                link = link_attr.split('?')[0] if link_attr else ""
+            except NoSuchElementException:
+                # Second try: Check for any anchor with 'jobs' in the href
+                try:
+                    links = job_tile.find_elements(By.TAG_NAME, "a")
+                    for a_tag in links:
+                        href = a_tag.get_attribute('href')
+                        if href and '/jobs/' in href:
+                            link = href.split('?')[0]
+                            break
+                except Exception as e:
+                    logger.debug(f"Error searching for links with '/jobs/' in href: {e}")
+                
+                # If we still don't have a link and we have a job ID, construct one
+                if not link and job_id != "unknown":
+                    link = f"https://www.linkedin.com/jobs/view/{job_id}/"
+                    logger.debug(f"Constructed job link from job ID: {link}")
+                    
+            if link:
+                logger.debug(f"Extracted Link: '{link}'")
+            else:
+                logger.warning(f"Job link elements found but couldn't extract valid URL (Job ID: {job_id})")
         except NoSuchElementException:
-            logger.error("Job link element not found using selector a[href*='/jobs/view/'].")
+            logger.warning(f"Job link element not found (Job ID: {job_id}). This may be due to connection instability.")
             logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
+            
+            # Even if we can't find a link element, we can still try to construct one from the job ID
+            if job_id != "unknown":
+                link = f"https://www.linkedin.com/jobs/view/{job_id}/"
+                logger.debug(f"Constructed job link from job ID: {link}")
         except Exception as e:
-            logger.error(f"Unexpected error while extracting job link: {e}", exc_info=True)
+            logger.error(f"Unexpected error while extracting job link (Job ID: {job_id}): {e}", exc_info=True)
             logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
+            
+            # Final attempt to construct a link from job ID
+            if job_id != "unknown" and not link:
+                link = f"https://www.linkedin.com/jobs/view/{job_id}/"
+                logger.debug(f"Constructed job link from job ID: {link}")
+                
         return link
 
     def _extract_job_location(self, job_tile):
@@ -252,20 +362,51 @@ class JobExtractor:
         """
         logger.debug("Extracting job location from job tile.")
         job_location = ""
+        
+        # Get the job ID for better error logging
         try:
-            subtitle_element = job_tile.find_element(By.CSS_SELECTOR, 'div.artdeco-entity-lockup__subtitle')
-            company_location_text = subtitle_element.text.strip()
-            if '·' in company_location_text:
-                job_location = company_location_text.split('·')[1].strip()
+            job_id = job_tile.get_attribute('data-occludable-job-id')
+        except:
+            job_id = "unknown"
+            
+        try:
+            # Try multiple different selectors to find the location
+            selectors = [
+                # First try: location in the caption element (shown in the HTML example)
+                (By.CSS_SELECTOR, 'div.artdeco-entity-lockup__caption li span[dir="ltr"]'),
+            ]
+            
+            for selector_type, selector in selectors:
+                try:
+                    elements = job_tile.find_elements(selector_type, selector)
+                    if elements:
+                        # For the subtitle element which might contain company and location
+                        if selector == 'div.artdeco-entity-lockup__subtitle':
+                            element_text = elements[0].text.strip()
+                            if '·' in element_text:
+                                job_location = element_text.split('·')[1].strip()
+                                logger.debug(f"Extracted location from subtitle: '{job_location}'")
+                                break
+                        else:
+                            # For other elements that should contain just the location
+                            element_text = elements[0].text.strip()
+                            if element_text:
+                                job_location = element_text
+                                logger.debug(f"Extracted location using selector {selector}: '{job_location}'")
+                                break
+                except Exception as e:
+                    logger.debug(f"Error with selector {selector}: {e}")
+                    continue
+            
+            if job_location:
+                logger.debug(f"Final extracted job location: '{job_location}'")
             else:
-                job_location = company_location_text.strip()
-            logger.debug(f"Extracted Job Location: '{job_location}'")
-        except NoSuchElementException:
-            logger.error("Job location element not found.")
-            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
+                logger.warning(f"No job location found using any selector (Job ID: {job_id})")
+                logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
         except Exception as e:
             logger.error(f"Unexpected error while extracting job location: {e}", exc_info=True)
             logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
+            
         return job_location
 
     def _extract_apply_method(self, job_tile):

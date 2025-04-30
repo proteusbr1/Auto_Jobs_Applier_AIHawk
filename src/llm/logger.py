@@ -15,7 +15,7 @@ from langchain_core.messages.ai import AIMessage
 from langchain_core.prompt_values import StringPromptValue, ChatPromptValue
 
 from loguru import logger
-from src.llm.utils import MODEL_PRICING
+from src.llm.utils.pricing import get_model_pricing
 from src.llm.models import AIModel
 
 
@@ -107,12 +107,25 @@ class LLMLogger:
         else:
             logger.debug("Prompts are of unknown type, attempting default conversion.")
             try:
-                prompts = {f"prompt_{i + 1}": (prompt.get('content') if isinstance(prompt, dict) else prompt.content)
-                          for i, prompt in enumerate(prompts.get('messages', []))}
-                logger.debug(f"Prompts converted to dictionary using default method: {prompts}")
+                if isinstance(prompts, str):
+                    # Handle case when prompts is a simple string
+                    prompts = {"prompt_1": prompts}
+                    logger.debug(f"Converted string prompt to dictionary: {prompts}")
+                else:
+                    # Handle more complex structures
+                    try:
+                        prompts = {f"prompt_{i + 1}": (prompt.get('content') if isinstance(prompt, dict) else prompt.content)
+                                for i, prompt in enumerate(prompts.get('messages', []))}
+                        logger.debug(f"Prompts converted to dictionary using default method: {prompts}")
+                    except AttributeError:
+                        # If prompts doesn't have the get method or messages attribute
+                        prompts = {"prompt_1": str(prompts)}
+                        logger.debug(f"Converted complex object to string dictionary: {prompts}")
             except Exception as e:
                 logger.error(f"Error converting prompts using default method: {e}")
-                raise
+                # Continue with a simple string representation instead of raising an exception
+                prompts = {"prompt": str(prompts)}
+                logger.debug(f"Using fallback string representation for prompts: {prompts}")
 
         try:
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -139,16 +152,12 @@ class LLMLogger:
             logger.error(f"AttributeError in response_metadata: {e}")
             raise
 
-        pricing = MODEL_PRICING.get(model_name.lower(), None)
-        if pricing is None:
-            logger.warning(f"Prices not defined for model '{model_name}'. Using default prices.")
-            prompt_price_per_token = 0.00000015  # Default price
-            completion_price_per_token = 0.0000006  # Default price
-        else:
-            prompt_price_per_token = pricing["input_token_price"]
-            completion_price_per_token = pricing["output_token_price"]
-            logger.debug(f"Applying prices for model '{model_name}': "
-                        f"Input Token: {prompt_price_per_token}, Output Token: {completion_price_per_token}")
+        # Use the get_model_pricing helper function to get pricing info
+        pricing = get_model_pricing(model_name)
+        prompt_price_per_token = pricing["input_token_price"]
+        completion_price_per_token = pricing["output_token_price"]
+        logger.debug(f"Applying prices for model '{model_name}': "
+                    f"Input Token: {prompt_price_per_token}, Output Token: {completion_price_per_token}")
             
         try:
             total_cost = (input_tokens * prompt_price_per_token) + (output_tokens * completion_price_per_token)
@@ -197,6 +206,70 @@ class LoggerChatModel:
         """
         self.llm = llm
         logger.debug(f"LoggerChatModel initialized with LLM: {self.llm}")
+        
+    def invoke(self, prompt: str) -> str:
+        """
+        Invoke the AI model with the given prompt and log the interaction.
+        
+        Args:
+            prompt (str): The prompt to send to the AI model.
+            
+        Returns:
+            str: The response from the AI model.
+            
+        Raises:
+            Exception: If an error occurs during invocation or logging.
+        """
+        logger.debug(f"Entering invoke method with prompt: {prompt}")
+        try:
+            # Call the underlying model with the prompt
+            reply = self.llm.invoke(prompt)
+            logger.debug(f"LLM response received: {reply}")
+            
+            # Get the model name for logging
+            # First try to get the pricing_model_name or model_name from the llm directly
+            model_name = getattr(self.llm, "pricing_model_name", None)
+            if not model_name:
+                model_name = getattr(self.llm, "model_name", None)
+            
+            # If not found, try to get it from the model attribute
+            if not model_name and hasattr(self.llm, "model"):
+                model_name = getattr(self.llm.model, "model_name", "unknown_model")
+            
+            logger.debug(f"Using model name for logging: {model_name}")
+            
+            # Create a parsed reply with token estimation for logging
+            # Estimate tokens based on string length (approximately 4 chars per token)
+            input_tokens = len(prompt) // 4 if isinstance(prompt, str) else sum(len(str(p)) // 4 for p in prompt) if isinstance(prompt, list) else 100
+            output_tokens = len(reply) // 4 if isinstance(reply, str) else 100
+            total_tokens = input_tokens + output_tokens
+            
+            parsed_reply = {
+                "content": reply,
+                "response_metadata": {
+                    "model_name": model_name
+                },
+                "usage_metadata": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "total_tokens": total_tokens
+                }
+            }
+            
+            # Log the request and response
+            
+            try:
+                LLMLogger.log_request(prompts=prompt, parsed_reply=parsed_reply, model_name=model_name)
+                logger.debug("Request successfully logged.")
+            except Exception as log_error:
+                logger.error(f"Error logging request: {log_error}")
+                # Continue execution even if logging fails
+                
+            return reply
+            
+        except Exception as e:
+            logger.error(f"Error in LoggerChatModel.invoke: {e}")
+            raise
 
     def __call__(self, messages: List[Dict[str, str]]) -> AIMessage:
         """
@@ -223,20 +296,35 @@ class LoggerChatModel:
                 parsed_reply = self.parse_llmresult(reply)
                 logger.debug(f"Parsed LLM reply: {parsed_reply}")
 
-                # Log the request and response
-                model_name = self.llm.model.model_name if hasattr(self.llm.model, 'model_name') else "unknown_model"
-
+                # Get the model name for logging
+                # First try to get the pricing_model_name or model_name from the llm directly
+                model_name = getattr(self.llm, "pricing_model_name", None)
+                if not model_name:
+                    model_name = getattr(self.llm, "model_name", None)
+                
+                # If not found, try to get it from the model attribute
+                if not model_name and hasattr(self.llm, "model"):
+                    model_name = getattr(self.llm.model, "model_name", "unknown_model")
+                
+                logger.debug(f"Using model name for logging: {model_name}")
                 LLMLogger.log_request(prompts=messages, parsed_reply=parsed_reply, model_name=model_name)
                 logger.debug("Request successfully logged.")
 
-                # Ensure that reply is an instance of AIMessage
+                # Handle various response formats
                 if isinstance(reply, AIMessage):
+                    # Already an AIMessage, return as is
                     return reply
                 elif isinstance(reply, dict) and 'content' in reply:
+                    # Dictionary with content field, convert to AIMessage
                     return AIMessage(content=reply['content'])
+                elif isinstance(reply, str):
+                    # String response (common with Gemini model), convert to AIMessage
+                    logger.debug("Got string response from LLM, converting to AIMessage")
+                    return AIMessage(content=reply)
                 else:
-                    logger.error(f"Unexpected reply format: {reply}")
-                    raise ValueError("Unexpected reply format from LLM.")
+                    # Unknown format
+                    logger.error(f"Unexpected reply format: {type(reply)} - {reply}")
+                    raise ValueError(f"Unexpected reply format from LLM: {type(reply)}")
             except httpx.HTTPStatusError as e:
                 logger.error(f"HTTPStatusError encountered: {e}")
                 if e.response.status_code == 429:
@@ -267,12 +355,13 @@ class LoggerChatModel:
                 logger.info("Waiting for 30 seconds before retrying due to an unexpected error.")
                 time.sleep(30)
 
-    def parse_llmresult(self, llmresult: AIMessage) -> Dict[str, Dict]:
+    def parse_llmresult(self, llmresult: Union[AIMessage, str]) -> Dict[str, Dict]:
         """
         Parse the result returned by the AI model into a structured dictionary.
 
         Args:
-            llmresult (AIMessage): The raw response from the AI model.
+            llmresult (Union[AIMessage, str]): The raw response from the AI model.
+                Can be either an AIMessage object or a string.
 
         Returns:
             Dict[str, Dict]: The parsed response containing content, metadata, and token usage.
@@ -284,7 +373,44 @@ class LoggerChatModel:
         logger.debug(f"Parsing LLM result: {llmresult}")
 
         try:
-            if hasattr(llmresult, 'usage_metadata'):
+            # Handle string response (from Gemini model)
+            if isinstance(llmresult, str):
+                logger.debug("LLM result is a string, creating simplified parsed result")
+                # Get the model name for logging
+                # First try to get the pricing_model_name or model_name from the llm directly
+                model_name = getattr(self.llm, "pricing_model_name", None)
+                if not model_name:
+                    model_name = getattr(self.llm, "model_name", None)
+                
+                # If not found, try to get it from the model attribute
+                if not model_name and hasattr(self.llm, "model"):
+                    model_name = getattr(self.llm.model, "model_name", "unknown_model")
+                
+                logger.debug(f"Using model name for logging in parse_llmresult: {model_name}")
+                
+                # Estimate tokens based on string length (approximately 4 chars per token)
+                output_tokens = len(llmresult) // 4
+                # We don't have the input directly here, so make a reasonable estimate based on output
+                input_tokens = output_tokens * 2  # Assuming input is typically 2x the size of output
+                total_tokens = input_tokens + output_tokens
+                
+                parsed_result = {
+                    "content": llmresult,
+                    "response_metadata": {
+                        "model_name": model_name,
+                        "system_fingerprint": "",
+                        "finish_reason": "stop",
+                        "logprobs": None,
+                    },
+                    "id": "string_response",
+                    "usage_metadata": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": total_tokens,
+                    },
+                }
+            # Handle AIMessage response
+            elif hasattr(llmresult, 'usage_metadata'):
                 content = llmresult.content
                 response_metadata = llmresult.response_metadata
                 id_ = llmresult.id

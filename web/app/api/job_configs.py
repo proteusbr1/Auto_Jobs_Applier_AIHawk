@@ -49,7 +49,14 @@ def create_job_config():
             try:
                 features = json.loads(plan.features)
                 max_configs = features.get('max_job_configs')
-                if max_configs and user.job_configs.count() >= int(max_configs):
+                
+                # Special case for Free Trial plan - limit to 1 job config
+                if plan.name == 'Free Trial' and user.job_configs.count() >= 1:
+                    return jsonify({
+                        'error': 'Free Trial plan is limited to 1 job configuration. Please upgrade your plan to create more.'
+                    }), 403
+                # For other plans, use the max_configs from features
+                elif max_configs and user.job_configs.count() >= int(max_configs):
                     return jsonify({
                         'error': f'You have reached the maximum number of job configurations ({max_configs}) allowed by your subscription plan.'
                     }), 403

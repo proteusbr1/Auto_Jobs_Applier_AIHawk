@@ -6,10 +6,9 @@ evaluate jobs, and manage resumes.
 import re
 import textwrap
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 from Levenshtein import distance
-from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 from loguru import logger
@@ -17,39 +16,33 @@ import src.strings as strings
 from src.job import Job
 from src.llm.adapter import AIAdapter
 from src.llm.logger import LoggerChatModel
-from data_folder.personal_info import USER_RESUME_CHATGPT, COMPANY_CAPABILITIES
-from app_config import (
-    MIN_SCORE_APPLY,
-    SALARY_EXPECTATIONS,
-    USE_JOB_SCORE,
-    USE_SALARY_EXPECTATIONS,
-    TRYING_DEGUB,
-)
+from data_folder.personal_info import USER_RESUME_CHATGPT
+from app_config import (SALARY_EXPECTATIONS,TRYING_DEGUB)
 
 if TRYING_DEGUB:
     SALARY_EXPECTATIONS = 0
     MIN_SCORE_APPLY = 0
 
 
-class GPTAnswerer:
+class LLMAnswerer:
     """
     Class responsible for handling interactions with the AI model to answer questions,
     evaluate jobs, and manage resumes.
     """
 
-    def __init__(self, config: Dict, llm_api_key: str):
+    def __init__(self, config: Dict, OPENAI_API_KEY: str):
         """
-        Initialize the GPTAnswerer with the given configuration and API key.
+        Initialize the LLMAnswerer with the given configuration and API key.
 
         Args:
             config (Dict): Configuration dictionary containing model details.
-            llm_api_key (str): The API key for the AI model.
+            OPENAI_API_KEY (str): The API key for the AI model.
         """
-        self.ai_adapter = AIAdapter(config, llm_api_key)
+        self.ai_adapter = AIAdapter(config, OPENAI_API_KEY)
         self.llm_cheap = LoggerChatModel(self.ai_adapter)
         self.job = None
         self.resume_summary = self.format_resume(USER_RESUME_CHATGPT)
-        logger.debug("GPTAnswerer initialized.")
+        logger.debug("LLMAnswerer initialized.")
 
     @property
     def job_description(self):
@@ -119,7 +112,7 @@ class GPTAnswerer:
                 search_country: Optional[str] = None,
                 ):
         """
-        Set the job details for the GPTAnswerer.
+        Set the job details for the LLMAnswerer.
 
         Args:
             title (str): The job title.
@@ -170,30 +163,48 @@ class GPTAnswerer:
         logger.debug(f"Setting job application profile: {job_application_profile}")
         self.job_application_profile = job_application_profile
 
-    def _create_chain(self, template: str):
+    def _create_prompt_template(self, template: str) -> ChatPromptTemplate:
         """
-        Create a prompt chain using the given template.
+        Create a prompt template from the given template string.
 
         Args:
             template (str): The template string for the prompt.
 
         Returns:
-            The created prompt chain.
+            ChatPromptTemplate: The created prompt template.
 
         Raises:
-            Exception: If an error occurs while creating the chain.
+            Exception: If an error occurs while creating the template.
         """
-        logger.debug(f"Creating chain with template: {template}")
+        logger.debug(f"Creating prompt template with: {template}")
         try:
             prompt = ChatPromptTemplate.from_template(template)
-            chain = prompt | self.llm_cheap | StrOutputParser()
-            logger.debug("Chain created successfully.")
-            return chain
+            logger.debug("Prompt template created successfully.")
+            return prompt
         except Exception as e:
-            logger.error(f"Error creating chain: {e}")
+            logger.error(f"Error creating prompt template: {e}")
             raise
 
-    def answer_question_numeric(self, question: str, default_experience: int = 3) -> int:
+    def ask_chatgpt_with_template(self, template: str, **kwargs) -> str:
+        """
+        Send a templated prompt to ChatGPT and retrieve the response.
+        This is a helper method to standardize all template-based LLM calls.
+
+        Args:
+            template (str): The template string for the prompt.
+            **kwargs: The keyword arguments to format the template.
+
+        Returns:
+            str: The content of the response from ChatGPT.
+
+        Raises:
+            Exception: If an error occurs while communicating with ChatGPT.
+        """
+        prompt_template = self._create_prompt_template(template)
+        formatted_prompt = prompt_template.format(**kwargs)
+        return self.ask_chatgpt(formatted_prompt)
+
+    def answer_question_numeric(self, question: str) -> int:
         """
         Answer a numeric question by extracting a number from the AI model's response.
 
@@ -208,26 +219,36 @@ class GPTAnswerer:
             Exception: If an error occurs during the process.
         """
         logger.debug(f"Answering numeric question: {question}")
-        try:
-            func_template = self._preprocess_template_string(strings.numeric_question_template)
-            prompt = ChatPromptTemplate.from_template(func_template)
-            chain = prompt | self.llm_cheap | StrOutputParser()
-            output_str = chain.invoke({
-                "resume_educations": self.resume.education_details,
-                "resume_jobs": self.resume.experience_details,
-                "resume_projects": self.resume.projects,
-                "question": question
-            })
+        try:             
+            template = self._preprocess_template_string("""
+            You are an expert in extracting information from resume data. 
+            Given the following resume summary and a question, please determine the most appropriate numeric answer.
+            
+            Resume Summary:
+            {resume_summary}
+            
+            Question: {question}
+            
+            Return only a single number as your answer. No explanation is needed.
+            """)
+            
+            # Make sure to log this API call
+            logger.info(f"Making ChatGPT API call for numeric question: '{question}'")
+            output_str = self.ask_chatgpt_with_template(template,
+                resume_summary=self.resume_summary,
+                question=question
+            )
+                
             logger.debug(f"Raw output for numeric question: {output_str}")
             output = self.extract_number_from_string(output_str)
             logger.debug(f"Extracted number: {output}")
             return output
         except ValueError:
-            logger.warning(f"Failed to extract number, using default experience: {default_experience}")
-            return default_experience
+            logger.warning(f"Failed to extract number")
+
         except Exception as e:
             logger.error(f"Error answering numeric question: {e}")
-            raise
+
 
     def extract_number_from_string(self, output_str: str) -> int:
         """
@@ -268,11 +289,32 @@ class GPTAnswerer:
         """
         logger.debug(f"Answering question from options: {question}")
         try:
-            func_template = self._preprocess_template_string(strings.options_template)
-            prompt = ChatPromptTemplate.from_template(func_template)
-            chain = prompt | self.llm_cheap | StrOutputParser()
-            output_str = chain.invoke({"resume": self.resume, "question": question, "options": options})
+            # Log available options
+            logger.debug(f"Options available: {options}")
+            
+            # Always use USER_RESUME_CHATGPT directly
+            from data_folder.personal_info import USER_RESUME_CHATGPT
+            
+            # Get the template and preprocess it
+            template = self._preprocess_template_string(strings.options_template)
+            
+            # Make sure to log this API call
+            logger.info(f"Making ChatGPT API call for dropdown question: '{question}' with options: {options}")
+            
+            # Format the options as a string for better prompt display
+            options_str = ", ".join(options)
+            
+            # Use our standardized ask_chatgpt_with_template method
+            output_str = self.ask_chatgpt_with_template(
+                template,
+                resume=USER_RESUME_CHATGPT,
+                question=question,
+                options=options_str
+            )
+            
             logger.debug(f"Raw output for options question: {output_str}")
+            
+            # Find the best matching option from the result
             best_option = self.find_best_match(output_str, options)
             logger.debug(f"Best option determined: {best_option}")
             return best_option
@@ -295,7 +337,7 @@ class GPTAnswerer:
         """
         logger.debug(f"Determining if phrase refers to resume or cover letter: '{phrase}'")
         try:
-            prompt_template = """
+            template = """
                 Given the following phrase, respond with only 'resume' if the phrase is about a resume, or 'cover' if it's about a cover letter.
                 If the phrase contains only one word 'upload', consider it as 'cover'.
                 If the phrase contains 'upload resume', consider it as 'resume'.
@@ -303,9 +345,9 @@ class GPTAnswerer:
 
                 phrase: {phrase}
                 """
-            prompt = ChatPromptTemplate.from_template(prompt_template)
-            chain = prompt | self.llm_cheap | StrOutputParser()
-            response = chain.invoke({"phrase": phrase})
+            
+            logger.info(f"Making ChatGPT API call for resume/cover detection: '{phrase}'")
+            response = self.ask_chatgpt_with_template(template, phrase=phrase)
             logger.debug(f"Response for resume_or_cover: {response}")
 
             if "resume" in response.lower():
@@ -332,37 +374,21 @@ class GPTAnswerer:
         Raises:
             Exception: If an error occurs while communicating with ChatGPT.
         """
-        logger.debug(f"Sending prompt to ChatGPT: {prompt}")
+        logger.debug(f"Sending prompt to LLM: {prompt}")
         try:
-            # Format the prompt as a list of messages
-            formatted_prompt = [{"role": "user", "content": prompt}]
+            # The llm_cheap (LoggerChatModel -> AIAdapter -> Specific Model) now returns a string directly.
+            # Note: Some models might handle structured input (like list of dicts) differently.
+            # Assuming the underlying invoke method handles the raw prompt string correctly.
+            response_str = self.llm_cheap.invoke(prompt) # Pass the raw prompt string
+            logger.debug(f"Received response: {response_str}")
 
-            # Pass the formatted prompt to the model
-            response = self.llm_cheap(formatted_prompt)
-            logger.debug(f"Received response: {response}")
-
-            # Check if the response is in the expected format
-            if hasattr(response, 'content'):
-                content = response.content
-                if content:
-                    logger.debug(f"Returning content: {content}")
-                    return content
-                else:
-                    logger.error("No content found in response.")
-                    return "No content returned from ChatGPT."
-            elif isinstance(response, dict) and 'content' in response:
-                content = response['content']
-                if content:
-                    logger.debug(f"Returning content from dict: {content}")
-                    return content
-                else:
-                    logger.error("No content found in response dictionary.")
-                    return "No content returned from ChatGPT."
+            if isinstance(response_str, str):
+                return response_str
             else:
-                logger.error(f"Unexpected response format: {response}")
-                return "Unexpected response format from ChatGPT."
+                logger.error(f"Unexpected response format: {type(response_str)}. Expected str.")
+                return "Unexpected response format from LLM."
         except Exception as e:
-            logger.error(f"Error while getting response from ChatGPT: {e}")
+            logger.error(f"Error while getting response from LLM: {e}")
             raise
 
     def evaluate_job(self, job: Job) -> float:
@@ -379,17 +405,10 @@ class GPTAnswerer:
         Raises:
             Exception: If an error occurs during the evaluation.
         """
-        """
-        Sends the job description and resume to the AI system and returns a score from 0 to 10.
-        """
-        job_description = job.description
-        job_title = job.title
-        job_salary = job.salary
-        resume_summary = self.resume_summary
-        location = job.location
-
-        # Create the prompt for evaluating the job and resume
-        personal_prompt = f"""
+        logger.debug("Evaluating job compatibility with resume")
+        
+        # Create the template for evaluating the job and resume
+        template = """
         You are a Human Resources expert specializing in evaluating job applications for the {location} job market. Your task is to assess the compatibility between the following job description and a provided resume. 
         Return only a score from 0 to 10 representing the candidate's likelihood of securing the position, with 0 being the lowest probability and 10 being the highest. 
         The assessment should consider HR-specific criteria for the {location} job market, including skills, experience, education, and any other relevant criteria mentioned in the job description.
@@ -408,38 +427,20 @@ class GPTAnswerer:
 
         Score (0 to 10):
         """
-
-        company_prompt = f"""
-        You are a business development expert specializing in connecting companies with suitable job opportunities in the {location} market. I am searching for job listings on LinkedIn to identify opportunities to expand my company. My goal is to find promising opportunities to offer our services to the companies that are hiring.
-
-        Your task is to assess the compatibility between the following job description and my company's capabilities.
-
-        Please return only a score from 0 to 10, representing the probability that my company can successfully secure and execute the job, where 0 is the lowest probability and 10 is the highest.
-
-        The assessment should consider criteria such as required skills, experience, resources, certifications, and any other relevant factors mentioned in the job description.
-
-        Job Title:
-        ({job_title})
-
-        Job Salary:
-        ({job_salary})
-
-        Job Description:
-        ({job_description})
-
-        Company Capabilities:
-        ({COMPANY_CAPABILITIES})
-
-        Score (0 to 10):
-        """     
-        
-        prompt = personal_prompt
         
         logger.debug("Sending job description and resume to GPT for evaluation")
-
-        # Use the function ask_chatgpt to perform the evaluation
+        
+        # Use our standardized method to perform the evaluation
         try:
-            response = self.ask_chatgpt(prompt)
+            logger.info(f"Making ChatGPT API call for job evaluation")
+            response = self.ask_chatgpt_with_template(
+                template,
+                location=job.location,
+                job_title=job.title,
+                job_salary=job.salary,
+                job_description=job.description,
+                resume_summary=self.resume_summary
+            )
             logger.debug(f"Received response from GPT: {response}")
 
             # Process the response to extract the score
@@ -451,7 +452,7 @@ class GPTAnswerer:
                     return score
                 else:
                     logger.error(f"Score out of expected range (0-10): {score}")
-                    return 0.1  # Returns 0.0 if the score is out of the expected range
+                    return 0.1  # Returns 0.1 if the score is out of the expected range
             else:
                 logger.error(f"Could not find a valid score in response: {response}")
                 return 0.1  # Returns 0.1 if no valid score is found
@@ -473,27 +474,26 @@ class GPTAnswerer:
         """
         logger.debug("Estimating salary based on job description and resume.")
         try:
+            # Prepare the resume with salary expectation
             resume_summary = self.resume_summary
             salary_expectation_line = f"salary expectation: {SALARY_EXPECTATIONS}\n"
-            resume_summary = f"{salary_expectation_line}{resume_summary}"
-            location = job.location
-            job_salary = job.salary 
+            enhanced_resume = f"{salary_expectation_line}{resume_summary}"
             
-            # Create the prompt to ask ChatGPT
-            prompt = f"""
-             You are a Human Resources expert specializing in evaluating job applications for the {location} job market.
-             Given the job description and the candidate's resume below, estimate the annual salary in US dollars that the employer is likely to offer to this candidate. 
-             Provide your answer as a single number, representing the annual salary in US dollars, without any additional text, units, currency symbols, or ranges. 
-             If the salary is given as a range, return only the highest value in the range. Do not include any explanations.
+            # Create the template for salary estimation
+            template = """
+            You are a Human Resources expert specializing in evaluating job applications for the {location} job market.
+            Given the job description and the candidate's resume below, estimate the annual salary in US dollars that the employer is likely to offer to this candidate. 
+            Provide your answer as a single number, representing the annual salary in US dollars, without any additional text, units, currency symbols, or ranges. 
+            If the salary is given as a range, return only the highest value in the range. Do not include any explanations.
 
             Job Title:
-            ({job.title})
+            ({job_title})
 
             Job Salary:
             ({job_salary})
 
             Job Description:
-            ({job.description})
+            ({job_description})
 
             My Resume:
             ({resume_summary})
@@ -501,8 +501,16 @@ class GPTAnswerer:
             Estimated annual Salary (in US dollars):
             """
 
-            # Use the function ask_chatgpt to get the estimated salary
-            response = self.ask_chatgpt(prompt)
+            # Use our standardized method to call ChatGPT
+            logger.info(f"Making ChatGPT API call for salary estimation")
+            response = self.ask_chatgpt_with_template(
+                template,
+                location=job.location,
+                job_title=job.title,
+                job_salary=job.salary,
+                job_description=job.description,
+                resume_summary=enhanced_resume
+            )
             logger.debug(f"Received salary estimation from GPT: {response}")
 
             # Process the response to extract the salary
@@ -526,7 +534,7 @@ class GPTAnswerer:
 
         except Exception as e:
             logger.error(f"Error estimating salary: {e}", exc_info=True)
-            return 0.1  # Return 0.0 in case of an error
+            return 0.1  # Return 0.1 in case of an error
 
     def answer_question_date(self, question: str) -> datetime:
         """
@@ -540,14 +548,19 @@ class GPTAnswerer:
         """
         logger.debug(f"Answering date question: {question}")
         try:
-            # Prepare the prompt using the date_question_template
-            func_template = self._preprocess_template_string(strings.date_question_template)
-            prompt = ChatPromptTemplate.from_template(func_template)
-            chain = prompt | self.llm_cheap | StrOutputParser()
             # Get today's date in YYYY-MM-DD format
             today_date_str = datetime.now().strftime("%Y-%m-%d")
-            # Invoke the chain with the question and today's date
-            output_str = chain.invoke({"question": question, "today_date": today_date_str})
+            
+            # Use the template from strings module
+            template = self._preprocess_template_string(strings.date_question_template)
+            
+            # Invoke the LLM with the template
+            logger.info(f"Making ChatGPT API call for date question: '{question}'")
+            output_str = self.ask_chatgpt_with_template(
+                template,
+                question=question,
+                today_date=today_date_str
+            )
             logger.debug(f"Raw output for date question: {output_str}")
 
             # Extract the date from the output
@@ -610,8 +623,8 @@ class GPTAnswerer:
                 logger.error("Job object is None. Configure the job first using set_job().")
                 raise ValueError("Job object is None. Configure the job first using set_job().")
             
-            # Create the prompt following the specified rules
-            prompt_template = """
+            # Create the prompt template
+            template = """
             You are an AI assistant specializing in human resources and knowledgeable about the {location} job market. Your role is to help me secure a job by answering questions related to my resume and a job description. Follow these rules:
             - Answer questions directly.
             - Keep the answer under {limit_caractere} characters.
@@ -635,30 +648,26 @@ class GPTAnswerer:
             Answer:
             """
             
-            # Prepare the prompt with the necessary information
-            prompt = ChatPromptTemplate.from_template(prompt_template)
-            formatted_prompt = prompt.format(
+            # Invoke the model via our standardized method
+            logger.info(f"Making ChatGPT API call for simple question: '{question}'")
+            answer = self.ask_chatgpt_with_template(
+                template,
                 limit_caractere=limit_caractere,
                 job_title=self.job.title,
                 job_salary=self.job.salary,
                 job_description=self.job.description,
                 resume=self.resume_summary,
                 question=question,
-                location=self.job.location,
+                location=self.job.location
             )
+            logger.debug(f"Response received from the model: {answer}")
             
-            # Invoke the model
-            response = self.ai_adapter.invoke(formatted_prompt)
-            logger.debug(f"Response received from the model: {response.content}")
-            
-            # Extract the content from the response
-            if hasattr(response, 'content'):
-                answer = response.content.strip()
-            elif isinstance(response, dict) and 'content' in response:
-                answer = response['content'].strip()
-            else:
-                logger.error(f"Unexpected response format: {response}")
+            # Ensure the answer is a string
+            if not isinstance(answer, str):
+                logger.error(f"Unexpected response format: {type(answer)}. Expected str.")
                 raise ValueError("Unexpected response format from the model.")
+
+            answer = answer.strip()
             
             # Ensure the answer is within the character limit
             if len(answer) > limit_caractere:
@@ -700,17 +709,22 @@ class GPTAnswerer:
             ValueError: If the extracted keywords are not in the expected format.
             Exception: For any other unforeseen errors.
         """
-        logger.info("Extracting keywords from job description.")
+        logger.debug("Extracting keywords from job description.")
         try:
-            prompt = (
-                "Extract the most important keywords from the following job description that HR systems "
-                "or automated bots would use to evaluate and rank resumes. Return the keywords as a JSON list. Return de JSON list and noting else."
-                "\n\nJob Description:\n"
-                f"({job_description})"
-                "\n\nKeywords:"
-            )
+            template = """
+            Extract the most important keywords from the following job description that HR systems 
+            or automated bots would use to evaluate and rank resumes. Return the keywords as a JSON list. 
+            Return de JSON list and noting else.
+
+            Job Description:
+            ({job_description})
+
+            Keywords:
+            """
             
-            response = self.ask_chatgpt(prompt)
+            # Make the API call using our standardized method
+            logger.info(f"Making ChatGPT API call for keyword extraction from job description")
+            response = self.ask_chatgpt_with_template(template, job_description=job_description)
             logger.debug(f"Raw response from GPT: {response}")
             
             # Use regex to find JSON-like list in the response
@@ -733,7 +747,7 @@ class GPTAnswerer:
                 logger.error("Extracted keywords are not in the expected list of strings format.")
                 raise ValueError("Extracted keywords are not in the expected list of strings format.")
             
-            logger.info(f"Successfully extracted {len(keywords)} keywords.")
+            logger.debug(f"Successfully extracted {len(keywords)} keywords.")
             return keywords
         
         except ValueError as ve:
@@ -759,28 +773,38 @@ class GPTAnswerer:
             ValueError: If inputs are invalid.
             Exception: For any other unforeseen errors.
         """
-        logger.info("Generating tailored resume summary based on extracted keywords.")
+        logger.debug("Generating tailored resume summary based on extracted keywords.")
         try:
             # Join the keywords into a comma-separated string
             keywords_str = ', '.join(keywords)
             
-            # Refined prompt without the "Tailored Resume Summary:" label
-            prompt = (
-                "Using the following resume, resume summary, and keywords extracted from a job description, "
-                "create a concise and professional tailored resume summary that highlights the most relevant skills and experiences "
-                "to increase the likelihood of passing through HR evaluation systems. Ensure the summary is truthful "
-                "and only includes information provided. Incorporate the keywords appropriately without fabricating or exaggerating any information."
-                "\n\nOld Resume Summary:\n"
-                f"({resume_summary})"
-                "\n\nResume:\n"
-                f"({resume})"
-                "\n\nKeywords:\n"
-                f"({keywords_str})"
-                "\n\nPlease provide the tailored resume summary below without any headings or labels:"
-            )
+            # Create the template for the prompt
+            template = """
+            Using the following resume, resume summary, and keywords extracted from a job description, 
+            create a concise and professional tailored resume summary that highlights the most relevant skills and experiences 
+            to increase the likelihood of passing through HR evaluation systems. Ensure the summary is truthful 
+            and only includes information provided. Incorporate the keywords appropriately without fabricating or exaggerating any information.
+
+            Old Resume Summary:
+            ({resume_summary})
+
+            Resume:
+            ({resume})
+
+            Keywords:
+            ({keywords_str})
+
+            Please provide the tailored resume summary below without any headings or labels:
+            """
             
-            # Send the prompt to ChatGPT
-            response = self.ask_chatgpt(prompt)
+            # Use the standardized method to send the prompt to ChatGPT
+            logger.info(f"Making ChatGPT API call for tailoring resume summary based on keywords")
+            response = self.ask_chatgpt_with_template(
+                template,
+                resume_summary=resume_summary,
+                resume=resume,
+                keywords_str=keywords_str
+            )
             logger.debug(f"Raw response from GPT for tailored summary: {response}")
             
             # Clean the response by stripping leading/trailing whitespace
@@ -791,7 +815,7 @@ class GPTAnswerer:
                 logger.error("GPT did not return a tailored summary.")
                 raise ValueError("GPT did not return a tailored summary.")
             
-            logger.info("Tailored resume summary generated successfully.")
+            logger.debug("Tailored resume summary generated successfully.")
             return tailored_summary
         
         except ValueError as ve:
@@ -817,23 +841,37 @@ class GPTAnswerer:
             ValueError: If inputs are invalid.
             Exception: For any other unforeseen errors.
         """
-        logger.info("Generating tailored cover letter.")
+        logger.debug("Generating tailored cover letter.")
         try:
+            # Join the keywords into a comma-separated string
             keywords_str = ', '.join(keywords)
-            prompt = (
-                "Using the following job description, resume, and keywords, compose a concise and professional cover letter that emphasizes the most relevant skills and experiences. "
-                "Ensure the cover letter is truthful and only includes information provided. Incorporate the keywords appropriately without fabricating or exaggerating any information. "
-                "The cover letter should not exceed 300 words and should be written in paragraph form."
-                "\n\nJob Description:\n"
-                f"({job_description})"
-                "\n\nResume:\n"
-                f"({resume})"
-                "\n\nKeywords:\n"
-                f"({keywords_str})"
-                "\n\nPlease provide the Cover Letter: below without any headings or labels:"
-            )
             
-            cover_letter = self.ask_chatgpt(prompt)
+            # Create the template for the prompt
+            template = """
+            Using the following job description, resume, and keywords, compose a concise and professional cover letter that emphasizes the most relevant skills and experiences. 
+            Ensure the cover letter is truthful and only includes information provided. Incorporate the keywords appropriately without fabricating or exaggerating any information. 
+            The cover letter should not exceed 300 words and should be written in paragraph form.
+            
+            Job Description:
+            ({job_description})
+            
+            Resume:
+            ({resume})
+            
+            Keywords:
+            ({keywords_str})
+            
+            Please provide the Cover Letter: below without any headings or labels:
+            """
+            
+            # Use the standardized method to send the prompt to ChatGPT
+            logger.info(f"Making ChatGPT API call for generating cover letter")
+            cover_letter = self.ask_chatgpt_with_template(
+                template,
+                job_description=job_description,
+                resume=resume,
+                keywords_str=keywords_str
+            )
             logger.debug(f"Tailored Cover Letter: {cover_letter}")
             return cover_letter.strip()
         

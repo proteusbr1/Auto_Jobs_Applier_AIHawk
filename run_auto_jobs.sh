@@ -24,9 +24,9 @@ else
     echo "Starting new process."
     
     # Activate the virtual environment
-    source "$PROJECT_DIR/virtual/bin/activate" || { 
-        echo "Failed to activate virtual environment"; 
-        exit 1; 
+    source "$PROJECT_DIR/.venv/bin/activate" || {
+        echo "Failed to activate virtual environment";
+        exit 1;
     }
     
     # Run the Python script

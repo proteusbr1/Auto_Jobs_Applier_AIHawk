@@ -72,7 +72,14 @@ def upload_resume():
             try:
                 features = json.loads(plan.features)
                 max_resumes = features.get('max_resumes')
-                if max_resumes and user.resumes.count() >= int(max_resumes):
+                
+                # Special case for Free Trial plan - limit to 1 resume
+                if plan.name == 'Free Trial' and user.resumes.count() >= 1:
+                    return jsonify({
+                        'error': 'Free Trial plan is limited to 1 resume. Please upgrade your plan to upload more resumes.'
+                    }), 403
+                # For other plans, use the max_resumes from features
+                elif max_resumes and user.resumes.count() >= int(max_resumes):
                     return jsonify({
                         'error': f'You have reached the maximum number of resumes ({max_resumes}) allowed by your subscription plan.'
                     }), 403

@@ -17,8 +17,8 @@ def init_app(app):
     Args:
         app (Flask): The Flask application.
     """
+    # Initialize routes before registering the blueprint
+    init_linkedin_auth_routes(app)
+    
     # Register the blueprint
     app.register_blueprint(linkedin_bp)
-    
-    # Initialize routes
-    init_linkedin_auth_routes(app)

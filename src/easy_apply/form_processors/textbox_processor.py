@@ -275,7 +275,17 @@ class TextboxProcessor(BaseProcessor):
             return answer
         except Exception as e:
             logger.error(f"Error generating answer for '{question_text}': {e}", exc_info=True)
-            # Return a safe default value
+            # Capture a screenshot for this specific error
+            try:
+                import src.utils as utils
+                utils.capture_screenshot(self.driver, f"answer_generation_error_{question_text.replace(' ', '_')}")
+                # Log the current URL for debugging
+                current_url = self.driver.current_url
+                logger.error(f"Answer generation error occurred at URL: {current_url}")
+            except Exception as screenshot_error:
+                logger.warning(f"Failed to capture screenshot: {screenshot_error}")
+            
+            # Return a safe default value for specialized fields
             if question_type == "numeric":
                 return "0"
             else:
