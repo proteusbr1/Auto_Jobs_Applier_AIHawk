@@ -1,49 +1,52 @@
+# src/job_manager/environment_keys.py
 """
-Module for handling environment variables used in the AIHawk Job Manager.
+Handles environment variables specific to the job automation workflow.
 """
 import os
 from loguru import logger
+from typing import Optional
 
 
 class EnvironmentKeys:
     """
-    Class for handling environment variables used in the AIHawk Job Manager.
+    Reads and provides access to specific environment variables controlling
+    the automation behavior (e.g., skipping applies, disabling filters).
     """
+    # Define expected environment variable keys as constants
+    SKIP_APPLY_KEY = "SKIP_APPLY"
+    DISABLE_DESC_FILTER_KEY = "DISABLE_DESCRIPTION_FILTER"
+
     def __init__(self):
         """
-        Initialize the EnvironmentKeys class by reading environment variables.
+        Initializes the EnvironmentKeys class by reading relevant environment variables.
         """
-        logger.debug("Initializing EnvironmentKeys")
-        self.skip_apply = self._read_env_key_bool("SKIP_APPLY")
-        self.disable_description_filter = self._read_env_key_bool("DISABLE_DESCRIPTION_FILTER")
-        logger.debug(f"EnvironmentKeys initialized: skip_apply={self.skip_apply}, disable_description_filter={self.disable_description_filter}")
+        logger.debug("Initializing EnvironmentKeys...")
+        self.skip_apply: bool = self._read_env_key_bool(self.SKIP_APPLY_KEY)
+        self.disable_description_filter: bool = self._read_env_key_bool(self.DISABLE_DESC_FILTER_KEY)
+        logger.debug(f"EnvironmentKeys initialized: "
+                     f"skip_apply={self.skip_apply}, "
+                     f"disable_description_filter={self.disable_description_filter}")
 
     @staticmethod
-    def _read_env_key(key: str) -> str:
-        """
-        Read an environment variable.
-
-        Args:
-            key (str): The name of the environment variable.
-
-        Returns:
-            str: The value of the environment variable, or an empty string if not found.
-        """
-        value = os.getenv(key, "")
-        logger.debug(f"Read environment key {key}: {value}")
+    def _read_env_key(key: str) -> Optional[str]:
+        """Reads an environment variable, returning None if not found."""
+        value = os.getenv(key)
+        logger.trace(f"Read environment key '{key}': {'Set' if value is not None else 'Not Set'}")
         return value
 
     @staticmethod
     def _read_env_key_bool(key: str) -> bool:
         """
-        Read an environment variable as a boolean.
+        Reads an environment variable and interprets it as a boolean.
+        Considers "True" (case-insensitive) as True, otherwise False.
 
         Args:
-            key (str): The name of the environment variable.
+            key (str): The environment variable name.
 
         Returns:
-            bool: True if the environment variable is "True", False otherwise.
+            bool: The boolean value.
         """
-        value = os.getenv(key) == "True"
-        logger.debug(f"Read environment key {key} as bool: {value}")
-        return value
+        value_str = os.getenv(key)
+        value_bool = value_str is not None and value_str.strip().lower() == 'true'
+        logger.trace(f"Read environment key '{key}' as bool: {value_bool} (Raw value: '{value_str}')")
+        return value_bool

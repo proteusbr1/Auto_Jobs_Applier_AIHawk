@@ -1,55 +1,52 @@
+# src/easy_apply/resume_template_loader.py
 """
-Module for loading resume templates from files.
+Utility function for loading the HTML resume template file.
 """
-import os
 from pathlib import Path
 from typing import Optional
 from loguru import logger
-import sys
 
-def load_resume_template() -> Optional[str]:
+# Define the default path relative to the project structure
+DEFAULT_RESUME_TEMPLATE_PATH = Path("resumes/resume.html")
+
+def load_resume_template(template_path: Path = DEFAULT_RESUME_TEMPLATE_PATH) -> Optional[str]:
     """
-    Loads the resume HTML template from the specified file path.
+    Loads the resume HTML template content from the specified file path.
+
+    Args:
+        template_path (Path): The path to the HTML template file.
+                               Defaults to DEFAULT_RESUME_TEMPLATE_PATH.
 
     Returns:
-        Optional[str]: The content of the resume HTML template if loaded successfully; otherwise, None.
-
-    Raises:
-        FileNotFoundError: If the specified file does not exist.
-        PermissionError: If there is a permission issue accessing the file.
-        IOError: If an I/O error occurs while reading the file.
-        Exception: For any other unforeseen errors.
+        Optional[str]: The HTML content as a string if successful, otherwise None.
     """
-    file_path = "resumes/resume.html"
+    if not isinstance(template_path, Path):
+         template_path = Path(template_path) # Ensure Path object
+
     try:
-        path = Path(file_path).resolve(strict=True)
-        logger.debug(f"Attempting to load resume template from: {path}")
+        # Resolve to absolute path and check existence strictly
+        resolved_path = template_path.resolve(strict=True)
+        logger.info(f"Attempting to load resume template from: {resolved_path}")
 
-        if not path.is_file():
-            logger.error(f"The path provided is not a file: {path}")
-            raise FileNotFoundError(f"The path provided is not a file: {path}")
+        # Check if it's actually a file (resolve(strict=True) already checks existence)
+        if not resolved_path.is_file():
+            logger.error(f"Path exists but is not a file: {resolved_path}")
+            return None
 
-        if not os.access(path, os.R_OK):
-            logger.error(f"Permission denied while trying to read the file: {path}")
-            raise PermissionError(f"Permission denied while trying to read the file: {path}")
+        # Read the file content
+        content = resolved_path.read_text(encoding='utf-8')
+        logger.debug(f"Resume template loaded successfully (length: {len(content)}).")
+        return content
 
-        with path.open('r', encoding='utf-8') as file:
-            content = file.read()
-            logger.debug("Resume template loaded successfully.")
-            return content
-
-    except FileNotFoundError as fnf_error:
-        logger.exception(f"File not found error: {fnf_error}")
-        raise
-
-    except PermissionError as perm_error:
-        logger.exception(f"Permission error: {perm_error}")
-        raise
-
-    except IOError as io_error:
-        logger.exception(f"I/O error occurred while reading the resume template: {io_error}")
-        raise
-
+    except FileNotFoundError:
+        logger.error(f"Resume template file not found at specified path: {template_path} (Resolved: {template_path.resolve() if not template_path.is_absolute() else template_path})")
+        return None
+    except PermissionError:
+        logger.error(f"Permission denied reading resume template file: {template_path.resolve()}")
+        return None
+    except IOError as e:
+        logger.error(f"IOError reading resume template file {template_path.resolve()}: {e}", exc_info=True)
+        return None
     except Exception as e:
-        logger.exception(f"An unexpected error occurred while loading the resume template: {e}")
-        raise
+        logger.error(f"An unexpected error occurred loading resume template {template_path.resolve()}: {e}", exc_info=True)
+        return None

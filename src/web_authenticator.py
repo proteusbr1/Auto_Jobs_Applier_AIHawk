@@ -14,11 +14,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from loguru import logger
 
 
-class AIHawkAuthenticator:
+class WebAuthenticator:
 
     def __init__(self, driver=None):
         self.driver = driver
-        logger.debug(f"AIHawkAuthenticator initialized with driver: {driver}")
+        logger.debug(f"WebAuthenticator initialized with driver: {driver}")
 
     def start(self):
         logger.debug("Starting Chrome browser to log in to AIHawk.")

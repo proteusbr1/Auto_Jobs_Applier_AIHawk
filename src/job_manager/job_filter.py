@@ -1,186 +1,132 @@
+# src/job_manager/job_filter.py
 """
-Module for filtering jobs in the AIHawk Job Manager.
+Module for filtering Job objects based on defined criteria like blacklists and cache status.
 """
 from loguru import logger
-from src.job import Job
+from typing import List, Optional, Set
+
+# Ensure correct relative import if job.py is in parent dir
+try:
+    from ..job import Job, JobCache, JobStatus # Import JobStatus
+except ImportError:
+    from src.job import Job, JobCache, JobStatus
 
 
 class JobFilter:
     """
-    Class for filtering jobs in the AIHawk Job Manager.
+    Filters Job objects based on title, company, description blacklists,
+    and information stored in a JobCache.
     """
-    def __init__(self, title_blacklist=None, company_blacklist=None, description_blacklist=None, cache=None):
-        """
-        Initialize the JobFilter class.
-
-        Args:
-            title_blacklist (list, optional): List of blacklisted job title words. Defaults to None.
-            company_blacklist (list, optional): List of blacklisted company names. Defaults to None.
-            description_blacklist (list, optional): List of criteria that cause a job to be skipped based on description. Defaults to None.
-            cache (JobCache, optional): The job cache instance. Defaults to None.
-        """
-        logger.debug("Initializing JobFilter")
-        self.title_blacklist = title_blacklist or []
-        self.company_blacklist = company_blacklist or []
-        self.description_blacklist = description_blacklist or [] # Store description blacklist
-
-        self.title_blacklist_set = set(word.lower().strip() for word in self.title_blacklist)
-        self.company_blacklist_set = set(word.lower().strip() for word in self.company_blacklist)
-        # Convert description blacklist criteria to lowercase for case-insensitive matching
-        self.description_blacklist_lower = [criteria.lower() for criteria in self.description_blacklist]
-
-        self.cache = cache
-        logger.debug("JobFilter initialized successfully")
+    INVALID_STATES = {"applied", "continue", "apply"}
+    def __init__(self,
+                 title_blacklist: Optional[List[str]] = None,
+                 company_blacklist: Optional[List[str]] = None,
+                 description_blacklist: Optional[List[str]] = None,
+                 cache: Optional[JobCache] = None):
+        """Initializes the JobFilter."""
+        logger.debug("Initializing JobFilter...")
+        self.title_blacklist: List[str] = title_blacklist or []
+        self.company_blacklist: List[str] = company_blacklist or []
+        self.description_blacklist: List[str] = description_blacklist or []
+        if cache and not isinstance(cache, JobCache): raise TypeError("cache must be JobCache or None")
+        self.cache: Optional[JobCache] = cache
+        self.title_blacklist_set: Set[str] = {word.lower().strip() for word in self.title_blacklist if word}
+        self.company_blacklist_set: Set[str] = {name.lower().strip() for name in self.company_blacklist if name}
+        self.description_blacklist_lower: List[str] = [crit.lower().strip() for crit in self.description_blacklist if crit]
+        logger.debug(f"JobFilter initialized successfully. Cache {'enabled' if cache else 'disabled'}.")
 
     def must_be_skipped(self, job: Job) -> bool:
-        """
-        Determines if a given job should be skipped based on various criteria, including blacklist checks,
-        job state, and apply method.
-
-        Args:
-            job (Job): The job object to evaluate.
-
-        Returns:
-            bool: True if the job should be skipped, False otherwise.
-        """
-        logger.debug("Checking if job should be skipped.")
-
-        # Extract job information
-        job_title = job.title
-        company = job.company
+        """Determines if a given job should be skipped based on various criteria."""
+        if not isinstance(job, Job) or not job.link: logger.warning("Invalid Job passed to must_be_skipped."); return True
         link = job.link
+        logger.debug(f"Filtering job: '{job.title}' at '{job.company}' ({link})")
 
-        # Check if the link has already been seen
-        if self.cache and self.cache.is_in_is_seen(link):
-            logger.debug(f"Skipping by seen link: {link}")
-            return True
-
-        # Check if the job has already been skipped for low salary
-        if self.cache and self.cache.is_in_skipped_low_salary(job.link):
-            logger.debug(f"Job has already been skipped for low salary: {job.link}")
-            return True
-
-        # Check if the job has already been skipped for low score (keeping cache name for now)
-        if self.cache and self.cache.is_in_skipped_low_score(job.link):
-            logger.debug(f"Job has already been skipped for low score: {job.link}")
-            return True
-
-        # Check if the job has already been applied
-        if self.cache and self.cache.is_in_success(job.link):
-            logger.debug(f"Job has already been applied: {job.link}")
-            return True
-
-        # Check if job state is Applied, Continue, or Apply
+        # --- Cache Checks (Using EXACT method names from refactored JobCache) ---
+        if self.cache:
+            # Use has_been_seen (renamed from is_in_is_seen)
+            if self.cache.has_been_seen(link):
+                logger.debug(f"Skipping: Job link already seen [{link}]")
+                return True
+            # Use is_skipped_low_salary
+            if self.cache.is_skipped_low_salary(link):
+                logger.debug(f"Skipping: Job previously skipped for low salary [{link}]")
+                self.cache.record_job_status(job, JobStatus.SEEN) # Ensure marked as seen if re-encountered
+                return True
+            # Use is_skipped_low_score
+            if self.cache.is_skipped_low_score(link):
+                logger.debug(f"Skipping: Job previously skipped for low score/description [{link}]")
+                self.cache.record_job_status(job, JobStatus.SEEN)
+                return True
+            # Use is_applied_successfully
+            if self.cache.is_applied_successfully(link):
+                logger.debug(f"Skipping: Job already applied successfully [{link}]")
+                self.cache.record_job_status(job, JobStatus.SEEN)
+                return True
+            # Use is_skipped_blacklist (newly added check)
+            if self.cache.is_skipped_blacklist(link):
+                logger.debug(f"Skipping: Job previously skipped due to blacklist [{link}]")
+                self.cache.record_job_status(job, JobStatus.SEEN)
+                return True
+            
+            # # Use has_failed_application (newly added check)
+            # if self.cache.has_failed_application(link):
+            #     logger.info(f"Skipping: Job previously failed during application [{link}]")
+            #     self.cache.record_job_status(job, JobStatus.SEEN)
+            #     return True
+            
+        # --- End Cache Checks ---
         if self._is_job_state_invalid(job):
-            logger.debug(f"Skipping by state: {job.state}")
-            return True
-
-        # Check if apply method is not 'Easy Apply'
-        if self._is_apply_method_not_easy_apply(job):
-            logger.debug(f"Skipping by apply method: {job.apply_method}")
-            return True
-
-        # Check Title Blacklist
-        if self._is_title_blacklisted(job_title):
-            logger.debug(f"Skipping by title blacklist: {job_title}")
-            return True
-
-        # Check Company Blacklist
-        if self._is_company_blacklisted(company):
-            logger.debug(f"Skipping by company blacklist: {company}")
-            return True
-
-        # Check Description Blacklist
-        if self._matches_description_blacklist(job):
-            logger.debug(f"Skipping due to description blacklist match: {job.link}")
-            # Add to skipped_low_score cache (keeping the cache name for now)
+            logger.debug(f"Skipping: job card shows state '{job.state}' [{job.link}]")
             if self.cache:
-                self.cache.add_to_skipped_low_score(job.link)
+                # ainda assim marcamos como SEEN para não reprocessar no futuro
+                self.cache.record_job_status(job, JobStatus.SEEN)
             return True
+        
+        # --- Blacklist Checks ---
+        if self._is_title_blacklisted(job.title):
+            logger.debug(f"Skipping: Title '{job.title}' matches title blacklist [{link}]")
+            if self.cache: self.cache.record_job_status(job, JobStatus.SKIPPED_BLACKLIST); self.cache.record_job_status(job, JobStatus.SEEN)
+            return True
+        if self._is_company_blacklisted(job.company):
+            logger.debug(f"Skipping: Company '{job.company}' matches company blacklist [{link}]")
+            if self.cache: self.cache.record_job_status(job, JobStatus.SKIPPED_BLACKLIST); self.cache.record_job_status(job, JobStatus.SEEN)
+            return True
+        if self._matches_description_blacklist(job):
+            logger.debug(f"Skipping: Job title/description matches description blacklist [{link}]")
+            if self.cache: self.cache.record_job_status(job, JobStatus.SKIPPED_LOW_SCORE); self.cache.record_job_status(job, JobStatus.SEEN) # Keep original status for this
+            return True
+        # --- End Blacklist Checks ---
 
-        logger.debug("Job does not meet any skip conditions.")
-        return False
+        # Optional: Filter based on job state/apply method if desired
+        # if self._is_apply_method_not_easy_apply(job): ... return True
 
+        logger.debug(f"Job PASSED filters: '{job.title}' at '{job.company}' [{link}]")
+        return False # Do not skip
+
+    # --- Helper methods ---
+    # (Implementations remain the same)
     def _matches_description_blacklist(self, job: Job) -> bool:
-        """
-        Checks if the job title or description contains any of the description blacklist criteria.
-
-        Args:
-            job (Job): The job object to evaluate.
-
-        Returns:
-            bool: True if any description blacklist criteria is found, False otherwise.
-        """
-        job_title_lower = job.title.lower()
+        if not self.description_blacklist_lower: return False
         job_description_lower = job.description.lower() if job.description else ""
-
+        job_title_lower = job.title.lower() if job.title else ""
         for criteria in self.description_blacklist_lower:
             if criteria in job_title_lower or criteria in job_description_lower:
-                logger.debug(f"Description blacklist criteria '{criteria}' found in job: {job.link}")
+                logger.trace(f"Desc blacklist criteria '{criteria}' found: {job.link}")
                 return True
         return False
 
-
-    def _is_job_state_invalid(self, job: Job) -> bool:
-        """
-        Checks if the job state is not in the not valid states.
-
-        Args:
-            job (Job): The job object to evaluate.
-
-        Returns:
-            bool: True if job state is invalid, False otherwise.
-        """
-        return bool(job.state) and job.state in {"Continue", "Applied", "Apply"}
-
-    def _is_apply_method_not_easy_apply(self, job: Job) -> bool:
-        """
-        Checks if the apply method is not 'Easy Apply'.
-
-        Args:
-            job (Job): The job object to evaluate.
-
-        Returns:
-            bool: True if apply method is not 'Easy Apply', False otherwise.
-        """
-        if job.apply_method is None:
-            return False
-        return job.apply_method.lower() != "easy apply"
-
     def _is_title_blacklisted(self, title: str) -> bool:
-        """
-        Checks if the job title contains any blacklisted words.
-
-        Args:
-            title (str): The job title to evaluate.
-
-        Returns:
-            bool: True if any blacklisted word is found in the title, False otherwise.
-        """
-        title_lower = title.lower()
-        title_words = set(title_lower.split())
+        if not title or not self.title_blacklist_set: return False
+        title_words = set(word.strip('.,!?;:') for word in title.lower().split())
         intersection = title_words.intersection(self.title_blacklist_set)
-        is_blacklisted = bool(intersection)
-
-        if is_blacklisted:
-            logger.debug(f"Blacklisted words found in title: {intersection}")
-
-        return is_blacklisted
+        if intersection: logger.trace(f"Blacklisted title words: {intersection}"); return True
+        return False
 
     def _is_company_blacklisted(self, company: str) -> bool:
-        """
-        Checks if the company name is in the blacklist.
-
-        Args:
-            company (str): The company name to evaluate.
-
-        Returns:
-            bool: True if the company is blacklisted, False otherwise.
-        """
-        company_cleaned = company.strip().lower()
-        is_blacklisted = company_cleaned in self.company_blacklist_set
-
-        if is_blacklisted:
-            logger.debug(f"Company '{company_cleaned}' is in the blacklist.")
-
-        return is_blacklisted
+        if not company or not self.company_blacklist_set: return False
+        is_blacklisted = company.strip().lower() in self.company_blacklist_set
+        if is_blacklisted: logger.trace(f"Company '{company.strip().lower()}' blacklisted."); return True
+        return False
+    
+    def _is_job_state_invalid(self, job: Job) -> bool:
+        return bool(job.state) and job.state.lower() in self.INVALID_STATES

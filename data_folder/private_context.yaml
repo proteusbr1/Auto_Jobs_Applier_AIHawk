@@ -1,0 +1,63 @@
+# data_folder/private_context.yaml
+personal:
+  full_name: "Mário Eunides Junqueira Guimarães Júnior"
+  pronouns: "he/him"
+  citizenship: "Brazilian"
+  dob: "1983-09-32"
+
+contact:
+  email_primary: "contato@pericialmed.com"
+  phone_number: "+1-267-397-7661"
+  time_zone: "America/New_York"
+
+work_authorization:
+  authorized_us: true
+  visa_status: "F-1 (STEM OPT eligible)"
+  sponsorship_required: false
+
+availability:
+  status: "Immediately"
+  notice_period_days: 0
+  relocation: false
+  travel_percentage_max: 0
+
+preferences:
+  remote_first: true
+  employment_types:
+    - all
+  salary_expectation_usd: "100000-300000"
+  preferred_shift: "Any (able to cover PST)"
+
+equipment:
+  remote_setup: "Own workstation, dual-monitor, 1 Gbps fiber"
+
+skills_languages:
+  languages:
+    portuguese: native
+    english: intermediate
+  years_experience:
+    healthcare_industry: 13
+    hospitals_healthcare: 8
+    leadership: 8
+
+  education_completed:
+    bachelors: true
+    masters: true
+    md: true
+    phd: false
+  licenses_certifications:
+    crm_brazil_active: true
+    us_medical_board: false
+    us_drivers_license: true
+
+portfolio:
+  - "https://github.com/proteusbr1"
+  - "https://www.linkedin.com/in/mario-junqueira/"
+
+# Campos livres para respostas recorrentes de 'radio' ou 'dropdown'
+quick_answers:
+  can_start_immediately: "yes"
+  work_weekends: "yes"
+  work_evenings: "yes"
+  willing_background_check: "yes"
+  comfortable_remote: "yes"

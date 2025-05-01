@@ -1,9 +1,26 @@
+# src/llm/utils/__init__.py
 """
-Utility package initialization.
+Initialization file for the LLM utilities package.
+Exports key functions and constants for easier access.
 """
 
-from src.llm.utils.pricing import MODEL_PRICING
+from .pricing import get_model_pricing, MODEL_PRICING
+from .helpers import (
+    find_best_match,
+    preprocess_template_string,
+    extract_number_from_string,
+    parse_prompts_for_logging,
+    format_datetime
+)
 
 __all__ = [
+    # Pricing
+    'get_model_pricing',
     'MODEL_PRICING',
+    # Helpers
+    'find_best_match',
+    'preprocess_template_string',
+    'extract_number_from_string',
+    'parse_prompts_for_logging',
+    'format_datetime',
 ]

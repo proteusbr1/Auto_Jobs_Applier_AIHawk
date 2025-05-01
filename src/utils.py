@@ -1,105 +1,324 @@
+# src/utils.py
+"""
+General utility functions for the web automation bot.
+
+Includes logging configuration, browser setup helpers, file/directory operations,
+and Selenium interaction utilities like scrolling and screenshotting.
+"""
+import re
 import os
 import random
 import sys
 import time
+import logging
 from pathlib import Path
 from datetime import datetime
-import json
-import logging
+from typing import Optional, Union
 
+# Third-party Imports
+from loguru import logger
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException, StaleElementReferenceException
+from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options as ChromeOptions # Import Options directly
 
-from loguru import logger
 
-from app_config import TRYING_DEGUB
+# --- Configuration Defaults (Can be overridden by environment variables) ---
+DEFAULT_LOG_DIR = Path("./logs")
+DEFAULT_LOG_FILENAME = "automation_run.log"
+DEFAULT_CONSOLE_LOG_LEVEL = "INFO"
+DEFAULT_FILE_LOG_LEVEL = "DEBUG"
+DEFAULT_SCREENSHOT_DIR = Path("./screenshots")
+DEFAULT_CHROME_PROFILE_DIR = Path("./chrome_profile/default_user") # Generic name
 
-if TRYING_DEGUB:
-    MINIMUM_LOG_LEVEL = "DEBUG"
-else:
-    MINIMUM_LOG_LEVEL = "INFO"
+# --- Logging Setup ---
 
-# Define log file path
-LOG_FILE_PATH = Path("./log/app.log")
+# Allowed log levels for validation
+ALLOWED_LOG_LEVELS = ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]
 
-# Define allowed log levels
-ALLOWED_LEVELS = ["TRACE", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-
-# Class to intercept standard logging and redirect to Loguru
 class InterceptHandler(logging.Handler):
-    def emit(self, record):
-        # Retrieve Loguru level
+    """Intercepts standard logging messages and redirects them to Loguru."""
+    def emit(self, record: logging.LogRecord):
+        # Get corresponding Loguru level if it exists
         try:
             level = logger.level(record.levelname).name
         except ValueError:
-            level = "INFO"
-        # Get the log message
-        message = record.getMessage()
-        # Log via Loguru
-        logger.log(level, message)
+            level = record.levelno # Keep original level number if mapping fails
+        # Find caller from where originated the logged message
+        frame, depth = logging.currentframe(), 2
+        while frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
 def configure_logging():
-    # Remove default Loguru handlers to prevent duplicate logs
-    logger.remove()
+    """
+    Configures Loguru for console and file logging.
 
-    # Validate and set minimum log level for the log file
-    if MINIMUM_LOG_LEVEL in ALLOWED_LEVELS:
-        file_log_level = MINIMUM_LOG_LEVEL
-    else:
-        file_log_level = "WARNING"
-        logger.warning(f"Invalid MINIMUM_LOG_LEVEL: {MINIMUM_LOG_LEVEL}. Defaulting to WARNING.")
+    Reads log levels from environment variables (CONSOLE_LOG_LEVEL, FILE_LOG_LEVEL)
+    with defaults. Intercepts standard Python logging.
+    """
+    # Determine log levels from environment or use defaults
+    console_level = os.getenv("CONSOLE_LOG_LEVEL", DEFAULT_CONSOLE_LOG_LEVEL).upper()
+    file_level = os.getenv("FILE_LOG_LEVEL", DEFAULT_FILE_LOG_LEVEL).upper()
 
-    # Add Loguru handler for terminal (INFO and above)
-    logger.add(
-        sys.stderr,
-        level=MINIMUM_LOG_LEVEL,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | "
-               "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-        enqueue=True
-    )
+    # Validate levels
+    if console_level not in ALLOWED_LOG_LEVELS:
+        print(f"Warning: Invalid CONSOLE_LOG_LEVEL '{console_level}'. Defaulting to '{DEFAULT_CONSOLE_LOG_LEVEL}'.", file=sys.stderr)
+        console_level = DEFAULT_CONSOLE_LOG_LEVEL
+    if file_level not in ALLOWED_LOG_LEVELS:
+        print(f"Warning: Invalid FILE_LOG_LEVEL '{file_level}'. Defaulting to '{DEFAULT_FILE_LOG_LEVEL}'.", file=sys.stderr)
+        file_level = DEFAULT_FILE_LOG_LEVEL
 
-    # Add Loguru handler for log file (MINIMUM_LOG_LEVEL and above)
-    logger.add(
-        LOG_FILE_PATH,
-        level=file_log_level,
-        rotation="500 MB",  # Increased size to reduce frequency of rotation
-        retention="7 days",  # Keep logs for a week instead of just 1 day
-        compression="zip",
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
-        enqueue=True
-    )
-
-    # Intercept standard logging and redirect to Loguru
-    logging.basicConfig(handlers=[InterceptHandler()], level=logging.WARNING)
-
-    # Set specific library log levels to WARNING to reduce noise
-    logging.getLogger("WDM").setLevel(logging.WARNING)
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-    logger.debug(f"Logging configured. Logs at level {file_log_level} and above are saved to {LOG_FILE_PATH}.")
-    logger.info("INFO level and above are displayed in the terminal.")
-
-configure_logging()
-
-chrome_profile_path = os.path.join(os.getcwd(), "chrome_profile", "linkedin_profile")
-
-def ensure_chrome_profile():
-    logger.debug(f"Ensuring Chrome profile exists at path: {chrome_profile_path}")
-    profile_dir = os.path.dirname(chrome_profile_path)
+    # Ensure log directory exists
+    log_dir = DEFAULT_LOG_DIR
+    log_file_path = log_dir / DEFAULT_LOG_FILENAME
     try:
-        if not os.path.exists(profile_dir):
-            os.makedirs(profile_dir)
-            logger.debug(f"Created directory for Chrome profile: {profile_dir}")
-        if not os.path.exists(chrome_profile_path):
-            os.makedirs(chrome_profile_path)
-            logger.debug(f"Created Chrome profile directory: {chrome_profile_path}")
+         log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+         print(f"Error: Could not create log directory {log_dir}: {e}", file=sys.stderr)
+         # Decide: exit or continue without file logging? Continuing for now.
+         file_level = "CRITICAL" # Effectively disable file logging if dir fails
+
+
+    # Configure Loguru
+    logger.remove() # Remove default handler
+
+    # Console Handler
+    logger.add(
+        sys.stderr, # Log to stderr for better compatibility with pipelines/redirection
+        level=console_level,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}:{function}:{line}</cyan> - <level>{message}</level>",
+        colorize=True,
+        enqueue=True # Make logging calls non-blocking
+    )
+
+    # File Handler (only if directory creation succeeded implicitly)
+    try:
+         logger.add(
+             log_file_path,
+             level=file_level,
+             rotation="100 MB", # Rotate when file reaches 100MB
+             retention="14 days", # Keep logs for 14 days
+             compression="zip", # Compress rotated logs
+             format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {process} | {name}:{function}:{line} - {message}",
+             enqueue=True, # Make logging calls non-blocking
+             # serialize=True # Optional: Log as JSON objects
+         )
+         logger.info(f"File logging configured at level {file_level} to {log_file_path}")
     except Exception as e:
-        logger.error(f"Failed to ensure Chrome profile directories: {e}", exc_info=True)
-        raise
-    return chrome_profile_path
+         logger.error(f"Failed to configure file logging to {log_file_path}: {e}")
+
+
+    # Intercept standard logging
+    logging.basicConfig(handlers=[InterceptHandler()], level=0) # Capture all levels, Loguru filters them
+    # Set levels for noisy libraries
+    noisy_loggers = ["webdriver_manager", "selenium.webdriver.remote.remote_connection", "urllib3.connectionpool"]
+    for log_name in noisy_loggers:
+         logging.getLogger(log_name).setLevel(logging.WARNING)
+
+    logger.info(f"Logging configured. Console level: {console_level}. File level: {file_level}.")
+
+# Call configuration immediately upon import
+# configure_logging() # Note: Calling this here might interfere with tests or other setup.
+# It's often better to call configure_logging() explicitly in the main application entry point (main.py).
+# If called here, ensure environment variables are set *before* this module is imported.
+
+
+# --- Directory & File Utils ---
+
+def ensure_directory(dir_path: Union[str, Path]) -> Optional[Path]:
+    """
+    Ensures that the specified directory exists, creating it if necessary.
+
+    Args:
+        dir_path (Union[str, Path]): The path to the directory.
+
+    Returns:
+        Optional[Path]: The Path object of the directory if successful, None otherwise.
+    """
+    try:
+        path = Path(dir_path)
+        path.mkdir(parents=True, exist_ok=True)
+        logger.trace(f"Directory ensured: {path.resolve()}")
+        return path
+    except OSError as e:
+        logger.error(f"Failed to create or access directory: {dir_path} - {e}", exc_info=True)
+        return None
+    except Exception as e: # Catch other potential errors like permission issues
+        logger.error(f"Unexpected error ensuring directory {dir_path}: {e}", exc_info=True)
+        return None
+
+
+# --- Chrome Profile & Options ---
+
+def ensure_chrome_profile(profile_dir: Path = DEFAULT_CHROME_PROFILE_DIR) -> Optional[Path]:
+    """
+    Ensures the Chrome profile directory structure exists.
+
+    Args:
+        profile_dir (Path): The desired path for the Chrome profile directory.
+                            Defaults to DEFAULT_CHROME_PROFILE_DIR.
+
+    Returns:
+        Optional[Path]: The profile directory Path object if successful, None otherwise.
+    """
+    logger.debug(f"Ensuring Chrome profile directory exists at: {profile_dir}")
+    return ensure_directory(profile_dir)
+
+
+def chrome_browser_options(
+    headless: bool = False,
+    profile_path: Optional[Path] = None,
+    binary_location: Optional[str] = None
+) -> ChromeOptions:
+    """
+    Configures and returns Selenium ChromeOptions.
+
+    Args:
+        headless (bool): Whether to run Chrome in headless mode. Defaults to False.
+                         Reads HEADLESS=true from env var as override.
+        profile_path (Optional[Path]): Path to the Chrome user profile directory.
+                                       If None, uses default or runs incognito.
+                                       Reads CHROME_PROFILE_PATH from env var as override.
+        binary_location (Optional[str]): Path to the Chrome executable. If None, uses system default.
+                                         Reads CHROME_BINARY_PATH from env var as override.
+
+    Returns:
+        ChromeOptions: Configured options object for Chrome WebDriver.
+    """
+    logger.debug("Configuring Chrome browser options...")
+
+    # Read overrides from environment variables
+    headless_env = os.getenv("HEADLESS", str(headless)).lower() == 'true'
+    profile_path_env = os.getenv("CHROME_PROFILE_PATH")
+    binary_location_env = os.getenv("CHROME_BINARY_PATH")
+
+    # Prioritize environment variables over arguments
+    run_headless = headless_env
+    profile_to_use = Path(profile_path_env) if profile_path_env else profile_path
+    binary_to_use = binary_location_env if binary_location_env else binary_location
+
+    options = ChromeOptions()
+
+    # Headless Mode
+    if run_headless:
+        logger.info("Headless mode enabled.")
+        options.add_argument("--headless=new") # Use new headless mode
+        options.add_argument("--disable-gpu") # Often needed for headless
+        options.add_argument("window-size=1920,1080") # Specify window size for headless
+    else:
+         logger.info("Running in headed mode.")
+         options.add_argument("--start-maximized")
+
+    # Binary Location (Use only if specified, otherwise let WebDriverManager find it)
+    if binary_to_use:
+        binary_path = Path(binary_to_use)
+        if binary_path.is_file():
+            logger.info(f"Using custom Chrome binary location: {binary_path}")
+            options.binary_location = str(binary_path)
+        else:
+            logger.warning(f"Specified Chrome binary location not found: {binary_path}. Using default.")
+
+    # Common options for stability and automation friendliness
+    options.page_load_strategy = 'eager'
+    options.add_argument("--no-sandbox") # Essential for Linux/Docker environments
+    options.add_argument("--disable-dev-shm-usage") # Essential for Docker environments
+    options.add_argument("--ignore-certificate-errors") # Useful for some environments
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-background-timer-throttling")
+    options.add_argument("--disable-backgrounding-occluded-windows")
+    options.add_argument("--disable-translate")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--no-first-run")
+    options.add_argument("--no-default-browser-check")
+    options.add_argument("--disable-logging") # Suppress console logs from Chrome itself
+    options.add_argument("--log-level=3") # Set Chrome's internal log level to suppress info/warnings
+    # options.add_argument("--disable-gpu") # Already added for headless, might help in headed too?
+
+    # Experimental options to potentially reduce detection and resource usage
+    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+    # options.add_experimental_option('useAutomationExtension', False)
+    prefs = {
+        "profile.default_content_setting_values.images": 2,          # Disable images
+        "profile.managed_default_content_settings.stylesheets": 2,   # Disable CSS (might break sites) - use with caution
+        "profile.default_content_setting_values.cookies": 1,         # Allow cookies (needed for login)
+        "profile.default_content_setting_values.javascript": 1,      # Allow JS (essential)
+        "profile.default_content_setting_values.plugins": 2,         # Disable plugins
+        "profile.default_content_setting_values.popups": 2,          # Disable popups
+        "profile.default_content_setting_values.geolocation": 2,     # Disable geolocation
+        "profile.default_content_setting_values.notifications": 2,   # Disable notifications
+        "credentials_enable_service": False,                         # Disable password saving prompt
+        "profile.password_manager_enabled": False                    # Disable password manager
+    }
+    options.add_experimental_option("prefs", prefs)
+
+    # User Agent Spoofing (Optional - use with caution)
+    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36"
+    options.add_argument(f'user-agent={user_agent}')
+
+    # Chrome Profile Configuration
+    if profile_to_use:
+        profile_dir_status = ensure_chrome_profile(profile_to_use)
+        if profile_dir_status:
+            # Need user-data-dir (parent) and profile-directory (basename)
+            user_data_dir = str(profile_to_use.parent.resolve())
+            profile_directory_name = profile_to_use.name
+            options.add_argument(f"--user-data-dir={user_data_dir}")
+            options.add_argument(f"--profile-directory={profile_directory_name}")
+            logger.info(f"Using Chrome profile: UserDataDir='{user_data_dir}', Profile='{profile_directory_name}'")
+        else:
+             logger.warning(f"Failed to ensure profile directory '{profile_to_use}'. Using default profile or incognito.")
+             # Fallback might be needed here depending on desired behavior
+    else:
+        # options.add_argument("--incognito") # Incognito might interfere with logins/state
+        logger.debug("No specific Chrome profile path provided. Using default profile.")
+
+    logger.debug("Chrome options configured.")
+    return options
+
+
+def capture_screenshot(driver: WebDriver, name_prefix: str) -> Optional[Path]:
+    """
+    Captures a screenshot of the current browser window, saving it with a timestamp.
+
+    Args:
+        driver (WebDriver): The Selenium WebDriver instance.
+        name_prefix (str): A prefix for the screenshot filename (e.g., "error_login").
+
+    Returns:
+        Optional[Path]: The Path object of the saved screenshot, or None on failure.
+    """
+    screenshot_dir = ensure_directory(DEFAULT_SCREENSHOT_DIR)
+    if not screenshot_dir:
+         logger.error("Cannot save screenshot, screenshot directory setup failed.")
+         return None
+
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3] # Add milliseconds
+        # Sanitize prefix for filename
+        safe_prefix = re.sub(r'[^\w\-]+', '_', name_prefix)
+        filename = f"{safe_prefix}_{timestamp}.png"
+        file_path = screenshot_dir / filename
+
+        if driver.save_screenshot(str(file_path)):
+            logger.info(f"Screenshot saved: {file_path}")
+            return file_path
+        else:
+            logger.warning(f"Failed to save screenshot to {file_path} (driver returned false).")
+            return None
+    except WebDriverException as e:
+        # Handle cases where driver might be closed or unresponsive
+        logger.error(f"WebDriverException capturing screenshot '{name_prefix}': {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error capturing screenshot '{name_prefix}': {e}", exc_info=True)
+        return None
+
 
 def is_scrollable(element):
     """Utility function to determine if an element is scrollable."""
@@ -112,6 +331,7 @@ def is_scrollable(element):
     except Exception as e:
         logger.error(f"Error determining scrollability: {e}", exc_info=True)
         return False
+
 
 def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse=False, max_attempts=10):
     logger.debug("Starting scroll_slow.")
@@ -225,92 +445,3 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=300, reverse
     except Exception as e:
         logger.error(f"An error occurred during scrolling: {e}", exc_info=True)
     logger.debug("Completed scroll_slow.")
-
-def chrome_browser_options():
-    logger.debug("Setting Chrome browser options")
-    ensure_chrome_profile()
-    options = webdriver.ChromeOptions()
-    
-    # Headless mode
-    if not TRYING_DEGUB:
-        options.add_argument("--headless")
-    
-    # Specify the absolute path to the Chrome binary
-    options.binary_location = '/usr/bin/google-chrome'
-    
-    # Existing options
-    options.add_argument("--start-maximized")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--ignore-certificate-errors")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-gpu")
-    options.add_argument("window-size=1200x800")
-    options.add_argument("--disable-background-timer-throttling")
-    options.add_argument("--disable-backgrounding-occluded-windows")
-    options.add_argument("--disable-translate")
-    options.add_argument("--disable-popup-blocking")
-    options.add_argument("--no-first-run")
-    options.add_argument("--no-default-browser-check")
-    options.add_argument("--disable-logging")
-    options.add_argument("--disable-autofill")
-    options.add_argument("--disable-plugins")
-    options.add_argument("--disable-animations")
-    options.add_argument("--disable-cache")
-    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-
-    # Additional flags for stability
-    options.add_argument("--disable-setuid-sandbox")
-    # options.add_argument("--disable-software-rasterizer")
-    options.add_argument("--no-zygote")
-    options.add_argument("--single-process")
-    options.add_argument("--remote-debugging-port=9222")
-
-    # Preferences to optimize loading
-    prefs = {
-        "profile.default_content_setting_values.images": 2,
-        "profile.managed_default_content_settings.stylesheets": 2,
-    }
-    options.add_experimental_option("prefs", prefs)
-
-    # Chrome profile configuration
-    if chrome_profile_path:
-        initial_path = os.path.dirname(chrome_profile_path)
-        profile_dir = os.path.basename(chrome_profile_path)
-        options.add_argument(f'--user-data-dir={initial_path}')
-        options.add_argument(f"--profile-directory={profile_dir}")
-        logger.debug(f"Using Chrome profile directory: {chrome_profile_path}")
-    else:
-        options.add_argument("--incognito")
-        logger.debug("Using Chrome in incognito mode")
-
-    return options
-
-def capture_screenshot(driver,name: str) -> None:
-    """
-    Captures a screenshot of the current browser window.
-    """
-    try:
-        screenshots_dir = "screenshots"
-        ensure_directory(screenshots_dir)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_path = os.path.join(screenshots_dir, f"{timestamp}_{name}.png")
-        success = driver.save_screenshot(file_path)
-        if success:
-            logger.debug(f"Screenshot saved at: {file_path}")
-        else:
-            logger.warning("Failed to save screenshot")
-    except Exception as e:
-        logger.error("An error occurred while capturing the screenshot", exc_info=True)
-
-def ensure_directory(folder_path: str) -> None:
-    """
-    Ensures that the specified directory exists.
-    """
-    try:
-        os.makedirs(folder_path, exist_ok=True)
-        logger.debug(f"Directory ensured at path: {folder_path}")
-    except Exception as e:
-        logger.error(f"Failed to create directory: {folder_path}", exc_info=True)
-        raise

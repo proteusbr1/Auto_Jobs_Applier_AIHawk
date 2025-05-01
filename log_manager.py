@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Log Manager for Auto_Jobs_Applier_AIHawk
+Log Manager
 
 This script manages log files by:
 1. Consolidating logs where possible

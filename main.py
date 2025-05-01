@@ -1,338 +1,275 @@
-# main.py
+# src/main.py
+"""
+Main entry point for the generic web automation bot.
+
+This script orchestrates the configuration validation, browser initialization,
+LLM setup, component instantiation, and execution of the automation workflow defined
+by the Facade pattern.
+"""
+
 import os
-import re
 import sys
 from pathlib import Path
 import yaml
 import click
+import socket
+from typing import Optional, Dict, Any, Tuple, List
+from datetime import datetime
+import logging
+
+# Third-party libraries
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException
-# Resume builder library no longer used - direct HTML resume used instead
-from src.utils import chrome_browser_options
-from src.llm.llm_manager import LLMAnswerer
-from src.aihawk_authenticator import AIHawkAuthenticator
-from src.aihawk_bot_facade import AIHawkBotFacade
-from src.aihawk_job_manager import AIHawkJobManager
-from src.job_application_profile import JobApplicationProfile
 from loguru import logger
 from dotenv import load_dotenv
-import socket
-from typing import Optional
 
+# Internal modules (assuming refactored names and locations)
+from src.utils import chrome_browser_options, configure_logging
+from src.llm import setup_llm_processor, LLMProcessor, LLMError, ConfigurationError as LLMConfigError
+# Assume these components have been renamed and refactored
+from src.web_authenticator import WebAuthenticator # Renamed from WebAuthenticator
+from src.automation_facade import AutomationFacade # Renamed from AutomationFacade
+from src.job_manager import JobManager # Renamed from JobManager
+from src.job_application_profile import JobApplicationProfile # Assuming this name is generic enough
 from src.resume_manager import ResumeManager
 
-from app_config import TRYING_DEGUB
+# Configuration (assuming this defines TRYING_DEBUG, etc., or handled differently)
+# Consider moving configuration loading logic to a dedicated module
+try:
+    # Example: importing a central config object or specific values
+    from app_config import TRYING_DEBUG
+except ImportError:
+    logger.warning("app_config.py not found or TRYING_DEBUG not defined. Setting TRYING_DEBUG=False.")
+    TRYING_DEBUG = False
 
 
-# Suppress other stderr outputs
-sys.stderr = open(os.devnull, 'w')
-
+# --- Custom Exceptions ---
 
 class ConfigError(Exception):
-    """Custom exception for configuration-related errors."""
+    """Custom exception for general application configuration errors."""
     pass
 
 
+# --- Configuration Validation ---
+
 class ConfigValidator:
-    """Validates configuration files and environment variables."""
+    """Validates configuration files (YAML) and structure."""
+
+    # Constants for validation keys might be useful
+    _REQUIRED_CONFIG_KEYS: Dict[str, type] = {
+        'remote': bool,
+        'experienceLevel': dict,
+        'jobTypes': dict,
+        'date': dict,
+        'searches': list,
+        'distance': int,
+        'company_blacklist': list,
+        'title_blacklist': list,
+        'description_blacklist': list,
+        'llm_model_type': str,
+        'llm_model': str
+        # 'llm_api_url': str # Optional, handled by llm_manager
+    }
+    _OPTIONAL_CONFIG_KEYS_WITH_DEFAULTS: Dict[str, Any] = {
+        'company_blacklist': [],
+        'title_blacklist': [],
+        'description_blacklist': []
+        # 'llm_api_url': None # Example if handling here
+    }
+    _EXPERIENCE_LEVELS: List[str] = ['internship', 'entry', 'associate', 'mid-senior level', 'director', 'executive']
+    _JOB_TYPES: List[str] = ['full-time', 'contract', 'part-time', 'temporary', 'internship', 'other', 'volunteer']
+    _DATE_FILTERS: List[str] = ['all time', 'month', 'week', '24 hours']
+    _APPROVED_DISTANCES: set = {0, 5, 10, 25, 50, 100}
 
     @staticmethod
-    def validate_email(email: str) -> bool:
-        """Validates the format of an email address."""
-        logger.debug(f"Validating email: {email}")
-        return re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email) is not None
+    def _validate_boolean_dict(data: Any, allowed_keys: List[str], dict_name: str, file_path: Path) -> None:
+        """Validates a dictionary where keys map to boolean values."""
+        if not isinstance(data, dict):
+             raise ConfigError(f"'{dict_name}' must be a dictionary in config file {file_path}")
+        for key in allowed_keys:
+            value = data.get(key)
+            if not isinstance(value, bool):
+                logger.error(f"Value for '{key}' in '{dict_name}' must be a boolean (true/false) in config file {file_path}. Found: {type(value)}")
+                raise ConfigError(f"Value for '{key}' in '{dict_name}' must be a boolean in config file {file_path}")
+            logger.trace(f"'{dict_name}' key '{key}' validated.")
 
     @staticmethod
-    def validate_yaml_file(yaml_path: Path) -> dict:
-        """
-        Validates and loads a YAML configuration file.
+    def _validate_searches_list(searches: Any, file_path: Path) -> None:
+        """Validates the structure of the 'searches' list."""
+        if not isinstance(searches, list):
+            raise ConfigError(f"'searches' must be a list in config file {file_path}")
 
-        Args:
-            yaml_path (Path): Path to the YAML file.
+        if not searches:
+             logger.warning("The 'searches' list in the config file is empty. The bot will not perform any searches.")
+             # Decide if this should be an error or just a warning. Warning seems appropriate.
+             # raise ConfigError(f"'searches' list cannot be empty in config file {file_path}")
 
-        Returns:
-            dict: Parsed YAML data.
-
-        Raises:
-            ConfigError: If the YAML file cannot be read or parsed.
-        """
-        logger.debug(f"Validating YAML file at: {yaml_path}")
-        try:
-            with open(yaml_path, 'r') as stream:
-                data = yaml.safe_load(stream)
-                logger.debug(f"YAML data loaded: {data}")
-                return data
-        except yaml.YAMLError as exc:
-            logger.error(f"Error reading YAML file {yaml_path}: {exc}")
-            raise ConfigError(f"Error reading file {yaml_path}: {exc}")
-        except FileNotFoundError:
-            logger.error(f"YAML file not found: {yaml_path}")
-            raise ConfigError(f"File not found: {yaml_path}")
-
-    @staticmethod
-    def validate_config(config_yaml_path: Path) -> dict:
-        """
-        Validates the main configuration file.
-
-        Args:
-            config_yaml_path (Path): Path to the main configuration YAML file.
-
-        Returns:
-            dict: Validated configuration parameters.
-
-        Raises:
-            ConfigError: If required keys are missing or have invalid types.
-        """
-        logger.debug(f"Validating configuration file: {config_yaml_path}")
-        parameters = ConfigValidator.validate_yaml_file(config_yaml_path)
-        required_keys = {
-            'remote': bool,
-            'experienceLevel': dict,
-            'jobTypes': dict,
-            'date': dict,
-            'searches': list,
-            'distance': int,
-            'company_blacklist': list,
-            'title_blacklist': list,
-            'description_blacklist': list,  # Added for description-based filtering
-            'llm_model_type': str,
-            'llm_model': str
-        }
-
-        for key, expected_type in required_keys.items():
-            if key not in parameters:
-                if key in ['company_blacklist', 'title_blacklist', 'description_blacklist']:
-                    parameters[key] = []
-                    logger.warning(f"Missing key '{key}' in config. Setting default empty list.")
-                else:
-                    logger.error(f"Missing or invalid key '{key}' in config file {config_yaml_path}")
-                    raise ConfigError(f"Missing or invalid key '{key}' in config file {config_yaml_path}")
-            elif not isinstance(parameters[key], expected_type):
-                if key in ['company_blacklist', 'title_blacklist', 'description_blacklist'] and parameters[key] is None:
-                    parameters[key] = []
-                    logger.warning(f"Key '{key}' is None in config. Setting to empty list.")
-                else:
-                    logger.error(f"Invalid type for key '{key}' in config file {config_yaml_path}. Expected {expected_type}.")
-                    raise ConfigError(f"Invalid type for key '{key}' in config file {config_yaml_path}. Expected {expected_type}.")
-            else:
-                logger.debug(f"Key '{key}' validated successfully.")
-
-        # Validate experience levels
-        experience_levels = ['internship', 'entry', 'associate', 'mid-senior level', 'director', 'executive']
-        for level in experience_levels:
-            if not isinstance(parameters['experienceLevel'].get(level), bool):
-                logger.error(f"Experience level '{level}' must be a boolean in config file {config_yaml_path}")
-                raise ConfigError(f"Experience level '{level}' must be a boolean in config file {config_yaml_path}")
-            logger.debug(f"Experience level '{level}' is valid.")
-
-        # Validate job types
-        job_types = ['full-time', 'contract', 'part-time', 'temporary', 'internship', 'other', 'volunteer']
-        for job_type in job_types:
-            if not isinstance(parameters['jobTypes'].get(job_type), bool):
-                logger.error(f"Job type '{job_type}' must be a boolean in config file {config_yaml_path}")
-                raise ConfigError(f"Job type '{job_type}' must be a boolean in config file {config_yaml_path}")
-            logger.debug(f"Job type '{job_type}' is valid.")
-
-        # Validate date filters
-        date_filters = ['all time', 'month', 'week', '24 hours']
-        for date_filter in date_filters:
-            if not isinstance(parameters['date'].get(date_filter), bool):
-                logger.error(f"Date filter '{date_filter}' must be a boolean in config file {config_yaml_path}")
-                raise ConfigError(f"Date filter '{date_filter}' must be a boolean in config file {config_yaml_path}")
-            logger.debug(f"Date filter '{date_filter}' is valid.")
-
-        # Validate 'searches' list
-        if not isinstance(parameters['searches'], list):
-            logger.error(f"'searches' must be a list in config file {config_yaml_path}")
-            raise ConfigError(f"'searches' must be a list in config file {config_yaml_path}")
-
-        for index, search in enumerate(parameters['searches'], start=1):
+        for index, search in enumerate(searches, start=1):
             if not isinstance(search, dict):
-                logger.error(f"Each item in 'searches' must be a mapping/dictionary. Issue found at item {index}.")
-                raise ConfigError(f"Each item in 'searches' must be a mapping/dictionary. Issue found at item {index}.")
+                raise ConfigError(f"Each item in 'searches' must be a dictionary. Issue found at item {index} in {file_path}.")
+            if 'location' not in search or not isinstance(search.get('location'), str) or not search.get('location').strip():
+                raise ConfigError(f"Each search item requires a non-empty string 'location'. Issue found at item {index} in {file_path}.")
+            if 'positions' not in search or not isinstance(search.get('positions'), list):
+                raise ConfigError(f"Each search item requires a 'positions' list. Issue found at item {index} in {file_path}.")
+            if not search.get('positions'): # Ensure positions list is not empty
+                 raise ConfigError(f"'positions' list cannot be empty in search item {index} in {file_path}.")
+            if not all(isinstance(pos, str) and pos.strip() for pos in search['positions']):
+                raise ConfigError(f"All items in 'positions' must be non-empty strings. Issue found at item {index} in {file_path}.")
+            logger.trace(f"'searches' item {index} validated.")
 
-            # Validate 'location'
-            if 'location' not in search:
-                logger.error(f"Missing 'location' key in 'searches' at item {index}.")
-                raise ConfigError(f"Missing 'location' key in 'searches' at item {index}.")
-            if not isinstance(search['location'], str):
-                logger.error(f"'location' must be a string in 'searches' at item {index}.")
-                raise ConfigError(f"'location' must be a string in 'searches' at item {index}.")
+    @staticmethod
+    def validate_config_file(yaml_path: Path) -> Dict[str, Any]:
+        """
+        Validates and loads the main YAML configuration file.
 
-            # Validate 'positions'
-            if 'positions' not in search:
-                logger.error(f"Missing 'positions' key in 'searches' at item {index}.")
-                raise ConfigError(f"Missing 'positions' key in 'searches' at item {index}.")
-            if not isinstance(search['positions'], list):
-                logger.error(f"'positions' must be a list in 'searches' at item {index}.")
-                raise ConfigError(f"'positions' must be a list in 'searches' at item {index}.")
-            if not all(isinstance(pos, str) for pos in search['positions']):
-                logger.error(f"All items in 'positions' must be strings in 'searches' at item {index}.")
-                raise ConfigError(f"All items in 'positions' must be strings in 'searches' at item {index}.")
+        Args:
+            yaml_path (Path): Path to the main configuration YAML file.
 
-            logger.debug(f"'searches' item {index} validated successfully.")
+        Returns:
+            Dict[str, Any]: Validated configuration parameters.
+
+        Raises:
+            ConfigError: If the file is missing, invalid YAML, or fails structural/type validation.
+        """
+        logger.debug(f"Validating main configuration file: {yaml_path}")
+        if not yaml_path.exists():
+            logger.error(f"Configuration file not found: {yaml_path}")
+            raise ConfigError(f"Configuration file not found: {yaml_path}")
+
+        try:
+            with open(yaml_path, 'r', encoding='utf-8') as stream:
+                config_data = yaml.safe_load(stream)
+            if not isinstance(config_data, dict):
+                 raise ConfigError(f"Configuration file content must be a YAML dictionary (mapping). Found: {type(config_data)}")
+            logger.debug(f"YAML data loaded successfully from {yaml_path}.")
+        except yaml.YAMLError as exc:
+            logger.error(f"Error parsing YAML file {yaml_path}: {exc}")
+            raise ConfigError(f"Error parsing configuration file {yaml_path}: {exc}") from exc
+        except IOError as exc:
+             logger.error(f"Error reading configuration file {yaml_path}: {exc}")
+             raise ConfigError(f"Error reading configuration file {yaml_path}: {exc}") from exc
+
+
+        # Validate required keys and types
+        for key, expected_type in ConfigValidator._REQUIRED_CONFIG_KEYS.items():
+            if key not in config_data:
+                 # Handle optional keys with defaults
+                 if key in ConfigValidator._OPTIONAL_CONFIG_KEYS_WITH_DEFAULTS:
+                     config_data[key] = ConfigValidator._OPTIONAL_CONFIG_KEYS_WITH_DEFAULTS[key]
+                     logger.warning(f"Optional key '{key}' missing in config. Using default: {config_data[key]}")
+                 else:
+                     logger.error(f"Missing required key '{key}' in config file {yaml_path}")
+                     raise ConfigError(f"Missing required key '{key}' in config file {yaml_path}")
+            elif not isinstance(config_data[key], expected_type):
+                 # Allow None for lists that default to empty list
+                 if expected_type is list and config_data[key] is None and key in ConfigValidator._OPTIONAL_CONFIG_KEYS_WITH_DEFAULTS:
+                      config_data[key] = []
+                      logger.warning(f"Key '{key}' is None in config. Setting to empty list.")
+                 else:
+                      logger.error(f"Invalid type for key '{key}' in config file {yaml_path}. Expected {expected_type.__name__}, found {type(config_data[key]).__name__}.")
+                      raise ConfigError(f"Invalid type for key '{key}'. Expected {expected_type.__name__}, found {type(config_data[key]).__name__}.")
+            logger.trace(f"Config key '{key}' validated.")
+
+        # Specific structure validations
+        try:
+             ConfigValidator._validate_boolean_dict(config_data.get('experienceLevel'), ConfigValidator._EXPERIENCE_LEVELS, 'experienceLevel', yaml_path)
+             ConfigValidator._validate_boolean_dict(config_data.get('jobTypes'), ConfigValidator._JOB_TYPES, 'jobTypes', yaml_path)
+             ConfigValidator._validate_boolean_dict(config_data.get('date'), ConfigValidator._DATE_FILTERS, 'date', yaml_path)
+             ConfigValidator._validate_searches_list(config_data.get('searches'), yaml_path)
+        except ConfigError: # Re-raise validation errors
+             raise
+        except Exception as e: # Catch unexpected errors during validation
+             logger.error(f"Unexpected error during detailed config validation: {e}", exc_info=True)
+             raise ConfigError(f"Unexpected validation error in {yaml_path}: {e}") from e
+
 
         # Validate distance value
-        approved_distances = {0, 5, 10, 25, 50, 100}
-        if parameters['distance'] not in approved_distances:
-            logger.error(f"Invalid distance value in config file {config_yaml_path}. Must be one of: {approved_distances}")
-            raise ConfigError(f"Invalid distance value in config file {config_yaml_path}. Must be one of: {approved_distances}")
-        logger.debug(f"Distance value '{parameters['distance']}' is valid.")
+        if config_data.get('distance') not in ConfigValidator._APPROVED_DISTANCES:
+            logger.error(f"Invalid 'distance' value {config_data.get('distance')} in config file {yaml_path}. Must be one of: {ConfigValidator._APPROVED_DISTANCES}")
+            raise ConfigError(f"Invalid 'distance' value in config file {yaml_path}. Must be one of: {ConfigValidator._APPROVED_DISTANCES}")
+        logger.trace("'distance' value validated.")
 
-        # Validate blacklists and description_blacklist
-        for blacklist in ['company_blacklist', 'title_blacklist', 'description_blacklist']:
-            if not isinstance(parameters.get(blacklist), list):
-                logger.error(f"'{blacklist}' must be a list in config file {config_yaml_path}")
-                raise ConfigError(f"'{blacklist}' must be a list in config file {config_yaml_path}")
-            if parameters[blacklist] is None:
-                parameters[blacklist] = []
-                logger.warning(f"'{blacklist}' is None in config. Setting to empty list.")
-            logger.debug(f"Blacklist '{blacklist}' validated successfully.")
+        # Validate blacklists (type checked above, ensure they are lists now)
+        for key in ['company_blacklist', 'title_blacklist', 'description_blacklist']:
+             if not isinstance(config_data.get(key), list):
+                  # This case should be caught by initial type check or None handling
+                  raise ConfigError(f"'{key}' should be a list but is {type(config_data.get(key))} in {yaml_path}")
+             # Ensure all elements are strings
+             if not all(isinstance(item, str) for item in config_data[key]):
+                  raise ConfigError(f"All items in '{key}' must be strings in {yaml_path}")
+             logger.trace(f"Blacklist '{key}' validated.")
 
-        logger.debug("Configuration file validated successfully.")
-        return parameters
 
-    @staticmethod
-    def validate_secrets(env_path: Path = Path('.env'), llm_model_type: str = None) -> str:
-        """
-        Validates the required secrets from the environment file.
+        logger.info(f"Configuration file '{yaml_path}' validated successfully.")
+        return config_data
 
-        Args:
-            env_path (Path): Path to the environment file.
-            llm_model_type (str): The type of LLM model being used (e.g., 'openai', 'gemini').
 
-        Returns:
-            str: The appropriate API key for the specified model type.
-
-        Raises:
-            ConfigError: If any mandatory secret is missing or empty.
-        """
-        logger.debug(f"Validating secrets from environment file: {env_path}")
-        load_dotenv(dotenv_path=env_path)
-        
-        # Determine which API key to use based on model type
-        api_key_env_var = 'OPENAI_API_KEY'  # Default
-        if llm_model_type == 'gemini':
-            api_key_env_var = 'GOOGLE_API_KEY'
-        
-        logger.debug(f"Using API key environment variable: {api_key_env_var} for model type: {llm_model_type}")
-        
-        # Validate the required API key
-        value = os.getenv(api_key_env_var)
-        if value is None:
-            logger.error(f"Missing environment variable '{api_key_env_var}' in {env_path}.")
-            raise ConfigError(f"Missing environment variable '{api_key_env_var}' in {env_path}.")
-        if not value.strip():
-            logger.error(f"Environment variable '{api_key_env_var}' cannot be empty in {env_path}.")
-            raise ConfigError(f"Environment variable '{api_key_env_var}' cannot be empty in {env_path}.")
-        
-        logger.debug(f"Environment variable '{api_key_env_var}' is set.")
-        logger.debug("All required secrets are validated.")
-        
-        return value
-
+# --- File Management ---
 
 class FileManager:
-    """Handles file operations such as searching, validating, and loading files."""
+    """Handles file operations such as searching, validating paths, and loading content."""
+
+    # Consider making these filenames configurable
+    CONFIG_FILENAME = "config.yaml"
+    OUTPUT_DIR_NAME = "output"
+    DEFAULT_HTML_RESUME_PATH = Path("resumes/resume.html") # Default path for HTML resume
+    PRIVATE_CONTEXT_FILENAME = "data_folder/private_context.yaml"
+
+
 
     @staticmethod
-    def find_file(name_containing: str, with_extension: str, at_path: Path) -> Optional[Path]:
+    def validate_data_folder_structure(app_data_folder: Path) -> Tuple[Path, Path]:
         """
-        Searches for a file containing a specific substring and extension within a directory.
+        Validates the existence of the data folder and required configuration files.
+        Creates the output directory if it doesn't exist.
 
         Args:
-            name_containing (str): Substring that the file name should contain.
-            with_extension (str): File extension to match.
-            at_path (Path): Directory path to search in.
+            app_data_folder (Path): Path to the application's data folder.
 
         Returns:
-            Optional[Path]: The found file path or None if not found.
-        """
-        logger.debug(f"Searching for file containing '{name_containing}' with extension '{with_extension}' in {at_path}")
-        file = next(
-            (
-                file
-                for file in at_path.iterdir()
-                if name_containing.lower() in file.name.lower() and file.suffix.lower() == with_extension.lower()
-            ),
-            None
-        )
-        if file:
-            logger.debug(f"Found file: {file}")
-        else:
-            logger.warning(f"No file found containing '{name_containing}' with extension '{with_extension}' in {at_path}")
-        return file
-
-    @staticmethod
-    def validate_data_folder(app_data_folder: Path) -> tuple:
-        """
-        Validates the existence of the data folder and required files within it.
-
-        Args:
-            app_data_folder (Path): Path to the data folder.
-
-        Returns:
-            tuple: Paths to config.yaml, plain_text_resume.yaml, and output folder.
+            Tuple[Path, Path]: Paths to config file and output folder.
 
         Raises:
-            FileNotFoundError: If the data folder or required files are missing.
+            ConfigError: If the data folder or required files are missing.
         """
-        logger.debug(f"Validating data folder at: {app_data_folder}")
+        logger.debug(f"Validating data folder structure at: {app_data_folder}")
         if not app_data_folder.exists() or not app_data_folder.is_dir():
-            logger.error(f"Data folder not found: {app_data_folder}")
-            raise FileNotFoundError(f"Data folder not found: {app_data_folder}")
+            logger.error(f"Application data folder not found: {app_data_folder}")
+            raise ConfigError(f"Application data folder not found: {app_data_folder}")
 
-        required_files = ['config.yaml', 'plain_text_resume.yaml']
-        missing_files = [file for file in required_files if not (app_data_folder / file).exists()]
+        config_file = app_data_folder / FileManager.CONFIG_FILENAME
+
+        missing_files = []
+        if not config_file.exists():
+            missing_files.append(FileManager.CONFIG_FILENAME)
 
         if missing_files:
-            logger.error(f"Missing files in the data folder: {', '.join(missing_files)}")
-            raise FileNotFoundError(f"Missing files in the data folder: {', '.join(missing_files)}")
+            logger.error(f"Missing required files in data folder '{app_data_folder}': {', '.join(missing_files)}")
+            raise ConfigError(f"Missing required files in data folder '{app_data_folder}': {', '.join(missing_files)}")
 
-        logger.debug("All required files are present in the data folder.")
-        output_folder = app_data_folder / 'output'
-        output_folder.mkdir(exist_ok=True)
-        logger.debug(f"Output folder is set at: {output_folder}")
-        return (app_data_folder / 'config.yaml', app_data_folder / 'plain_text_resume.yaml', output_folder)
+        output_folder = app_data_folder / FileManager.OUTPUT_DIR_NAME
+        try:
+             output_folder.mkdir(parents=True, exist_ok=True)
+             logger.debug(f"Validated/created output folder: {output_folder}")
+        except OSError as e:
+             logger.error(f"Could not create output directory {output_folder}: {e}")
+             raise ConfigError(f"Could not create output directory {output_folder}: {e}") from e
 
-    @staticmethod
-    def file_paths_to_dict(resume_file: Optional[Path], plain_text_resume_file: Path) -> dict:
-        """
-        Converts file paths to a dictionary format.
 
-        Args:
-            resume_file (Optional[Path]): Path to the resume PDF file.
-            plain_text_resume_file (Path): Path to the plain text resume file.
+        logger.debug("Data folder structure validated successfully.")
+        return config_file, output_folder
 
-        Returns:
-            dict: Dictionary containing file paths.
 
-        Raises:
-            FileNotFoundError: If any of the specified files do not exist.
-        """
-        logger.debug(f"Converting file paths to dictionary. Resume file: {resume_file}, Plain text resume file: {plain_text_resume_file}")
-        if not plain_text_resume_file.exists():
-            logger.error(f"Plain text resume file not found: {plain_text_resume_file}")
-            raise FileNotFoundError(f"Plain text resume file not found: {plain_text_resume_file}")
 
-        result = {'plainTextResume': plain_text_resume_file}
-        logger.debug("Added plainTextResume to file paths dictionary.")
-
-        if resume_file:
-            if not resume_file.exists():
-                logger.error(f"Resume file not found: {resume_file}")
-                raise FileNotFoundError(f"Resume file not found: {resume_file}")
-            result['resume'] = resume_file
-            logger.debug("Added resume to file paths dictionary.")
-
-        return result
-
+# --- Browser Initialization ---
 
 def init_browser() -> webdriver.Chrome:
     """
-    Initializes the Selenium Chrome WebDriver with appropriate options and logging.
+    Initializes the Selenium Chrome WebDriver with appropriate options.
+
+    Uses WebDriverManager to automatically download/manage the ChromeDriver.
 
     Returns:
         webdriver.Chrome: An instance of the Chrome WebDriver.
@@ -340,196 +277,293 @@ def init_browser() -> webdriver.Chrome:
     Raises:
         RuntimeError: If the WebDriver fails to initialize.
     """
-    logger.debug("Initializing browser.")
+    logger.debug("Initializing Chrome WebDriver...")
     try:
+        # Use options from the utility module
         options = chrome_browser_options()
 
-        # Ensure that the log directory exists
-        log_dir = "./log"
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-            logger.debug(f"Created log directory at: {log_dir}")
+        # Setup ChromeDriver service
+        service_args = ["--log-level=WARNING"] if TRYING_DEBUG else ["--log-level=OFF"]
+        # Specify log path only in debug mode to avoid clutter
+        log_path = os.path.join("logs", "chromedriver.log") if TRYING_DEBUG else os.devnull
 
-        # Configure the ChromeDriver service with reduced log level
-        if TRYING_DEGUB:
-            service = ChromeService(
-                executable_path=ChromeDriverManager().install(),
-                log_path=os.path.join(log_dir, "chromedriver.log"),
-                log_level='WARNING'
-            )
-        else:
-            # Don't create chromedriver.log in production mode
-            service = ChromeService(executable_path=ChromeDriverManager().install())
+        # Ensure logs directory exists if logging is enabled
+        if TRYING_DEBUG:
+             os.makedirs("logs", exist_ok=True)
+
+        service = ChromeService(
+            executable_path=ChromeDriverManager().install(),
+            service_args=service_args,
+            log_path=log_path
+        )
 
         browser = webdriver.Chrome(service=service, options=options)
-        logger.debug("Browser initialized successfully.")
+        logger.info("Chrome WebDriver initialized successfully.")
+        # Add implicit wait? browser.implicitly_wait(5) # Example: wait up to 5s for elements
         return browser
     except WebDriverException as e:
-        logger.exception("WebDriver failed to initialize.")
-        raise RuntimeError(f"Failed to initialize browser: {str(e)}")
+        logger.critical(f"WebDriver failed to initialize: {e}", exc_info=True)
+        # Provide more helpful error message if possible
+        if "net::ERR_CONNECTION_REFUSED" in str(e):
+             logger.error("Connection refused - ensure ChromeDriver or browser isn't blocked by firewall/network.")
+        elif "session not created" in str(e).lower():
+             logger.error("Session not created - check ChromeDriver/Chrome browser version compatibility.")
+        raise RuntimeError(f"Failed to initialize Chrome browser: {str(e)}") from e
+    except Exception as e:
+         # Catch other potential errors like ChromeDriverManager issues
+         logger.critical(f"Unexpected error during browser initialization: {e}", exc_info=True)
+         raise RuntimeError(f"Unexpected error initializing browser: {e}") from e
 
 
-def create_and_run_bot(parameters: dict, llm_api_key: str, resume_manager: ResumeManager):
+# --- Automation Core Logic ---
+
+def setup_and_run_automation(
+    parameters: Dict[str, Any],
+    llm_processor: LLMProcessor,
+    resume_manager: ResumeManager,
+    data_folder_path: Path
+):
     """
-    Creates and runs the AIHawk bot with the provided parameters and API key.
-    Uses direct HTML resume instead of PDF generator library.
+    Sets up the automation components (authenticator, job manager, facade)
+    and runs the main automation workflow (login, apply).
 
     Args:
-        parameters (dict): Configuration parameters.
-        llm_api_key (str): API key for the language model.
-        resume_manager (ResumeManager): Instance of ResumeManager containing resume information.
+        parameters (Dict[str, Any]): Validated configuration parameters, including 'outputFileDirectory'.
+        llm_processor (LLMProcessor): Initialized LLM processor instance.
+        resume_manager (ResumeManager): Initialized resume manager instance.
 
     Raises:
-        WebDriverException: If a WebDriver error occurs.
-        ConfigError: If a configuration error occurs.
-        RuntimeError: For any other unexpected errors.
+        WebDriverException: If a browser automation error occurs.
+        ConfigError: If essential configuration for components is missing.
+        RuntimeError: For other unexpected errors during setup or execution.
     """
-    logger.debug("Creating and running the bot.")
+    logger.info("Setting up and running automation workflow...")
+    browser = None # Ensure browser is defined for finally block
     try:
-        # Access plainTextResume from parameters['uploads']
-        plain_text_path = parameters['uploads']['plainTextResume']
-        logger.debug(f"Reading plain text resume from: {plain_text_path}")
-        with open(plain_text_path, "r", encoding='utf-8') as file:
-            plain_text_resume = file.read()
-        logger.debug("Plain text resume read successfully.")
+        # --- Get Resume Info ---
+        resume_html_path = resume_manager.get_resume() # Get path to final HTML resume
+        logger.info(f"Using HTML resume file: {resume_html_path}")
 
-        # Using direct HTML resume from resume_manager instead of PDF generator library
-        resume_html_path = resume_manager.get_resume()
-        logger.debug(f"Using direct HTML resume from: {resume_html_path}")
+        # --- Read YAML for JobApplicationProfile ---
+        # JobApplicationProfile still needs YAML data, so read it directly
+        yaml_path = data_folder_path / "plain_text_resume.yaml"
+        if not yaml_path.exists():
+            logger.error(f"Required YAML file for profile not found: {yaml_path}")
+            raise ConfigError(f"Required YAML file for profile not found: {yaml_path}")
+            
+        with open(yaml_path, "r", encoding='utf-8') as file:
+            yaml_content = file.read()
+        
+        logger.info(f"Using YAML file for profile data: {yaml_path}")
 
-        logger.debug("Creating JobApplicationProfile object.")
-        job_application_profile_object = JobApplicationProfile(plain_text_resume)
-        logger.debug("JobApplicationProfile object created.")
+        # --- Initialize Profile & Browser ---
+        job_application_profile = JobApplicationProfile(yaml_content) # Use YAML content for profile
+        logger.debug("Job application profile created.")
 
-        logger.debug("Initializing browser for bot.")
-        browser = init_browser()
-        logger.debug("Browser initialized for bot.")
+        browser = init_browser() # Initialize browser for this run
 
-        logger.debug("Initializing bot components.")
-        login_component = AIHawkAuthenticator(browser)
-        apply_component = AIHawkJobManager(browser)
-        gpt_answerer_component = LLMAnswerer(parameters, llm_api_key)
-        logger.debug("Bot components initialized.")
+        # --- Initialize Bot Components ---
+        # These names should match your refactored component classes
+        authenticator = WebAuthenticator(browser)
+        job_manager = JobManager(browser) # Pass browser and maybe LLM? Depends on JobManager needs
+        # If JobManager needs LLMProcessor:
+        # job_manager = JobManager(browser, llm_processor)
+        logger.debug("Core automation components initialized (Authenticator, JobManager).")
 
-        logger.debug("Setting up AIHawkBotFacade.")
-        bot = AIHawkBotFacade(login_component, apply_component)
-        # Set only the job application profile; we don't need the resume_object anymore
-        bot.set_job_application_profile_and_resume(job_application_profile_object, None)
-        # Set only the GPT answerer; we don't need resume_generator_manager anymore
-        bot.set_gpt_answerer_and_resume_generator(gpt_answerer_component, None)
-        bot.set_parameters(parameters, resume_manager)
-        logger.debug("AIHawkBotFacade setup complete.")
+        # --- Setup Facade ---
+        # The Facade coordinates the components
+        facade = AutomationFacade(authenticator, job_manager)
+        facade.set_llm_processor(llm_processor)
+        facade.set_job_application_profile(job_application_profile)
+        # Pass necessary parameters (like search criteria, blacklists) and resume manager to facade/components
+        facade.configure(parameters, resume_manager) # Add a configure method to Facade?
+        logger.debug("Automation Facade configured.")
 
-        # Log the resume being used
-        logger.info(f"Using resume: {resume_manager.get_resume()}")
 
-        logger.debug("Starting bot login process.")
-        bot.start_login()
-        logger.debug("Starting bot application process.")
-        bot.start_apply()
-        logger.debug("Bot has finished running.")
-    except WebDriverException as e:
-        logger.exception("WebDriver error occurred while running the bot.")
-        raise
-    except ConfigError as ce:
-        logger.exception("Configuration error occurred while running the bot.")
-        raise ce
+        # --- Execute Workflow ---
+        logger.info("Starting login sequence...")
+        facade.login() # Facade method name might differ
+        logger.info("Login sequence completed.")
+
+        logger.info("Starting main automation tasks...") # Updated log message
+        facade.run_tasks() # <--- CORRECTED METHOD NAME
+        logger.info("Main automation tasks finished.") # Updated log message
+
+    except (WebDriverException, ConfigError, LLMError, RuntimeError) as e:
+        # Catch known specific errors from setup/execution
+        logger.critical(f"Automation failed due to error: {e}", exc_info=True)
+        raise # Re-raise the caught exception
     except Exception as e:
-        logger.exception("An unexpected error occurred while running the bot.")
-        raise RuntimeError(f"Error running the bot: {str(e)}")
+        # Catch any truly unexpected errors
+        logger.critical(f"An unexpected error occurred during automation: {e}", exc_info=True)
+        raise RuntimeError(f"Unexpected automation error: {e}") from e
+    finally:
+        # --- Cleanup ---
+        if browser:
+            try:
+                logger.info("Closing browser.")
+                browser.quit()
+            except Exception as e:
+                logger.warning(f"Error closing browser: {e}", exc_info=True)
+        logger.info("Automation workflow finished.")
 
+
+# --- Utilities ---
 
 def check_internet(host: str = "8.8.8.8", port: int = 53, timeout: int = 3) -> bool:
     """
-    Checks if the internet connection is available by attempting to connect to a known host.
+    Checks internet connectivity by attempting a socket connection.
 
     Args:
-        host (str): Host to connect to (default is Google's DNS).
-        port (int): Port to use for the connection.
-        timeout (int): Timeout in seconds for the connection attempt.
+        host (str): Target host (default: Google DNS).
+        port (int): Target port (default: 53/DNS).
+        timeout (int): Connection timeout in seconds.
 
     Returns:
-        bool: True if the connection is successful, False otherwise.
+        bool: True if connection succeeds, False otherwise.
     """
+    logger.debug(f"Checking internet connection to {host}:{port}...")
     try:
         socket.setdefaulttimeout(timeout)
-        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((host, port))
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.connect((host, port))
+        logger.debug("Internet connection check successful.")
         return True
     except socket.error as ex:
-        logger.error(f"Internet connection error: {ex}")
+        logger.warning(f"Internet connection check failed: {ex}")
         return False
 
 
+# --- Main Application Entry Point ---
 
 @click.command()
 @click.option(
-    '--resume',
-    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
-    help="Path to the resume PDF file"
+    '--resume-pdf', # Changed option name for clarity
+    'resume_pdf_path', # Attribute name for the variable
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=Path),
+    help="Optional path to the source resume PDF file (if different from default HTML generation)."
 )
-def main(resume: Optional[Path] = None):
+@click.option(
+    '--data-dir',
+    'data_folder_path',
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, readable=True, path_type=Path),
+    default="data_folder", # Default data folder name
+    show_default=True,
+    help="Path to the application's data directory containing config and resume files."
+)
+@click.option(
+    '--env-file',
+    'env_file_path',
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, readable=True, path_type=Path),
+    default=".env",
+    show_default=True,
+    help="Path to the environment file containing API keys."
+)
+def main(resume_pdf_path: Optional[Path], data_folder_path: Path, env_file_path: Path):
     """
-    The main entry point for the application. Validates configurations, initializes components, and runs the AIHawk bot.
-    """
-    logger.info("Application started.")
+    Generic Web Automation Bot
 
+    This application automates web tasks based on configurations defined in the
+    data directory and secrets from the environment file. It typically involves
+    logging into websites and performing actions like job searching/applying,
+    leveraging Selenium for browser automation and optionally an LLM for processing.
+    """
+    # --- Basic Setup ---
+    start_time = datetime.now()
+
+    # --- Load Environment Variables FIRST ---
+    # load_dotenv needs to happen before configure_logging reads env vars
+    print(f"Attempting to load environment variables from: {env_file_path.resolve()}") # Basic print for early feedback
+    loaded_env = load_dotenv(dotenv_path=env_file_path, override=True)
+    if not loaded_env:
+         # Use print here as logger might not be fully configured yet
+         print(f"Warning: Environment file '{env_file_path}' not found or empty.", file=sys.stderr)
+
+    # --- Configure Logging SECOND ---
+    configure_logging()
+    logging.getLogger("fontTools").setLevel(logging.ERROR)
+    logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
+    logging.getLogger("weasyprint").setLevel(logging.ERROR)
+
+    # --- Now use logger safely ---
+    logger.info(f"Application started.") # Log after configuration
+    logger.info(f"Using data directory: {data_folder_path.resolve()}")
+    logger.info(f"Using environment file: {env_file_path.resolve()}")
+    if not loaded_env:
+        logger.warning(f"Environment file '{env_file_path}' was not found or empty. Defaults will be used.")
+    if resume_pdf_path:
+         logger.info(f"Optional source resume PDF provided: {resume_pdf_path.resolve()}")
+
+
+    # --- Initial Checks ---
     if not check_internet():
-        logger.error("No internet connection detected. Please check your network settings.")
-        return
+        logger.critical("No internet connection detected. Exiting.")
+        sys.exit(1) # Exit with error code
+
 
     try:
-        data_folder = Path("data_folder")
-        logger.debug(f"Validating data folder: {data_folder}")
-        config_file, plain_text_resume_file, output_folder = FileManager.validate_data_folder(data_folder)
+        # --- Validate Data Folder and Config ---
+        logger.debug("Validating data folder structure...")
+        config_file, output_folder = FileManager.validate_data_folder_structure(data_folder_path)
 
-        logger.debug("Validating configuration.")
-        parameters = ConfigValidator.validate_config(config_file)
+        logger.debug("Validating main configuration file...")
+        app_parameters = ConfigValidator.validate_config_file(config_file)
+        # Add output dir to params - needed by components?
+        app_parameters['outputFileDirectory'] = output_folder
 
-        logger.debug("Validating secrets.")
-        llm_api_key = ConfigValidator.validate_secrets(Path('.env'), parameters['llm_model_type'])
-
-        logger.debug("Initializing ResumeManager.")
-        default_html_resume = Path("resumes/resume.html")
-        resume_manager = ResumeManager(resume_option=resume, default_html_resume=default_html_resume)
-        # resume_manager.load_resume()  # <-- Removed redundant call
-
-        logger.debug("Setting up file uploads and output directory.")
-        parameters['uploads'] = {
-            'resume': resume_manager.get_resume(),
-            'plainTextResume': plain_text_resume_file
-        }
-        parameters['outputFileDirectory'] = output_folder
-
-        logger.debug("Starting bot creation and execution.")
-        create_and_run_bot(parameters, llm_api_key, resume_manager)
-
-    except ConfigError as ce:
-        logger.exception("Configuration error encountered.")
-        logger.error(
-            "Refer to the configuration guide for troubleshooting: "
-            "https://github.com/feder-cr/AIHawk_AIHawk_automatic_job_application/blob/main/readme.md#configuration"
+        # --- Initialize Resume Manager ---
+        resume_manager = ResumeManager(
+            #  resume_option=resume_pdf_path, # PDF path from CLI option
+             default_html_resume=FileManager.DEFAULT_HTML_RESUME_PATH,
+             private_context_path=FileManager.PRIVATE_CONTEXT_FILENAME
         )
+        
+        # Ensure the final HTML resume exists or is generated
+        final_html_resume_path = resume_manager.get_resume()
+        if not final_html_resume_path or not final_html_resume_path.exists():
+             raise ConfigError(f"Failed to obtain or generate the final HTML resume from path: {final_html_resume_path}")
+        logger.info(f"Resume Manager initialized. Final HTML resume: {final_html_resume_path}")
+
+        # --- Setup LLM Processor ---
+        logger.info("Setting up LLM Processor...")
+        # The LLM processor will use data from the HTML resume via the resume manager
+        llm_processor = setup_llm_processor(
+            app_config=app_parameters,
+            resume_manager=resume_manager,
+        )
+
+        # --- Run Automation ---
+        logger.info("Starting main automation process...")
+        setup_and_run_automation(app_parameters, llm_processor, resume_manager, data_folder_path)
+
+        logger.success("Automation process completed successfully.") # Use success level
+
+    except (ConfigError, LLMConfigError) as ce:
+        logger.critical(f"Configuration Error: {ce}", exc_info=True)
+        logger.error("Please check your configuration files (config.yaml, .env) and data folder structure.")
+        sys.exit(1) # Exit with error code
     except FileNotFoundError as fnf:
-        logger.exception("File not found error encountered.")
-        logger.error("Ensure all required files are present in the data folder.")
-        logger.error(
-            "Refer to the file setup guide: "
-            "https://github.com/feder-cr/AIHawk_AIHawk_automatic_job_application/blob/main/readme.md#configuration"
-        )
-    except RuntimeError as re:
-        logger.exception("Runtime error encountered.")
-        logger.error(
-            "Refer to the configuration and troubleshooting guide: "
-            "https://github.com/feder-cr/AIHawk_AIHawk_automatic_job_application/blob/main/readme.md#configuration"
-        )
+        # Should be caught by ConfigError now, but keep as fallback
+        logger.critical(f"File Not Found Error: {fnf}", exc_info=True)
+        logger.error("Ensure all required configuration and resume files exist in the data folder.")
+        sys.exit(1)
+    except LLMError as llme:
+        logger.critical(f"LLM Error: {llme}", exc_info=True)
+        logger.error("An error occurred during LLM interaction. Check LLM configuration and API keys.")
+        sys.exit(1)
+    except RuntimeError as rte:
+        logger.critical(f"Runtime Error: {rte}", exc_info=True)
+        sys.exit(1)
     except Exception as e:
-        logger.exception("An unexpected error occurred.")
-        logger.error(
-            "Refer to the general troubleshooting guide: "
-            "https://github.com/feder-cr/AIHawk_AIHawk_automatic_job_application/blob/main/readme.md#configuration"
-        )
+        # Catch-all for truly unexpected errors
+        logger.critical(f"An unexpected critical error occurred: {e}", exc_info=True)
+        sys.exit(1) # Exit with error code
     finally:
-        logger.info("Application finished.")
+        end_time = datetime.now()
+        duration = end_time - start_time
+        logger.info(f"Application finished. Total runtime: {duration}")
+        # Ensure logs are flushed
+        logger.complete()
 
 if __name__ == "__main__":
     main()

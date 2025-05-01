@@ -53,7 +53,7 @@ Fase 1: Configuração do framework Flask
 FUTURO: 
 Preciso refatorar o código do Auto_Jobs_Applier_AIHawk para suportar múltiplos usuários. Especificamente:
 
-1. Modificar as classes principais (AIHawkAuthenticator, AIHawkJobManager, etc.) para receber user_id como parâmetro
+1. Modificar as classes principais (WebAuthenticator, JobManager, etc.) para receber user_id como parâmetro
 2. Implementar carregamento de configurações específicas do usuário do banco de dados
 3. Criar namespaces para arquivos e diretórios por usuário
 4. Implementar controle de acesso baseado em usuário para todos os recursos

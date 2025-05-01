@@ -1,168 +1,162 @@
-# job.py
-from dataclasses import dataclass
-from typing import Optional, Set
-from loguru import logger
+# src/job.py
+"""
+Defines the Job data structure and the JobCache class for tracking processed jobs.
+"""
+
 import json
+from dataclasses import dataclass, field, asdict
+from typing import Optional, Set, Dict, List, Union, Final, Tuple # Added Tuple
+from loguru import logger
 from pathlib import Path
 from datetime import datetime
+import enum # For status types
 
+# --- Job Status Enum ---
+class JobStatus(enum.Enum):
+    SUCCESS = "success"
+    SEEN = "seen"
+    SKIPPED_LOW_SCORE = "skipped_low_score"
+    SKIPPED_LOW_SALARY = "skipped_low_salary"
+    SKIPPED_BLACKLIST = "skipped_blacklist"
+    FAILED_APPLICATION = "failed_application"
+    JOB_SCORE = "job_score"
 
+# --- Job Dataclass ---
 @dataclass
 class Job:
+    """
+    Represents a job posting with its relevant details.
+    Uses default values for optional fields.
+    """
     title: str
     company: str
     location: str
     link: str
-    apply_method: str
-    state: str = ""
+    apply_method: Optional[str] = None
+    state: Optional[str] = None
     salary: str = ""
-    description: str = ""
-    summarize_job_description: str = ""
-    pdf_path: str = ""
-    cover_letter_path: str = ""
-    recruiter_link: str = ""
-    search_term: str = ""
-    search_country: str = ""
+    description: Optional[str] = None # <-- Make Optional
+    pdf_path: Optional[Path] = None
+    cover_letter_path: Optional[Path] = None
+    recruiter_link: Optional[str] = None
+    search_term: Optional[str] = None
+    search_country: Optional[str] = None
     score: Optional[float] = None
     gpt_salary: Optional[float] = None
 
-    def set_summarize_job_description(self, summarize_job_description: str) -> None:
-        logger.debug("Setting summarized job description.")
-        self.summarize_job_description = summarize_job_description
+    def to_dict(self, exclude_fields: Optional[Set[str]] = None) -> Dict:
+         """Converts dataclass to dictionary, optionally excluding fields."""
+         if exclude_fields is None: exclude_fields = set()
+         exclude_fields.add("description") # Exclude description by default
+         data = asdict(self)
+         if self.pdf_path: data['pdf_path'] = self.pdf_path.resolve().as_uri()
+         else: data['pdf_path'] = None # Ensure None if path is None
+         if self.cover_letter_path: data['cover_letter_path'] = self.cover_letter_path.resolve().as_uri()
+         else: data['cover_letter_path'] = None # Ensure None if path is None
+         return {k: v for k, v in data.items() if k not in exclude_fields}
 
-
+# --- Job Cache Class ---
 class JobCache:
-    def __init__(self, output_file_directory):
-        logger.debug("Initializing JobCache")
-        self.output_file_directory = output_file_directory
-        self.job_score_cache: Set[str] = set()
-        self.skipped_low_salary_cache: Set[str] = set()
-        self.skipped_low_score_cache: Set[str] = set()
-        self.success_cache: Set[str] = set()
-        self.is_seen_cache: Set[str] = set()
-        self._load_all_jsons()
-        logger.debug("JobCache initialized successfully")
+    """
+    Manages caches of processed job links loaded from and persisted to JSON files.
+    """
+    _CACHE_CONFIG: Final[Dict[JobStatus, Tuple[str, str]]] = {
+        JobStatus.SUCCESS: ('_success_cache', 'success.json'),
+        JobStatus.SEEN: ('_seen_cache', 'seen.json'), # Use 'seen.json'
+        JobStatus.SKIPPED_LOW_SCORE: ('_skipped_low_score_cache', 'skipped_low_score.json'),
+        JobStatus.SKIPPED_LOW_SALARY: ('_skipped_low_salary_cache', 'skipped_low_salary.json'),
+        JobStatus.JOB_SCORE: ('_job_score_cache', 'job_score.json'),
+        JobStatus.SKIPPED_BLACKLIST: ('_skipped_blacklist_cache', 'skipped_blacklist.json'), # Added
+        JobStatus.FAILED_APPLICATION: ('_failed_application_cache', 'failed_application.json'), # Added
+    }
 
-    def _load_all_jsons(self):
-        logger.debug("JobCache loading all JSON files")
-        json_files = {
-            'job_score.json': 'job_score_cache',
-            'skipped_low_salary.json': 'skipped_low_salary_cache',
-            'skipped_low_score.json': 'skipped_low_score_cache',
-            'success.json': 'success_cache'
-        }
+    def __init__(self, output_directory: Path):
+        """Initializes the JobCache."""
+        logger.debug("Initializing JobCache...")
+        if not isinstance(output_directory, Path): raise TypeError("output_directory must be a Path object.")
+        self.output_directory: Path = output_directory
+        try: self.output_directory.mkdir(parents=True, exist_ok=True)
+        except OSError as e: logger.error(f"Failed to create cache directory {self.output_directory}: {e}", exc_info=True); raise RuntimeError(...) from e
+        # Initialize all cache sets
+        for status, (attr_name, _) in self._CACHE_CONFIG.items(): setattr(self, attr_name, set())
+        self._load_all_caches()
+        logger.info(f"JobCache initialized. Output directory: {self.output_directory}")
+        for status, (attr_name, _) in self._CACHE_CONFIG.items(): logger.debug(f" - {status.name}: {len(getattr(self, attr_name))} links loaded.")
 
-        for file_name, cache_attr in json_files.items():
-            file_path = self.output_file_directory / file_name
+    def _load_cache_from_json(self, file_name: str) -> Set[str]:
+        """Loads job links from a single JSON file into a set."""
+        file_path = self.output_directory / file_name; link_set: Set[str] = set()
+        if not file_path.exists(): logger.debug(f"Cache file not found: {file_name}"); return link_set
+        try:
+            with file_path.open('r', encoding='utf-8') as f:
+                try: content = f.read().strip(); jobs_data = json.loads(content) if content else []
+                except json.JSONDecodeError: logger.warning(f"Cache file '{file_name}' corrupted/empty."); return link_set
+                if isinstance(jobs_data, list):
+                    count = 0
+                    for job in jobs_data:
+                         if isinstance(job, dict) and 'link' in job and isinstance(job['link'], str): link_set.add(job['link']); count += 1
+                         else: logger.warning(f"Invalid job entry format in {file_name}: {str(job)[:100]}")
+                    logger.debug(f"Loaded {count} links from {file_name}")
+                else: logger.warning(f"Unexpected format in {file_name}. Expected list, found {type(jobs_data)}.")
+        except IOError as e: logger.error(f"IOError reading cache file {file_name}: {e}", exc_info=True)
+        except Exception as e: logger.error(f"Unexpected error reading cache file {file_name}: {e}", exc_info=True)
+        return link_set
+
+    def _load_all_caches(self):
+        """Loads all configured cache files into their respective in-memory sets."""
+        logger.debug("Loading all cache JSON files...")
+        for status, (attr_name, file_name) in self._CACHE_CONFIG.items():
+            link_set = self._load_cache_from_json(file_name)
+            setattr(self, attr_name, link_set) # Assign loaded set to correct attribute
+
+    def _append_job_to_json(self, job_data: Dict, file_name: str):
+        """Appends a job data dictionary to the specified JSON file (list format)."""
+        file_path = self.output_directory / file_name
+        logger.trace(f"Appending job data to {file_path}")
+        try:
+            existing_data = []
             if file_path.exists():
                 try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        jobs = json.load(f)
-                        if isinstance(jobs, list):
-                            links = {job.get('link') for job in jobs if 'link' in job}
-                            getattr(self, cache_attr).update(links)
-                            logger.info(f"Loaded {len(links)} links from {file_name} into {cache_attr}")
-                        else:
-                            logger.warning(f"Unexpected format in {file_name}. Expected a list.")
-                except json.JSONDecodeError:
-                    logger.warning(f"{file_name} is corrupted. Ignoring this file.")
-                except Exception as e:
-                    logger.error(f"Error reading {file_name}: {e}", exc_info=True)
-            else:
-                logger.debug(f"{file_name} not found. Ignoring.")
+                    with file_path.open('r+', encoding='utf-8') as f:
+                        content = f.read().strip()
+                        if content: existing_data = json.loads(content)
+                        if not isinstance(existing_data, list): logger.error(f"Corrupted JSON {file_path}. Overwriting."); existing_data = []
+                        existing_data.append(job_data)
+                        f.seek(0)
+                        json.dump(existing_data, f, indent=4, ensure_ascii=False)
+                        f.truncate()
+                except json.JSONDecodeError: logger.error(f"JSON decode error reading {file_path}. Overwriting."); existing_data = [job_data] # Start new list
+                except IOError as e: logger.error(f"IOError appending {file_name}: {e}", exc_info=True); return # Don't proceed if IO fails
+                except Exception as e: logger.error(f"Error appending {file_name}: {e}", exc_info=True); return
+            # Write new file or overwrite corrupted one
+            if not file_path.exists() or not isinstance(existing_data, list):
+                with file_path.open('w', encoding='utf-8') as f: json.dump([job_data], f, indent=4, ensure_ascii=False)
+                logger.debug(f"Created/Overwrote cache file: {file_name}")
+        except Exception as e: logger.error(f"Failed critical write to {file_name}: {e}", exc_info=True)
 
-    def is_in_job_score(self, link: str) -> bool:
-        in_cache = link in self.job_score_cache
-        logger.debug(f"Checking if link '{link}' is in job_score_cache: {in_cache}")
-        return in_cache
+    def record_job_status(self, job: Job, status: JobStatus):
+        """Records the status of a job in memory and appends to the relevant JSON file."""
+        if not isinstance(status, JobStatus):
+             try: status = JobStatus(status)
+             except ValueError: logger.error(f"Invalid status: {status}."); return
+        if not job or not job.link: logger.error("Invalid job/link for recording status."); return
+        logger.debug(f"Recording status '{status.name}' for job: {job.link}")
+        if status in self._CACHE_CONFIG:
+            attr_name, file_name = self._CACHE_CONFIG[status]
+            cache_set = getattr(self, attr_name, None)
+            if cache_set is None: logger.error(f"Internal cache error: Attr '{attr_name}' not found."); return
+            if job.link not in cache_set: cache_set.add(job.link); logger.trace(f"Link added to in-memory cache: {attr_name}")
+            else: logger.trace(f"Link already in in-memory cache: {attr_name}")
+            job_dict = job.to_dict(exclude_fields={"description"}) # Use helper
+            job_dict["status_recorded_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self._append_job_to_json(job_dict, file_name)
+        else: logger.error(f"Unknown status type '{status}' not configured.")
 
-    def is_in_skipped_low_salary(self, link: str) -> bool:
-        in_cache = link in self.skipped_low_salary_cache
-        logger.debug(f"Checking if link '{link}' is in skipped_low_salary_cache: {in_cache}")
-        return in_cache
-
-    def is_in_skipped_low_score(self, link: str) -> bool:
-        in_cache = link in self.skipped_low_score_cache
-        logger.debug(f"Checking if link '{link}' is in skipped_low_score_cache: {in_cache}")
-        return in_cache
-
-    def is_in_success(self, link: str) -> bool:
-        in_cache = link in self.success_cache
-        logger.debug(f"Checking if link '{link}' is in success_cache: {in_cache}")
-        return in_cache
-
-    def is_in_is_seen(self, link: str) -> bool:
-        in_cache = link in self.is_seen_cache
-        logger.debug(f"Checking if link '{link}' is in is_seen_cache: {in_cache}")
-        return in_cache
-
-    def add_to_cache(self, job, cache_type: str):
-        logger.debug(f"Adding link '{job.link}' to cache type '{cache_type}'")
-        cache_mapping = {
-            'job_score': ('job_score_cache', 'job_score.json'),
-            'skipped_low_salary': ('skipped_low_salary_cache', 'skipped_low_salary.json'),
-            'skipped_low_score': ('skipped_low_score_cache', 'skipped_low_score.json'),
-            'success': ('success_cache', 'success.json'),
-            'is_seen': ('is_seen_cache', 'is_seen.json'),
-        }
-
-        if cache_type not in cache_mapping:
-            logger.error(f"Unknown cache type: {cache_type}")
-            return
-
-        cache_attr, file_name = cache_mapping[cache_type]
-        cache_set = getattr(self, cache_attr)
-        cache_set.add(job.link)
-
-    def write_to_file(self, job, file_name):
-        logger.debug(f"Writing job application result to file: '{file_name}'.")
-        pdf_path = Path(job.pdf_path).resolve()
-        pdf_path = pdf_path.as_uri()
-        
-        # Get current date and time
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        data = {
-            "title": job.title,
-            "company": job.company,
-            "location": job.location,
-            "link": job.link,
-            "apply_method": job.apply_method,
-            "state": job.state,
-            "salary": job.salary,
-            # "description": job.description,
-            # "summarize_job_description": job.summarize_job_description,	
-            "pdf_path": pdf_path,
-            "recruiter_link": job.recruiter_link,
-            "search_term": job.search_term,
-            "search_country": job.search_country,
-            "score": job.score,  
-            "gpt_salary": job.gpt_salary,
-            "timestamp": current_time
-        }
-        
-        file_path = Path("data_folder") / "output" / f"{file_name}.json"
-        
-        if not file_path.exists():
-            try:
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump([data], f, indent=4)
-                logger.debug(f"Job data written to new file: '{file_name}'.")
-            except Exception as e:
-                logger.error(f"Failed to write to new file '{file_name}': {e}", exc_info=True)
-        else:
-            try:
-                with open(file_path, 'r+', encoding='utf-8') as f:
-                    try:
-                        existing_data = json.load(f)
-                    except json.JSONDecodeError:
-                        logger.error(f"JSON decode error in file: {file_path}. Initializing with empty list.")
-                        existing_data = []
-                    
-                    existing_data.append(data)
-                    f.seek(0)
-                    json.dump(existing_data, f, indent=4)
-                    f.truncate()
-                logger.debug(f"Job data appended to existing file: '{file_name}'.")
-            except Exception as e:
-                logger.error(f"Failed to append to file '{file_name}': {e}", exc_info=True)
+    # --- Status Checking Methods (THESE ARE THE METHODS TO CALL) ---
+    def has_been_scored(self, link: str) -> bool: return link in self._job_score_cache
+    def is_skipped_low_salary(self, link: str) -> bool: return link in self._skipped_low_salary_cache
+    def is_skipped_low_score(self, link: str) -> bool: return link in self._skipped_low_score_cache
+    def is_applied_successfully(self, link: str) -> bool: return link in self._success_cache
+    def has_been_seen(self, link: str) -> bool: return link in self._seen_cache
+    def is_skipped_blacklist(self, link: str) -> bool: return link in self._skipped_blacklist_cache # Added check
+    def has_failed_application(self, link: str) -> bool: return link in self._failed_application_cache # Added check

@@ -1,488 +1,339 @@
+# src/job_manager/job_extractor.py
 """
-Module for extracting job information in the AIHawk Job Manager.
+Extracts job information (title, company, location, link, etc.)
+from web elements on a job listing page (specifically designed for LinkedIn).
+Handles potential page load issues and uses multiple locator strategies,
+adapted to recent HTML structure changes.
 """
+import time
 from loguru import logger
-from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException
+from typing import List, Optional, Tuple
+from bs4 import BeautifulSoup
+
+# Selenium imports
+from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.remote.webelement import WebElement
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-import src.utils as utils
+# Utils (relative import)
+try:
+    from .. import utils
+except ImportError:
+    logger.error("Failed to import src.utils using relative path. Check structure.")
+    utils = None
+
+# Navigator needed for scrolling (relative import)
+from .job_navigator import JobNavigator
 
 
 class JobExtractor:
     """
-    Class for extracting job information in the AIHawk Job Manager.
+    Extracts structured job information from Selenium WebElements representing job listings.
+    Adapts to LinkedIn structure changes by using robust relative locators.
     """
-    def __init__(self, driver, wait_time: int = 20):
-        """
-        Initialize the JobExtractor class.
+    # --- Locators (Ensure all are tuples) ---
+    NO_RESULTS_BANNER_LOCATOR = (By.CLASS_NAME, 'jobs-search-no-results-banner')
+    JOB_TILE_WITH_ID_LOCATOR = (By.CSS_SELECTOR, 'li.scaffold-layout__list-item[data-occludable-job-id]')
+    CONTAINER_LOCATOR_VIA_SENTINEL = (By.XPATH, "//div[@data-results-list-top-scroll-sentinel]/following-sibling::ul[1]")
+    CONTAINER_LOCATOR_VIA_LI_PARENT = (By.XPATH, "//li[@data-occludable-job-id]/ancestor::ul[1]")
+    CONTAINER_LOCATOR_OLD_XPATH = (By.XPATH, "//main[@id='main']//div[contains(@class, 'scaffold-layout__list-detail-inner')]//ul")
+    CONTAINER_LOCATOR_FALLBACK_XPATH = (By.XPATH, "//main[@id='main']//ul")
+    JOB_TILE_LOCATOR_PRIMARY = JOB_TILE_WITH_ID_LOCATOR
+    JOB_TILE_LOCATOR_FALLBACK = (By.CSS_SELECTOR, 'li.scaffold-layout__list-item')
+    TITLE_LINK_SELECTOR_PRIMARY = (By.CSS_SELECTOR, 'a.job-card-list__title, a.job-card-container__link')
+    TITLE_LINK_SELECTOR_FALLBACK = (By.XPATH, './/a//strong')
+    COMPANY_SELECTOR_PRIMARY = (By.CSS_SELECTOR, 'div.artdeco-entity-lockup__subtitle span:not([class])')
+    COMPANY_SELECTOR_LINK = (By.CSS_SELECTOR, 'a.job-card-container__company-name, a.job-card-list__company-name')
+    COMPANY_SELECTOR_SUBTITLE_DIV = (By.CSS_SELECTOR, 'div.artdeco-entity-lockup__subtitle')
+    LOCATION_SELECTOR_PRIMARY = (By.CSS_SELECTOR, 'div.artdeco-entity-lockup__caption li span[dir="ltr"]')
+    LOCATION_SELECTOR_SUBTITLE_DIV = COMPANY_SELECTOR_SUBTITLE_DIV
+    LINK_SELECTOR_PRIMARY = (By.CSS_SELECTOR, "a[href*='/jobs/view/']")
+    LINK_SELECTOR_TAG_FALLBACK = (By.TAG_NAME, "a")
+    APPLY_METHOD_SELECTOR_XPATH = (By.XPATH, ".//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'easy apply')]")
+    JOB_STATE_SELECTOR = (By.CSS_SELECTOR, 'li.job-card-container__footer-job-state')
+    # --- End Locators ---
 
-        Args:
-            driver: The Selenium WebDriver instance.
-            wait_time (int, optional): The maximum wait time for WebDriver operations. Defaults to 20.
-        """
+    DEFAULT_WAIT_TIME = 20
+
+    def __init__(self, driver: WebDriver, wait_time: Optional[int] = None):
+        """Initializes the JobExtractor."""
+        if not isinstance(driver, WebDriver):
+             raise TypeError("driver must be an instance of selenium.webdriver.remote.webdriver.WebDriver")
         self.driver = driver
-        self.wait = WebDriverWait(self.driver, wait_time)
+        self.wait_time = wait_time if wait_time is not None else self.DEFAULT_WAIT_TIME
+        self.wait = WebDriverWait(self.driver, self.wait_time)
+        self.navigator = JobNavigator(driver, self.wait_time)
+        logger.debug("JobExtractor initialized.")
 
-    def get_jobs_from_page(self):
-        """
-        Fetches job elements from the current page.
-
-        Returns:
-            list: A list of job elements if found, otherwise an empty list.
-        """
-        logger.debug("Starting get_jobs_from_page.")
-
-        # Define locators at the beginning of the function
-        NO_RESULTS_LOCATOR = (By.CLASS_NAME, 'jobs-search-no-results-banner')
-        JOB_LIST_CONTAINER_LOCATOR = (By.XPATH, "//main[@id='main']//div[contains(@class, 'scaffold-layout__list-detail-inner')]//ul")
-        JOB_TILE_LOCATOR = (By.CSS_SELECTOR, 'li.scaffold-layout__list-item[data-occludable-job-id]')
-
+    def _wait_for_page_load_stability(self, wait_time: int = 5) -> bool:
+        """Waits for document readyState and a basic stable element."""
+        logger.trace("Waiting for page load stability (document.readyState == 'complete')...")
         try:
-            logger.debug(f"Waiting for either {NO_RESULTS_LOCATOR} or job tiles to be present.")
-
-            # Wait until either the 'no results' banner or job elements are present
-            self.wait.until(
-                EC.any_of(
-                    EC.presence_of_element_located(NO_RESULTS_LOCATOR),
-                    EC.presence_of_element_located(JOB_TILE_LOCATOR)
-                )
+            WebDriverWait(self.driver, wait_time).until(
+                lambda driver: driver.execute_script('return document.readyState') == 'complete'
             )
-            logger.debug("Elements condition met.")
-
+            WebDriverWait(self.driver, wait_time).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+            logger.trace("Page load stability confirmed.")
+            return True
         except TimeoutException:
-            logger.warning("Timed out waiting for the 'no results' banner or the job elements.")
-            utils.capture_screenshot(self.driver, "job_elements_timeout")
-            # logger.debug(f"HTML of the page: {self.driver.page_source}")
+            logger.warning(f"Timed out waiting {wait_time}s for page readyState or body tag.")
+            return False
+        except WebDriverException as e:
+             logger.error(f"WebDriverException while waiting for page stability: {e}")
+             if "connection refused" in str(e).lower():
+                  raise e
+             return False
+
+    def get_jobs_from_page(self) -> List[WebElement]:
+        """Fetches all job tile WebElements from the current job search results page."""
+        logger.debug("Attempting to fetch job elements from the current page...")
+        if not self._wait_for_page_load_stability(wait_time=5):
+             logger.warning("Initial page stability check failed. Extraction may be unreliable.")
+
+        # 1. Initial Page Content Check
+        try:
+            logger.debug(f"Waiting up to {self.wait_time}s for initial page content...")
+            self.wait.until(EC.any_of(
+                EC.presence_of_element_located(self.NO_RESULTS_BANNER_LOCATOR),
+                EC.presence_of_element_located(self.JOB_TILE_WITH_ID_LOCATOR)
+            ))
+            logger.debug("Initial page elements detected.")
+        except TimeoutException:
+            logger.warning("Timed out waiting for initial job tiles or 'no results' banner.")
+            if utils:
+                utils.capture_screenshot(self.driver, "get_jobs_initial_timeout")
+            return []
+        except WebDriverException as e:
+             logger.error(f"WebDriverException during initial page check: {e}")
+             if "connection refused" in str(e).lower():
+                  logger.critical("Connection refused - Cannot communicate with browser driver. Aborting extraction.")
+                  raise e
+             logger.warning("Proceeding extraction attempt despite WebDriverException.")
+
+        # 2. Check for "No Results" Banner
+        try:
+            if self.driver.find_elements(*self.NO_RESULTS_BANNER_LOCATOR):
+                logger.info("Detected 'No Results' banner. No jobs to extract.")
+                return []
+        except WebDriverException as e:
+             logger.warning(f"WebDriverException checking for 'No Results' banner: {e}. Assuming results exist.")
+
+        # 3. Locate Job List Container
+        job_list_container: Optional[WebElement] = None
+        container_locators = [
+            ("Sentinel Sibling", self.CONTAINER_LOCATOR_VIA_SENTINEL),
+            ("LI Parent", self.CONTAINER_LOCATOR_VIA_LI_PARENT),
+            ("Old XPath", self.CONTAINER_LOCATOR_OLD_XPATH),
+            ("Main UL Fallback", self.CONTAINER_LOCATOR_FALLBACK_XPATH),
+        ]
+        logger.debug("Locating main job list container using multiple strategies...")
+        for name, locator in container_locators:
+            try:
+                job_list_container = WebDriverWait(self.driver, 7).until(
+                    EC.presence_of_element_located(locator)
+                )
+                logger.debug(f"Job list container found using strategy '{name}': {locator}")
+                break
+            except TimeoutException:
+                logger.trace(f"Job list container not found with strategy '{name}': {locator}")
+                continue
+            except WebDriverException as e:
+                 logger.warning(f"WebDriverException checking container locator {locator} ('{name}'): {e}. Trying next.")
+                 if "connection refused" in str(e).lower():
+                     raise e
+                 continue
+
+        if not job_list_container:
+            logger.error("Could not find the main job list container element after trying all strategies.")
+            if utils:
+                utils.capture_screenshot(self.driver, "job_container_not_found")
             return []
 
-        # Check if the "no results" banner is present
-        no_results_elements = self.driver.find_elements(*NO_RESULTS_LOCATOR)
-        if no_results_elements:
-            no_results_banner = no_results_elements[0]
-            banner_text = no_results_banner.text.lower()
-            logger.debug(f"No results banner text: '{banner_text}'.")
-            if 'no matching jobs found' in banner_text or "unfortunately, things aren't" in banner_text:
-                logger.debug("No matching jobs found on this search.")
-                return []
-
-        # Proceed to fetch job elements
+        # 4. Scroll Page
+        logger.debug("Scrolling page to ensure all job tiles are loaded...")
         try:
-            logger.debug("Waiting for job list container to be present.")
-            job_list_container = self.wait.until(
-                EC.presence_of_element_located(JOB_LIST_CONTAINER_LOCATOR)
+            scroll_successful = self.navigator.scroll_jobs()
+            if not scroll_successful:
+                 logger.warning("Scrolling may not have completed successfully. Job list might be incomplete.")
+        except WebDriverException as e:
+             logger.error(f"WebDriverException during scrolling: {e}. Proceeding without full scroll.")
+             if "connection refused" in str(e).lower():
+                 raise e
+        except Exception as e:
+             logger.error(f"Unexpected error during scrolling: {e}. Proceeding without scroll.")
+
+        # 5. Extract Job Tiles
+        job_list_elements: List[WebElement] = []
+        tile_locators = [
+             ("Primary Tile Locator", self.JOB_TILE_LOCATOR_PRIMARY),
+             ("Fallback Tile Locator", self.JOB_TILE_LOCATOR_FALLBACK)
+        ]
+        logger.debug("Extracting job tiles from container using updated strategies...")
+        for name, locator in tile_locators:
+             try:
+                  job_list_elements = job_list_container.find_elements(*locator)
+                  if job_list_elements:
+                       logger.debug(f"Found {len(job_list_elements)} potential job tiles using locator '{name}': {locator}")
+                       return job_list_elements
+             except StaleElementReferenceException:
+                  logger.warning(f"Stale element reference finding tiles with {locator} ('{name}'). Re-finding container...")
+                  try:
+                       # Re-find container using the most likely strategy again
+                       job_list_container_retry = self.driver.find_element(*self.CONTAINER_LOCATOR_VIA_SENTINEL)
+                       job_list_elements_retry = job_list_container_retry.find_elements(*locator)
+                       if job_list_elements_retry:
+                            logger.info(f"Re-fetched {len(job_list_elements_retry)} tiles after stale error using {locator} ('{name}').")
+                            return job_list_elements_retry
+                       else:
+                            logger.warning("Found container but no tiles on retry.")
+                  except Exception as retry_e:
+                       logger.error(f"Failed attempt to re-fetch container/elements after stale error: {retry_e}")
+                  # Continue to try next *tile* locator even if retry failed
+             except WebDriverException as e:
+                  logger.error(f"WebDriverException finding tiles with locator {locator} ('{name}'): {e}.")
+                  if "connection refused" in str(e).lower():
+                      raise e
+             except Exception as e:
+                  logger.warning(f"Error finding job tiles with locator {locator} ('{name}'): {e}")
+
+        logger.error("Could not find any job tile elements using available locators after scrolling.")
+        if utils:
+            utils.capture_screenshot(self.driver, "no_job_tiles_found")
+        return []
+
+    # REMOVED _is_job_tile_loaded method
+
+    def extract_job_information_from_tile(self, job_tile: WebElement) -> Optional[Tuple[str, str, str, str, Optional[str], Optional[str]]]:
+        """
+        Extracts structured job information from a single job tile WebElement
+        using BeautifulSoup for faster parsing after getting the innerHTML.
+        Returns None if essential information (title, link) cannot be extracted.
+        """
+        job_id = "unknown"
+        html_content = ""
+        try:
+            # 1. Get Job ID (for logging and fallback link)
+            job_id = job_tile.get_attribute('data-occludable-job-id') or "unknown"
+
+            # 2. Get the HTML content ONCE
+            html_content = job_tile.get_attribute('innerHTML')
+            if not html_content:
+                logger.warning(f"Job tile (ID: {job_id}) has no innerHTML content. Skipping.")
+                return None
+
+            # 3. Parse with BeautifulSoup
+            # Using 'lxml' is generally faster if installed
+            soup = BeautifulSoup(html_content, 'lxml')
+
+            # 4. Extract data using BeautifulSoup selectors (adjust selectors as needed based on current LinkedIn HTML)
+
+            # --- Title ---
+            title_element = soup.select_one('a.job-card-list__title, a.job-card-container__link, a strong') # Combine selectors
+            job_title = title_element.get_text(strip=True) if title_element else ""
+
+            # --- Link ---
+            BASE_URL = "https://www.linkedin.com"
+            link_element = soup.select_one("a[href*='/jobs/view/']")
+            link = ""
+            if link_element:
+                href = link_element.get('href', '')
+                if href:
+                    if href.startswith('/'):
+                        link = BASE_URL + href 
+                    elif href.startswith('http'):
+                        link = href 
+                    # else: pular href com formato inválido
+
+            # Fallback usando Job ID se o link não foi extraído do href
+            if not link and job_id != "unknown":
+                link = f"{BASE_URL}/jobs/view/{job_id}/" # Já inclui a base
+                logger.trace(f"Link construído a partir do job ID (ID: {job_id})")
+
+            # Limpar parâmetros do link final
+            if link:
+                link = link.split('?')[0]
+
+            # --- Verificação Essencial ---
+            if not job_title or not link:
+                logger.warning(f"Informação essencial faltando (Title:'{job_title}', Link:'{link}') para o job tile (ID: {job_id}). Pulando.")
+                return None
+
+
+            # --- Essential Info Check ---
+            if not job_title or not link:
+                logger.warning(f"Missing essential info (Title:'{job_title}', Link:'{link}') for job tile (ID: {job_id}). Skipping.")
+                # Optionally log soup object or html_content for debugging
+                # logger.debug(f"Problematic HTML (ID: {job_id}): {html_content[:500]}")
+                return None
+
+            # --- Company ---
+            # Try different selectors in order of preference
+            company_element = soup.select_one('a.job-card-container__company-name, a.job-card-list__company-name') # Specific link
+            if not company_element:
+                # Try the subtitle approach (more complex)
+                subtitle_div = soup.select_one('div.artdeco-entity-lockup__subtitle')
+                if subtitle_div:
+                    # Get text directly, split later if needed (avoids specific span selector)
+                    company_text_raw = subtitle_div.get_text(separator=' ', strip=True)
+                    # Basic split logic, might need refinement depending on format
+                    if '·' in company_text_raw:
+                        company = company_text_raw.split('·')[0].strip()
+                    else:
+                        company = company_text_raw # Assume it's just the company
+                else:
+                    company = "" # Fallback
+            else:
+                company = company_element.get_text(strip=True)
+
+
+            # --- Location ---
+            location_element = soup.select_one('div.artdeco-entity-lockup__caption li span[dir="ltr"]') # Specific location span
+            if not location_element:
+                # Fallback using subtitle split (reuse logic from company if applicable)
+                subtitle_div = soup.select_one('div.artdeco-entity-lockup__subtitle')
+                if subtitle_div:
+                    location_text_raw = subtitle_div.get_text(separator=' ', strip=True)
+                    if '·' in location_text_raw:
+                        try:
+                            job_location = location_text_raw.split('·')[1].strip()
+                        except IndexError:
+                            job_location = "" # Handle case where split fails
+                    else:
+                        job_location = "" # Subtitle didn't contain location separator
+                else:
+                    job_location = ""
+            else:
+                job_location = location_element.get_text(strip=True)
+
+            # --- Apply Method ---
+            # Search for text within the HTML snippet. Case-insensitive.
+            apply_method = None
+            if 'easy apply' in html_content.lower():
+                apply_method = 'Easy Apply'
+
+            # --- Job State ---
+            state_element = soup.select_one(
+                'li.job-card-container__footer-job-state'
             )
-            logger.debug("Job list container found.")
+            job_state = (state_element.get_text(strip=True)
+                        if state_element else None)
 
 
-        except (TimeoutException, NoSuchElementException) as e:
-            logger.warning(f"Exception while waiting for the job list container: {e}")
-            return []
-
-        # Scroll to load all job elements
-        logger.debug("Initiating optimized scroll to load all job elements.")
-        from src.job_manager.job_navigator import JobNavigator
-        job_navigator = JobNavigator(self.driver, wait_time=self.wait._timeout)
-        job_navigator.scroll_jobs()
-        logger.debug("Scrolling completed.")
-
-        try:
-            job_list_elements = job_list_container.find_elements(*JOB_TILE_LOCATOR)
-            logger.debug(f"Found {len(job_list_elements)} job elements on the page.")
-
-            if not job_list_elements:
-                logger.warning("No job elements found on the page.")
-                return []
-
-            return job_list_elements
+            # --- Logging & Return ---
+            # Reduce log level for successful extractions to DEBUG or TRACE if INFO is too verbose
+            logger.trace(f"Successfully extracted (BS): Title='{job_title}', Company='{company}', Location='{job_location}', Link='{link}', Apply='{apply_method}', State='{job_state}'")
+            return job_title, company, job_location, link, apply_method, job_state
 
         except StaleElementReferenceException:
-            logger.error("StaleElementReferenceException encountered. Attempting to recapture job elements.")
-        try:
-            logger.debug("Waiting for job list container to be present.")
-            job_list_container = self.wait.until(
-                EC.presence_of_element_located(JOB_LIST_CONTAINER_LOCATOR)
-            )
-            logger.debug("Job list container found.")
-        except (TimeoutException, NoSuchElementException) as e:
-            logger.warning(f"Exception while waiting for the job list container: {e}. Retrying after a short delay.")
-            import time
-            time.sleep(2)
-            try:
-                job_list_container = self.driver.find_element(By.XPATH, "//div[contains(@class, 'scaffold-layout__list-detail-inner')]/div[contains(@class, 'scaffold-layout__list')]/ul")
-                logger.debug("Fallback: Job list container found using driver.find_element with XPath.")
-            except Exception as ex:
-                logger.error(f"Fallback failed while retrieving job list container: {ex}", exc_info=True)
-                return []
-        except Exception as e:
-            logger.error(f"Unexpected error while fetching job elements: {e}", exc_info=True)
-            return []
-
-    def _is_job_tile_loaded(self, job_tile):
-        """
-        Validates if a job tile is fully loaded with content.
-        
-        Args:
-            job_tile (WebElement): The Selenium WebElement representing the job tile.
-            
-        Returns:
-            bool: True if the job tile appears to be fully loaded, False otherwise.
-        """
-        # Check if the job tile has meaningful content
-        try:
-            # Get the HTML content of the job tile
-            html_content = job_tile.get_attribute('outerHTML')
-            
-            # Check if the job tile has meaningful content (not just an empty container)
-            if html_content and len(html_content) > 200:  # A properly loaded job tile should have substantial HTML
-                # Check if essential elements are present
-                title_element = job_tile.find_elements(By.XPATH, './/a[contains(@class, "job-card-list__title--link")]')
-                if title_element:
-                    return True
-            
-            # If we reach here, the job tile appears to be empty or not fully loaded
-            logger.warning("Job tile appears to be incompletely loaded due to connection instability.")
-            logger.debug(f"Incomplete job tile HTML: {html_content}")
-            return False
-            
-        except Exception as e:
-            logger.debug(f"Error checking if job tile is loaded: {e}")
-            return False
-
-    def extract_job_information_from_tile(self, job_tile):
-        """
-        Extracts job information from a job tile element.
-
-        Args:
-            job_tile (WebElement): The Selenium WebElement representing the job tile.
-
-        Returns:
-            Tuple[str, str, str, str, str, str]: A tuple containing job_title, company, job_location, link, apply_method, job_state.
-            None if the job tile is not properly loaded or information extraction fails.
-        """
-        logger.debug("Starting extraction of job information from tile.")
-        
-        # First check if the job tile is properly loaded
-        if not self._is_job_tile_loaded(job_tile):
-            # Get the job ID if possible for logging purposes
-            try:
-                job_id = job_tile.get_attribute('data-occludable-job-id')
-                logger.warning(f"Skipping incompletely loaded job tile (ID: {job_id}) - likely due to connection instability")
-            except:
-                logger.warning("Skipping incompletely loaded job tile - likely due to connection instability")
-            
+            # This *shouldn't* happen often if we get innerHTML quickly, but handle just in case
+            logger.warning(f"Stale element encountered grabbing innerHTML for job tile (ID: {job_id}). Skipping.")
             return None
-
-        try:
-            job_title = self._extract_job_title(job_tile)
-            company = self._extract_company(job_tile)
-            link = self._extract_link(job_tile)
-            job_location = self._extract_job_location(job_tile)
-            apply_method = self._extract_apply_method(job_tile)
-            job_state = self._extract_job_state(job_tile)
-            return job_title, company, job_location, link, apply_method, job_state
         except Exception as e:
-            logger.error(f"Failed to extract job information: {e}", exc_info=True)
-            return None  # or you can skip this job tile
-
-    def _extract_job_title(self, job_tile):
-        """
-        Extracts the job title from the job tile.
-
-        Args:
-            job_tile (WebElement): The Selenium WebElement representing the job tile.
-
-        Returns:
-            str: The job title.
-        """
-        logger.debug("Extracting job title.")
-        job_title = ""
-        
-        # Get the job ID for better error logging
-        try:
-            job_id = job_tile.get_attribute('data-occludable-job-id')
-        except:
-            job_id = "unknown"
-            
-        try:
-            # Try the primary selector
-            try:
-                job_title_element = job_tile.find_element(By.XPATH, './/a[contains(@class, "job-card-list__title--link")]')
-                job_title = job_title_element.text.strip()
-            except NoSuchElementException:
-                # Try alternative selectors
-                try:
-                    # Try generic strong tag within a link
-                    job_title_element = job_tile.find_element(By.XPATH, './/a//strong')
-                    job_title = job_title_element.text.strip()
-                except NoSuchElementException:
-                    # Try any link with descriptive text
-                    links = job_tile.find_elements(By.TAG_NAME, 'a')
-                    for link in links:
-                        link_text = link.text.strip()
-                        if link_text and len(link_text) > 5:  # Avoid short/empty text
-                            job_title = link_text
-                            break
-            
-            if job_title:
-                logger.debug(f"Extracted Job Title: '{job_title}'")
-            else:
-                logger.warning(f"Job title element found but contains no text (Job ID: {job_id}). Possible connection issue.")
-                logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
-        except NoSuchElementException:
-            logger.warning(f"Job title element not found (Job ID: {job_id}). This may be due to connection instability.")
-            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
-            utils.capture_screenshot(self.driver, "job_title_error")
-        except Exception as e:
-            logger.error(f"Unexpected error in _extract_job_title (Job ID: {job_id}): {e}", exc_info=True)
-            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
-            utils.capture_screenshot(self.driver, "job_title_error")
-        return job_title
-
-    def _extract_company(self, job_tile):
-        """
-        Extracts the company name from the job tile.
-
-        Args:
-            job_tile (WebElement): The Selenium WebElement representing the job tile.
-
-        Returns:
-            str: The company name.
-        """
-        logger.debug("Extracting company name from job tile.")  
-        company = ""
-        try:
-            # Try multiple selectors to find the company name
-            try:
-                subtitle_element = job_tile.find_element(By.CSS_SELECTOR, 'div.artdeco-entity-lockup__subtitle')
-                company_location_text = subtitle_element.text.strip()
-                if '·' in company_location_text:
-                    company = company_location_text.split('·')[0].strip()
-                else:
-                    company = company_location_text.strip()
-            except NoSuchElementException:
-                # Try alternative selector
-                try:
-                    company_element = job_tile.find_element(By.CSS_SELECTOR, 'span.job-card-container__primary-description')
-                    company = company_element.text.strip()
-                except NoSuchElementException:
-                    # Try another alternative selector
-                    try:
-                        company_element = job_tile.find_element(By.XPATH, ".//a[contains(@class, 'job-card-container__company-name') or contains(@class, 'job-card-list__company-name')]")
-                        company = company_element.text.strip()
-                    except NoSuchElementException:
-                        # One more attempt with a very general selector
-                        company_elements = job_tile.find_elements(By.XPATH, ".//span[contains(text(), 'at ')]")
-                        if company_elements:
-                            company_text = company_elements[0].text
-                            if 'at ' in company_text:
-                                company = company_text.split('at ')[1].strip()
-            
-            logger.debug(f"Extracted Company: '{company}'")
-        except Exception as e:
-            logger.error(f"Unexpected error while extracting company: {e}", exc_info=True)
-            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
-        return company
-
-    def _extract_link(self, job_tile):
-        """
-        Extracts the job link from the job tile.
-
-        Args:
-            job_tile (WebElement): The Selenium WebElement representing the job tile.
-
-        Returns:
-            str: The job link.
-        """
-        logger.debug("Extracting job link.")
-        link = ""
-        
-        # Get the job ID for better error logging
-        try:
-            job_id = job_tile.get_attribute('data-occludable-job-id')
-        except:
-            job_id = "unknown"
-            
-        try:
-            # First try: Use a selector to find the job link, matching any anchor with '/jobs/view/' in its href
-            try:
-                job_title_element = job_tile.find_element(By.CSS_SELECTOR, "a[href*='/jobs/view/']")
-                link_attr = job_title_element.get_attribute('href') or job_title_element.get_property('href') or ""
-                link = link_attr.split('?')[0] if link_attr else ""
-            except NoSuchElementException:
-                # Second try: Check for any anchor with 'jobs' in the href
-                try:
-                    links = job_tile.find_elements(By.TAG_NAME, "a")
-                    for a_tag in links:
-                        href = a_tag.get_attribute('href')
-                        if href and '/jobs/' in href:
-                            link = href.split('?')[0]
-                            break
-                except Exception as e:
-                    logger.debug(f"Error searching for links with '/jobs/' in href: {e}")
-                
-                # If we still don't have a link and we have a job ID, construct one
-                if not link and job_id != "unknown":
-                    link = f"https://www.linkedin.com/jobs/view/{job_id}/"
-                    logger.debug(f"Constructed job link from job ID: {link}")
-                    
-            if link:
-                logger.debug(f"Extracted Link: '{link}'")
-            else:
-                logger.warning(f"Job link elements found but couldn't extract valid URL (Job ID: {job_id})")
-        except NoSuchElementException:
-            logger.warning(f"Job link element not found (Job ID: {job_id}). This may be due to connection instability.")
-            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
-            
-            # Even if we can't find a link element, we can still try to construct one from the job ID
-            if job_id != "unknown":
-                link = f"https://www.linkedin.com/jobs/view/{job_id}/"
-                logger.debug(f"Constructed job link from job ID: {link}")
-        except Exception as e:
-            logger.error(f"Unexpected error while extracting job link (Job ID: {job_id}): {e}", exc_info=True)
-            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
-            
-            # Final attempt to construct a link from job ID
-            if job_id != "unknown" and not link:
-                link = f"https://www.linkedin.com/jobs/view/{job_id}/"
-                logger.debug(f"Constructed job link from job ID: {link}")
-                
-        return link
-
-    def _extract_job_location(self, job_tile):
-        """
-        Extracts the job location from the job tile.
-
-        Args:
-            job_tile (WebElement): The Selenium WebElement representing the job tile.
-
-        Returns:
-            str: The job location.
-        """
-        logger.debug("Extracting job location from job tile.")
-        job_location = ""
-        
-        # Get the job ID for better error logging
-        try:
-            job_id = job_tile.get_attribute('data-occludable-job-id')
-        except:
-            job_id = "unknown"
-            
-        try:
-            # Try multiple different selectors to find the location
-            selectors = [
-                # First try: location in the caption element (shown in the HTML example)
-                (By.CSS_SELECTOR, 'div.artdeco-entity-lockup__caption li span[dir="ltr"]'),
-            ]
-            
-            for selector_type, selector in selectors:
-                try:
-                    elements = job_tile.find_elements(selector_type, selector)
-                    if elements:
-                        # For the subtitle element which might contain company and location
-                        if selector == 'div.artdeco-entity-lockup__subtitle':
-                            element_text = elements[0].text.strip()
-                            if '·' in element_text:
-                                job_location = element_text.split('·')[1].strip()
-                                logger.debug(f"Extracted location from subtitle: '{job_location}'")
-                                break
-                        else:
-                            # For other elements that should contain just the location
-                            element_text = elements[0].text.strip()
-                            if element_text:
-                                job_location = element_text
-                                logger.debug(f"Extracted location using selector {selector}: '{job_location}'")
-                                break
-                except Exception as e:
-                    logger.debug(f"Error with selector {selector}: {e}")
-                    continue
-            
-            if job_location:
-                logger.debug(f"Final extracted job location: '{job_location}'")
-            else:
-                logger.warning(f"No job location found using any selector (Job ID: {job_id})")
-                logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
-        except Exception as e:
-            logger.error(f"Unexpected error while extracting job location: {e}", exc_info=True)
-            logger.debug(f"Job tile HTML: {job_tile.get_attribute('outerHTML')}")
-            
-        return job_location
-
-    def _extract_apply_method(self, job_tile):
-        """
-        Extracts the apply method from the job_tile.
-        Tries multiple selectors to find the 'Easy Apply' button or text.
-
-        Args:
-            job_tile (WebElement): The Selenium WebElement representing the job_tile.
-
-        Returns:
-            str: The apply method or None if it is not 'Easy Apply' or if the element is not found.
-        """
-        logger.debug("Starting apply method extraction.")
-        apply_method = None
-        try:
-            # Try multiple selectors to find the Easy Apply button or text
-            selectors = [
-                # Original selectors
-                (By.CSS_SELECTOR, 'button.jobs-apply-button'),
-                (By.CSS_SELECTOR, 'li.job-card-container__apply-method'),
-                # New selectors
-                (By.XPATH, ".//button[contains(text(), 'Easy Apply')]"),
-                (By.XPATH, ".//span[contains(text(), 'Easy Apply')]"),
-                (By.XPATH, ".//div[contains(@class, 'job-card-container__apply-method') or contains(@class, 'jobs-apply-button')]"),
-                # Very general selector
-                (By.XPATH, ".//*[contains(text(), 'Easy Apply')]")
-            ]
-            
-            for selector_type, selector in selectors:
-                try:
-                    element = job_tile.find_element(selector_type, selector)
-                    element_text = (element.text or element.get_attribute("innerText") or "").strip().lower()
-                    logger.debug(f"Found element with text: '{element_text}' using selector: {selector}")
-                    
-                    if 'easy apply' in element_text:
-                        apply_method = 'Easy Apply'
-                        logger.debug("Apply method is 'Easy Apply'.")
-                        break
-                except NoSuchElementException:
-                    continue
-                except Exception as e:
-                    logger.debug(f"Error with selector {selector}: {e}")
-                    continue
-            
-            # If we still don't have an apply method, check the entire job tile text
-            if apply_method is None:
-                job_tile_text = job_tile.text.lower()
-                if 'easy apply' in job_tile_text:
-                    apply_method = 'Easy Apply'
-                    logger.debug("Found 'Easy Apply' in job tile text.")
-            
-        except Exception as e:
-            logger.debug(f"Unexpected error while extracting apply method: {e}", exc_info=True)
-        
-        return apply_method
-
-    def _extract_job_state(self, job_tile):
-        """
-        Extracts the job state from the job_tile using the CSS class 'job-card-container__footer-job-state'.
-        This is done only after ensuring that the <ul> element with the class 'job-card-container__footer-wrapper' is present.
-
-        Args:
-            job_tile (WebElement): The Selenium WebElement representing the job_tile.
-
-        Returns:
-            str: The job state or None if the element is not found.
-        """
-        logger.debug("Starting job state extraction.")
-        job_state = None
-        try:
-            job_state_element = job_tile.find_element(By.CSS_SELECTOR, 'li.job-card-container__footer-job-state')
-            job_state = job_state_element.text.strip()
-            logger.debug(f"Extracted job state: '{job_state}'")
-        except NoSuchElementException:
-            logger.debug("Job state element not found.")
-        except Exception as e:
-            logger.debug(f"Unexpected error while extracting job state: {e}", exc_info=True)
-        return job_state
+            logger.error(f"Failed to extract job info using BeautifulSoup for tile (ID: {job_id}): {e}", exc_info=False) # Set exc_info=False to reduce noise unless debugging
+            logger.debug(f"Problematic HTML snippet (ID: {job_id}): {html_content[:500]}") # Log snippet on error
+            return None

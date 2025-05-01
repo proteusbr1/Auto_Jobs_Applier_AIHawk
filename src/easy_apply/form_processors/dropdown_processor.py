@@ -1,203 +1,297 @@
+# src/easy_apply/form_processors/dropdown_processor.py
 """
-Module for processing dropdown form fields in LinkedIn Easy Apply forms.
+Module for processing dropdown (<select>) form fields within LinkedIn Easy Apply forms.
+
+Handles both standard HTML dropdowns and potentially custom implementations found
+on the platform. Leverages answer storage and LLM for selecting appropriate options.
 """
-from typing import List
+from __future__ import annotations 
+import time
+from typing import List, Optional, Any, TYPE_CHECKING
+
 from loguru import logger
+from selenium.common.exceptions import (
+    NoSuchElementException, TimeoutException, StaleElementReferenceException,
+    ElementNotInteractableException, UnexpectedTagNameException
+)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 
-from src.job import Job
-from src.easy_apply.form_processors.base_processor import BaseProcessor
+# Assuming BaseProcessor correctly imports dependencies
+from .base_processor import BaseProcessor
+# Assuming Job object definition is available
+if TYPE_CHECKING:
+    from src.job import Job 
+
+else:
+    Job: Any = object          
+
+
 
 class DropdownProcessor(BaseProcessor):
     """
-    Processor for dropdown form fields in LinkedIn Easy Apply forms.
+    Processes dropdown fields (`<select>`) within Easy Apply forms.
+
+    Identifies standard dropdowns, extracts options, determines the best answer
+    using cache or LLM, and selects the corresponding option. Includes handling
+    for potentially newer/custom dropdown structures if identified.
     """
-    
+
+    # Common placeholder texts to ignore in dropdown options
+    PLACEHOLDER_OPTIONS: List[str] = ["select", "choose", "please select", "--"]
+
     def handle(self, section: WebElement, job: Job) -> bool:
         """
-        Searches for and handles dropdown questions within a form section.
+        Finds and handles dropdown fields within the given form section.
+
+        Prioritizes handling known custom structures before falling back to
+        standard `<select>` elements.
 
         Args:
-            section (WebElement): The form section to be analyzed.
-            job (Job): Object representing the current job posting.
+            section (WebElement): The WebElement representing the form section
+                                  containing the dropdown.
+            job (Job): The job object (used for context if LLM is needed).
 
         Returns:
-            bool: True if a dropdown was found and handled successfully, False otherwise.
+            bool: True if a dropdown field was found and successfully handled,
+                  False otherwise.
         """
-        logger.debug("Starting search for dropdown questions in the section")
+        logger.debug("DropdownProcessor: Scanning section for dropdowns...")
 
-        # First try to find dropdowns in the new structure
+        # --- Strategy 1: Check for specific known custom dropdown containers (e.g., new structure) ---
+        # Example using the data-test attribute from selectors (adjust if needed)
+        # Note: The original code checked for `select_container` class, adapting to the defined selector.
+        new_dropdown_selector = self.selectors["new"]["select_container"]
         try:
-            # Look for the select container in the new structure
-            select_containers = section.find_elements(By.CSS_SELECTOR, f"[data-test-{self.selectors['new']['select_container']}]")
+            # Assuming selector is CSS attribute selector like '[data-test-...]'
+            locator_type = By.CSS_SELECTOR if new_dropdown_selector.startswith('[') else By.XPATH # Basic check
+            select_containers = section.find_elements(locator_type, new_dropdown_selector)
             if select_containers:
-                logger.debug(f"Found {len(select_containers)} select containers in new structure")
-                return self._handle_new_dropdown_structure(section, select_containers[0], job)
+                logger.debug(f"Found {len(select_containers)} potential 'new structure' dropdown container(s).")
+                # Process the first found container
+                if self._handle_new_dropdown_structure(section, select_containers[0], job):
+                    return True # Successfully handled by new structure logic
+                else:
+                    logger.warning("Handling via 'new structure' logic failed. Will attempt standard <select> search.")
+        except StaleElementReferenceException:
+             logger.warning("Stale element reference while searching for new dropdown structure.")
+             # Continue to fallback
         except Exception as e:
-            logger.debug(f"Error finding dropdowns in new structure: {e}")
+            logger.debug(f"Error searching for new dropdown structure using '{new_dropdown_selector}': {e}", exc_info=False)
+            # Continue to fallback if specific search fails
 
-        # Fall back to the old structure
-        # Search for <select> elements in the section
-        dropdowns = section.find_elements(By.TAG_NAME, self.selectors["common"]["select"])
-        if not dropdowns:
-            logger.debug("No dropdown found in this section")
+        # --- Strategy 2: Fallback to standard <select> elements ---
+        logger.debug("Searching for standard <select> elements...")
+        try:
+            dropdowns = section.find_elements(By.TAG_NAME, self.selectors["common"]["select"])
+            if not dropdowns:
+                logger.trace("No standard <select> element found in this section.")
+                return False
+
+            # Process the first visible and enabled dropdown found
+            for dropdown in dropdowns:
+                if dropdown.is_displayed() and dropdown.is_enabled():
+                     logger.debug("Found active standard <select> element.")
+                     if self._handle_standard_dropdown(section, dropdown, job):
+                         return True # Successfully handled standard dropdown
+                     else:
+                         logger.warning("Handling standard <select> failed for an active element.")
+                         return False # Stop if handling fails for an active element
+            logger.debug("No active standard <select> elements found.")
+            return False # No active dropdown found
+
+        except StaleElementReferenceException:
+             logger.warning("Stale element reference while searching for standard <select> elements.")
+             return False
+        except Exception as e:
+            logger.error(f"Unexpected error searching for standard <select> elements: {e}", exc_info=True)
             return False
 
-        dropdown = dropdowns[0]
-        logger.debug("Dropdown found in old structure")
 
+    def _handle_standard_dropdown(self, section: WebElement, dropdown: WebElement, job: Job) -> bool:
+        """Handles a standard HTML <select> dropdown element."""
         try:
-            # Ensure the dropdown is visible and clickable
-            self.wait.until(EC.visibility_of(dropdown))
-            self.wait.until(EC.element_to_be_clickable(dropdown))
-
-            # Extract available options from the dropdown
             select = Select(dropdown)
-            options = [option.text.strip() for option in select.options]
-            logger.debug(f"Dropdown options: {options}")
+            all_options = [option.text.strip() for option in select.options]
+            valid_options = self._filter_valid_options(all_options)
 
-            # Extract the question text
+            if not valid_options:
+                logger.warning(f"No valid options found in standard dropdown for section: {section.text[:50]}...")
+                return False # Cannot proceed without options
+
+            logger.debug(f"Standard dropdown options: {valid_options}")
             question_text = self.extract_question_text(section)
-            logger.debug(f"Question text: {question_text}")
 
-            # Get answer (from storage or generate new one)
-            answer = self._get_answer_for_question(question_text, "dropdown", options, job)
-            
-            # Select the dropdown option
-            self._select_dropdown_option(dropdown, answer)
+            answer = self._get_answer_for_options(question_text, "dropdown", valid_options, job)
+            if not answer:
+                 logger.error(f"Could not determine answer for dropdown '{question_text}'.")
+                 return False # Cannot proceed without answer
+
+            self._select_dropdown_option(select, answer, valid_options) # Pass Select object
             return True
 
+        except UnexpectedTagNameException:
+             logger.error(f"Element passed to Select() was not a <select> tag for section '{section.text[:50]}...'.")
+             return False
+        except StaleElementReferenceException:
+             logger.warning("Stale element reference encountered while handling standard dropdown.")
+             return False
         except Exception as e:
-            logger.error(f"Error handling dropdown question: {e}", exc_info=True)
+            logger.error(f"Error handling standard dropdown: {e}", exc_info=True)
             return False
-            
+
+
     def _handle_new_dropdown_structure(self, section: WebElement, select_container: WebElement, job: Job) -> bool:
         """
-        Handles dropdown questions in the new LinkedIn HTML structure.
-        
-        Args:
-            section (WebElement): The form section containing the dropdown.
-            select_container (WebElement): The container element for the select.
-            job (Job): The job object.
-            
-        Returns:
-            bool: True if dropdown was found and handled, False otherwise.
+        Handles dropdown questions potentially using a newer/custom LinkedIn structure.
+        (This implementation assumes it still contains a standard <select> tag within the container).
         """
+        logger.debug("Attempting to handle dropdown via 'new structure' logic...")
         try:
-            # Find the select element within the container
+            # Find the actual <select> element *within* the identified container
             select_element = select_container.find_element(By.TAG_NAME, self.selectors["common"]["select"])
-            logger.debug("Found select element in new structure")
-            
-            # Check if this is a required field
-            is_required = False
-            try:
-                # Look for required label
-                required_labels = select_container.find_elements(By.CLASS_NAME, self.selectors["new"]["required_label"])
-                is_required = len(required_labels) > 0
-                logger.debug(f"Field is required: {is_required}")
-            except Exception as e:
-                logger.debug(f"Error checking if field is required: {e}")
-            
-            # Extract question text
-            label_elements = select_container.find_elements(By.TAG_NAME, self.selectors["common"]["label"])
-            question_text = label_elements[0].text.strip() if label_elements else "unknown"
-            logger.debug(f"Question text: {question_text}")
-            
-            # Extract available options
-            select = Select(select_element)
-            all_options = [option.text.strip() for option in select.options]
-            
-            # Filter out placeholder options like "Select an option"
-            valid_options = [opt for opt in all_options if opt.lower() != "select an option"]
-            logger.debug(f"Valid dropdown options: {valid_options}")
-            
-            if not valid_options:
-                logger.warning("No valid options found in dropdown")
-                return False
-                
-            # Get answer (from storage or generate new one)
-            answer = self._get_answer_for_question(question_text, "dropdown", valid_options, job)
-            
-            # Select the dropdown option
-            self._select_dropdown_option(select_element, answer)
-            logger.debug(f"Selected option '{answer}' for question '{question_text}'")
-            return True
-            
+            if not select_element.is_displayed() or not select_element.is_enabled():
+                 logger.warning("Found <select> in new container, but it's not active.")
+                 return False
+
+            return self._handle_standard_dropdown(section, select_element, job) # Reuse standard logic
+
+        except NoSuchElementException:
+            logger.warning("No <select> tag found within the 'new structure' container. Cannot handle as standard dropdown.")
+            # Add logic here if the new structure uses divs/spans instead of <select>
+            # This would require finding the trigger element, clicking it, waiting for options,
+            # finding the options (often <li> or <div>), and clicking the desired one.
+            return False # Placeholder: Cannot handle non-standard dropdowns yet
+        except StaleElementReferenceException:
+            logger.warning("Stale element reference encountered while handling new dropdown structure.")
+            return False
         except Exception as e:
             logger.error(f"Error handling new dropdown structure: {e}", exc_info=True)
             return False
-    
-    def _get_answer_for_question(self, question_text: str, question_type: str, 
-                                options: List[str], job: Job) -> str:
+
+
+    def _filter_valid_options(self, options: List[str]) -> List[str]:
+        """Filters out common placeholder options from a list."""
+        return [
+            opt for opt in options
+            if opt and opt.lower() not in self.PLACEHOLDER_OPTIONS and not opt.startswith('--')
+        ]
+
+
+    def _get_answer_for_options(self, question_text: str, question_type: str,
+                               options: List[str], job: Job) -> Optional[str]:
         """
-        Gets an answer for a question with options, either from storage or by generating a new one.
-        
+        Gets an answer for a question with options (dropdown or radio).
+
+        Checks cache first, then uses LLM, ensuring the answer is valid.
+
         Args:
-            question_text (str): The question text.
-            question_type (str): The question type.
-            options (List[str]): The available options.
+            question_text (str): The question text (sanitized).
+            question_type (str): 'dropdown' or 'radio'.
+            options (List[str]): List of valid, non-placeholder options.
             job (Job): The job object.
-            
+
         Returns:
-            str: The answer.
+            Optional[str]: The best matching answer string from the options list, or None.
         """
-        # Check for existing answer
-        existing_answer = self.get_existing_answer(question_text, question_type)
-        if existing_answer:
-            # For dropdowns, verify the answer is still valid
-            if existing_answer in options:
-                return existing_answer
+        if not options:
+             logger.error(f"Cannot get answer for '{question_text}': No valid options provided.")
+             return None
+
+        # Check cache
+        cached_answer = self.get_existing_answer(question_text, question_type)
+        if cached_answer:
+            # Verify cached answer is still present in the current options list
+            # Use case-insensitive comparison for robustness
+            if any(cached_answer.lower() == opt.lower() for opt in options):
+                logger.debug(f"Using valid cached answer for '{question_text}': '{cached_answer}'")
+                # Return the exact matching option from the current list to preserve casing
+                return next((opt for opt in options if cached_answer.lower() == opt.lower()), cached_answer)
             else:
-                logger.warning(f"Existing answer '{existing_answer}' is not in available options")
-                
-        # Generate new answer
-        answer = self.gpt_answerer.answer_question_from_options(question_text, options)
-        
-        # Save the answer
-        self.save_answer(question_text, question_type, answer)
-        
-        logger.debug(f"Generated new answer: {answer}")
-        return answer
-    
-    def _select_dropdown_option(self, element: WebElement, text: str) -> None:
-        """
-        Selects an option from a dropdown.
-        
-        Args:
-            element (WebElement): The dropdown element.
-            text (str): The option text to select.
-        """
-        logger.debug(f"Selecting dropdown option: {text}")
-        
+                logger.warning(f"Cached answer '{cached_answer}' for '{question_text}' is not in current valid options: {options}. Regenerating.")
+
+        # Generate new answer using LLM
+        logger.debug(f"Querying LLM for best option for '{question_text}' from {options}...")
         try:
-            # Create Select object and get all options
-            select = Select(element)
-            options = [option.text.strip() for option in select.options]
-            
-            # Verify the option exists
-            if text not in options:
-                logger.error(f"Option '{text}' not found in dropdown. Available options: {options}")
-                raise ValueError(f"Option '{text}' not found in dropdown")
-                
-            # Select the option
-            select.select_by_visible_text(text)
-            logger.debug(f"Dropdown option '{text}' selected successfully")
-            
-            # Wait for the selection to be updated
-            selected_option = select.first_selected_option.text.strip()
-            assert selected_option == text, f"Expected '{text}', but selected '{selected_option}'"
-            logger.debug(f"Confirmation: '{selected_option}' was successfully selected")
-            
-            # Small delay to allow the page to update
-            import time
-            time.sleep(0.5)
-            
-        except AssertionError as ae:
-            logger.error(f"AssertionError: {ae}", exc_info=True)
-            raise
+             # Ensure LLM processor is available
+             if not hasattr(self.llm_processor, 'answer_question_from_options'):
+                 logger.error("LLMProcessor does not have 'answer_question_from_options' method.")
+                 return None # Cannot generate
+
+             llm_selected_option = self.llm_processor.answer_question_from_options(question_text, options)
+
+             if llm_selected_option and isinstance(llm_selected_option, str):
+                 # Verify LLM answer is one of the provided options (case-insensitive check)
+                 match = next((opt for opt in options if llm_selected_option.lower() == opt.lower()), None)
+                 if match:
+                     logger.info(f"LLM selected option for '{question_text}': '{match}'")
+                     self.save_answer(question_text, question_type, match) # Save the matched option
+                     return match
+                 else:
+                      logger.warning(f"LLM suggestion '{llm_selected_option}' is not exactly in valid options {options}. Trying partial match or fallback.")
+                      # Optional: Implement fuzzy matching here if needed (e.g., using Levenshtein distance)
+                      # Fallback: Select first option? Or None? Selecting first is safer for required fields.
+                      fallback_answer = options[0]
+                      logger.warning(f"Falling back to first option: '{fallback_answer}'")
+                      self.save_answer(question_text, question_type, fallback_answer) # Save fallback
+                      return fallback_answer
+
+             else:
+                  logger.error(f"LLM did not return a valid string answer for '{question_text}'.")
+                  # Fallback to first option if LLM fails
+                  fallback_answer = options[0]
+                  logger.warning(f"Falling back to first option due to LLM failure: '{fallback_answer}'")
+                  self.save_answer(question_text, question_type, fallback_answer) # Save fallback
+                  return fallback_answer
+
         except Exception as e:
-            logger.error(f"Failed to select dropdown option '{text}': {e}", exc_info=True)
-            raise
+             logger.error(f"Error getting answer via LLM for '{question_text}': {e}", exc_info=True)
+             # Fallback to first option on error
+             fallback_answer = options[0]
+             logger.warning(f"Falling back to first option due to LLM error: '{fallback_answer}'")
+             self.save_answer(question_text, question_type, fallback_answer) # Save fallback
+             return fallback_answer
+
+
+    def _select_dropdown_option(self, select_obj: Select, text_to_select: str, available_options: List[str]) -> None:
+        """
+        Selects a specific option from a dropdown using the Select object.
+
+        Args:
+            select_obj (Select): The initialized Selenium Select object.
+            text_to_select (str): The visible text of the option to select.
+            available_options (List[str]): The list of valid option texts (for error msg).
+
+        Raises:
+            ValueError: If the specified text cannot be found or selected.
+            StaleElementReferenceException: If the dropdown becomes stale.
+            Exception: For other Selenium errors during selection.
+        """
+        logger.debug(f"Attempting to select dropdown option by visible text: '{text_to_select}'")
+
+        try:
+            select_obj.select_by_visible_text(text_to_select)
+            # Verification step
+            time.sleep(0.3) # Short pause for selection to register visually/in DOM
+            selected_option_text = select_obj.first_selected_option.text.strip()
+
+            if selected_option_text.lower() == text_to_select.lower():
+                logger.info(f"Successfully selected dropdown option: '{text_to_select}'")
+            else:
+                # This case should ideally not happen if select_by_visible_text succeeded without error,
+                # but verification adds robustness.
+                logger.error(f"Selection verification failed! Expected '{text_to_select}', but found '{selected_option_text}'.")
+                raise ValueError(f"Failed to verify selection of '{text_to_select}'")
+
+        except NoSuchElementException:
+            logger.error(f"Option '{text_to_select}' not found by visible text in dropdown. Available: {available_options}")
+            # Optional: Try partial match or selection by value/index as fallback?
+            raise ValueError(f"Option '{text_to_select}' not found in dropdown.") from None
+        except StaleElementReferenceException:
+             logger.error("Dropdown element became stale during selection.")
+             raise # Re-raise stale exception
+        except Exception as e:
+            logger.error(f"Failed to select dropdown option '{text_to_select}': {e}", exc_info=True)
+            raise # Re-raise other exceptions

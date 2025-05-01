@@ -1,16 +1,28 @@
+# src/llm/models/__init__.py
 """
-Model package initialization.
+Models package initialization.
+
+Exports the base AIModel class and all concrete model implementations
+for different LLM providers (OpenAI, Anthropic Claude, Google Gemini,
+Ollama, Hugging Face).
 """
 
-from src.llm.models.base_model import AIModel
-from src.llm.models.openai_model import OpenAIModel
-from src.llm.models.claude_model import ClaudeModel
-from src.llm.models.ollama_model import OllamaModel
-from src.llm.models.gemini_model import GeminiModel
-from src.llm.models.huggingface_model import HuggingFaceModel
+# Base class
+from .base_model import AIModel
 
+# Concrete implementations
+from .openai_model import OpenAIModel
+from .claude_model import ClaudeModel
+from .ollama_model import OllamaModel
+from .gemini_model import GeminiModel
+from .huggingface_model import HuggingFaceModel
+
+# Define what gets imported when using 'from src.llm.models import *'
+# Also useful for static analysis tools.
 __all__ = [
+    # Base Class
     'AIModel',
+    # Concrete Implementations
     'OpenAIModel',
     'ClaudeModel',
     'OllamaModel',

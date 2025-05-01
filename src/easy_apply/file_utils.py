@@ -1,106 +1,144 @@
+# src/easy_apply/file_utils.py
 """
-Utility functions for file operations in the Easy Apply process.
+Utility functions for file operations, particularly for generating
+safe and descriptive filenames for generated documents like resumes and cover letters.
 """
-import os
 import re
-from datetime import datetime
+from typing import Optional
+from pathlib import Path
 from loguru import logger
 
-# Constants for filename limits
-MAX_TITLE_LENGTH = 50
-MAX_COMPANY_LENGTH = 50
-MAX_FILENAME_LENGTH = 255
+# Constants for filename generation
+MAX_TITLE_LENGTH = 40 # Reduced max length
+MAX_COMPANY_LENGTH = 30 # Reduced max length
+MAX_FILENAME_LENGTH = 150 # Reduced max overall length for broader compatibility
+DEFAULT_PREFIX = "Document"
+ELLIPSIS = "..."
 
-def sanitize_filename(text: str) -> str:
+def sanitize_filename_component(text: str) -> str:
     """
-    Sanitizes the text by removing invalid characters and replacing spaces with underscores.
-    
+    Sanitizes a string component for use in a filename.
+    Removes invalid characters and replaces whitespace with underscores.
+
     Args:
-        text (str): The input string to sanitize.
-    
+        text (str): The input string.
+
     Returns:
-        str: A sanitized string safe for use in filenames.
+        str: A sanitized string suitable for filenames. Returns 'NA' if input is empty.
     """
-    sanitized = re.sub(r'[^\w\-_. ]', '_', text).replace(' ', '_')
-    return sanitized
+    if not text or not isinstance(text, str):
+        return "NA" # Not Applicable/Available
+    # Remove characters not allowed in filenames (adjust regex as needed for OS)
+    # Keeps alphanumeric, underscore, hyphen, period. Replaces others with underscore.
+    sanitized = re.sub(r'[^\w\-.]', '_', text)
+    # Replace multiple consecutive underscores/hyphens/periods with a single underscore
+    sanitized = re.sub(r'[_.-]+', '_', sanitized)
+    # Remove leading/trailing underscores
+    sanitized = sanitized.strip('_')
+    # Replace spaces with underscores
+    sanitized = sanitized.replace(' ', '_')
+    # Return 'NA' if sanitization results in empty string
+    return sanitized if sanitized else "NA"
 
 def truncate_text(text: str, max_length: int) -> str:
     """
-    Truncates the text to the specified maximum length, adding '...' if necessary.
-    
-    Args:
-        text (str): The input string to truncate.
-        max_length (int): The maximum allowed length of the string.
-    
-    Returns:
-        str: The truncated string with ellipses if truncation occurred.
-    """
-    return text if len(text) <= max_length else text[:max_length-3] + '...'
+    Truncates text to a maximum length, adding ellipsis if needed.
 
-def generate_humanized_filename(prefix: str, job_title: str, company_name: str, datetime_str: str) -> str:
-    """
-    Generates a humanized filename by sanitizing and truncating its components.
-    
     Args:
-        prefix (str): The prefix for the filename (e.g., 'Resume', 'Cover_Letter').
-        job_title (str): The job title to include in the filename.
-        company_name (str): The company name to include in the filename.
-        datetime_str (str): The datetime string to include in the filename.
-    
-    Returns:
-        str: A sanitized and appropriately truncated filename.
-    """
-    # Sanitize inputs
-    job_title_sanitized = sanitize_filename(job_title)
-    company_name_sanitized = sanitize_filename(company_name)
-    
-    # Truncate if necessary
-    job_title_truncated = truncate_text(job_title_sanitized, MAX_TITLE_LENGTH)
-    company_name_truncated = truncate_text(company_name_sanitized, MAX_COMPANY_LENGTH)
-    
-    # Construct the filename
-    filename = f"{prefix}_{job_title_truncated}_{company_name_truncated}_{datetime_str}.pdf"
-    
-    # Ensure the total filename length does not exceed the maximum
-    if len(filename) > MAX_FILENAME_LENGTH:
-        excess_length = len(filename) - MAX_FILENAME_LENGTH
-        # Prioritize truncating the job title
-        if len(job_title_truncated) > 10:
-            new_title_length = max(len(job_title_truncated) - excess_length, 10)
-            job_title_truncated = truncate_text(job_title_sanitized, new_title_length)
-            filename = f"{prefix}_{job_title_truncated}_{company_name_truncated}_{datetime_str}.pdf"
-            logger.debug(f"Truncated job title to fit filename length: {job_title_truncated}")
-            excess_length = len(filename) - MAX_FILENAME_LENGTH
-        
-        # If still too long, truncate the company name
-        if len(filename) > MAX_FILENAME_LENGTH and len(company_name_truncated) > 10:
-            new_company_length = max(len(company_name_truncated) - excess_length, 10)
-            company_name_truncated = truncate_text(company_name_sanitized, new_company_length)
-            filename = f"{prefix}_{job_title_truncated}_{company_name_truncated}_{datetime_str}.pdf"
-            logger.debug(f"Truncated company name to fit filename length: {company_name_truncated}")
-            excess_length = len(filename) - MAX_FILENAME_LENGTH
-        
-        # If still exceeding, truncate the entire filename
-        if len(filename) > MAX_FILENAME_LENGTH:
-            filename = truncate_text(filename, MAX_FILENAME_LENGTH - 4) + ".pdf"
-            logger.debug(f"Truncated entire filename to fit maximum length: {filename}")
-    
-    return filename
+        text (str): The input string.
+        max_length (int): The maximum desired length (including ellipsis).
 
-def check_file_size(file_path: str, max_size: int) -> None:
+    Returns:
+        str: The potentially truncated string.
     """
-    Checks if the file size exceeds the maximum allowed size.
-    
+    if max_length <= len(ELLIPSIS): # Need space for ellipsis
+         return text[:max_length] # Just truncate hard if max_length is too small
+
+    if len(text) > max_length:
+        return text[:max_length - len(ELLIPSIS)] + ELLIPSIS
+    else:
+        return text
+
+def generate_humanized_filename(
+    prefix: Optional[str] = None,
+    job_title: Optional[str] = None,
+    company_name: Optional[str] = None,
+    datetime_str: Optional[str] = None,
+    extension: str = ".pdf"
+) -> str:
+    """
+    Generates a sanitized, human-readable filename for generated documents.
+
+    Constructs filename like: Prefix_JobTitle_CompanyName_DateTime.ext
+    Applies sanitization and truncation rules.
+
     Args:
-        file_path (str): The path to the file.
-        max_size (int): The maximum allowed size in bytes.
-    
+        prefix (Optional[str]): Filename prefix (e.g., "Resume"). Defaults to "Document".
+        job_title (Optional[str]): Job title component.
+        company_name (Optional[str]): Company name component.
+        datetime_str (Optional[str]): Datetime string component.
+        extension (str): File extension including the dot (e.g., ".pdf").
+
+    Returns:
+        str: The generated filename.
+    """
+    prefix_clean = sanitize_filename_component(prefix or DEFAULT_PREFIX)
+    title_clean = sanitize_filename_component(job_title or "Job")
+    company_clean = sanitize_filename_component(company_name or "Company")
+    datetime_clean = sanitize_filename_component(datetime_str or "") # Allow empty datetime
+
+    # Truncate individual components before assembly
+    title_trunc = truncate_text(title_clean, MAX_TITLE_LENGTH)
+    company_trunc = truncate_text(company_clean, MAX_COMPANY_LENGTH)
+
+    # Assemble base filename parts
+    parts = [prefix_clean, title_trunc, company_trunc, datetime_clean]
+    base_filename = "_".join(filter(None, parts)) # Join non-empty parts with underscore
+
+    # Ensure overall length limit
+    # Calculate max length for base filename allowing for extension
+    max_base_len = MAX_FILENAME_LENGTH - len(extension)
+    final_base = truncate_text(base_filename, max_base_len)
+
+    final_filename = f"{final_base}{extension}"
+    logger.trace(f"Generated filename: {final_filename}")
+    return final_filename
+
+
+def check_file_size(file_path: Path, max_size_bytes: int) -> None:
+    """
+    Checks if the file size exceeds a maximum limit.
+
+    Args:
+        file_path (Path): Path object for the file.
+        max_size_bytes (int): Maximum allowed size in bytes.
+
     Raises:
-        ValueError: If the file size exceeds the maximum allowed size.
+        ValueError: If the file size exceeds the limit or file doesn't exist.
+        IOError: If the file size cannot be read.
     """
-    file_size = os.path.getsize(file_path)
-    logger.debug(f"Checking file size for {file_path}: {file_size} bytes")
-    if file_size > max_size:
-        logger.error(f"File size for {file_path} exceeds the maximum allowed size of {max_size} bytes.")
-        raise ValueError(f"File size for {file_path} exceeds the maximum allowed size of {max_size} bytes.")
-    logger.debug(f"File size for {file_path} is within the allowed limit.")
+    if not isinstance(file_path, Path):
+         file_path = Path(file_path) # Convert if string
+
+    try:
+        if not file_path.is_file():
+             logger.error(f"File not found for size check: {file_path}")
+             raise ValueError(f"File not found: {file_path}")
+
+        file_size = file_path.stat().st_size
+        logger.debug(f"Checking file size for {file_path}: {file_size} bytes (Limit: {max_size_bytes} bytes)")
+
+        if file_size > max_size_bytes:
+            logger.error(f"File size ({file_size} bytes) exceeds maximum limit ({max_size_bytes} bytes) for {file_path}")
+            raise ValueError(f"File size exceeds limit ({max_size_bytes} bytes): {file_path}")
+
+        logger.trace(f"File size check passed for {file_path}")
+
+    except OSError as e:
+         logger.error(f"OS error checking file size for {file_path}: {e}", exc_info=True)
+         raise IOError(f"Could not check file size for {file_path}: {e}") from e
+    except ValueError: # Re-raise ValueError from file not found check
+         raise
+    except Exception as e:
+         logger.error(f"Unexpected error checking file size for {file_path}: {e}", exc_info=True)
+         raise IOError(f"Unexpected error checking file size for {file_path}: {e}") from e

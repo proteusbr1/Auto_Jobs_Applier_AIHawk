@@ -1,13 +1,31 @@
+# src/llm/utils/pricing.py
 """
-Pricing information for different AI models.
+Provides pricing information for various Large Language Models (LLMs).
+
+This module centralizes the cost per token for different models, facilitating
+cost calculation for LLM interactions. Prices are typically based on millions of tokens.
+
+Sources:
+- OpenAI: https://platform.openai.com/docs/pricing
+- Google AI: https://ai.google.dev/gemini-api/docs/pricing
+- Anthropic: https://www.anthropic.com/pricing#api
+
+Note: Prices are subject to change by the providers. Last check suggested around late 2024/early 2025.
+All prices are in USD per 1,000,000 tokens unless otherwise specified.
 """
 
-from typing import Dict
+from typing import Dict, Final
+from loguru import logger
 
-# https://platform.openai.com/docs/pricing
-# https://ai.google.dev/gemini-api/docs/pricing
-# https://www.anthropic.com/pricing#api
-MODEL_PRICING = {
+# --- Constants for Default Pricing ---
+# Using gpt-4o-mini pricing as a reasonable default if a model isn't listed.
+DEFAULT_INPUT_TOKEN_PRICE: Final[float] = 0.15 / 1_000_000  # $0.15 per 1M input tokens
+DEFAULT_OUTPUT_TOKEN_PRICE: Final[float] = 0.60 / 1_000_000 # $0.60 per 1M output tokens
+
+# --- Model Pricing Dictionary ---
+# Keys should be the exact model names used in API calls or configuration.
+# Structure: { "model_name": {"input_token_price": float, "output_token_price": float} }
+MODEL_PRICING: Final[Dict[str, Dict[str, float]]] = {
     "gemini-1.5-flash-8b": {
         "input_token_price": 0.0375 / 1_000_000, # Preço para prompts <= 128k tokens
         "output_token_price": 0.15 / 1_000_000,  # Preço para prompts <= 128k tokens
@@ -146,36 +164,50 @@ MODEL_PRICING = {
     },
 }
 
-# Default prices for unknown models
-DEFAULT_INPUT_TOKEN_PRICE = 0.15 / 1_000_000   # $0.15 per 1000000 tokens
-DEFAULT_OUTPUT_TOKEN_PRICE = 0.60 / 1_000_000  # $0.60 per 1000000 tokens
 
 def get_model_pricing(model_name: str) -> Dict[str, float]:
     """
-    Get the pricing information for a specific model.
-    
+    Retrieves the input and output token pricing for a given model name.
+
+    Performs case-insensitive matching and checks if the provided name starts
+    with a known base model name. Falls back to default prices if no match is found.
+
     Args:
-        model_name (str): The name of the model.
-        
+        model_name (str): The name of the LLM (e.g., "gpt-4o", "claude-3-5-sonnet-20240620").
+
     Returns:
-        Dict[str, float]: A dictionary containing the pricing information.
+        Dict[str, float]: A dictionary containing 'input_token_price' and 'output_token_price'.
     """
-    # Try exact match first
+    if not model_name or not isinstance(model_name, str):
+        logger.warning("Invalid model name provided for pricing lookup. Using default pricing.")
+        return {
+            "input_token_price": DEFAULT_INPUT_TOKEN_PRICE,
+            "output_token_price": DEFAULT_OUTPUT_TOKEN_PRICE,
+        }
+
+    # 1. Try exact match (case-sensitive, assumes keys in MODEL_PRICING are canonical)
     if model_name in MODEL_PRICING:
+        logger.debug(f"Found exact pricing match for model: {model_name}")
         return MODEL_PRICING[model_name]
-    
-    # Try lowercase match
+
+    # 2. Try case-insensitive match
     model_name_lower = model_name.lower()
-    if model_name_lower in MODEL_PRICING:
-        return MODEL_PRICING[model_name_lower]
-    
-    # For API models with suffixes, try to match the base model name
-    for base_model in MODEL_PRICING:
+    for known_model, prices in MODEL_PRICING.items():
+        if known_model.lower() == model_name_lower:
+            logger.debug(f"Found case-insensitive pricing match for model: {model_name} -> {known_model}")
+            return prices
+
+    # 3. Try prefix match (e.g., "gpt-4-turbo-preview" should match "gpt-4-turbo")
+    #    Sort known models by length descending to match longest prefix first (e.g. gpt-4o-mini before gpt-4o)
+    sorted_known_models = sorted(MODEL_PRICING.keys(), key=len, reverse=True)
+    for base_model in sorted_known_models:
         if model_name.startswith(base_model):
+            logger.debug(f"Found prefix pricing match for model: {model_name} -> {base_model}")
             return MODEL_PRICING[base_model]
-    
-    # Return default pricing if no match is found
+
+    # 4. Fallback to default pricing
+    logger.warning(f"Pricing not found for model: '{model_name}'. Using default pricing.")
     return {
         "input_token_price": DEFAULT_INPUT_TOKEN_PRICE,
-        "output_token_price": DEFAULT_OUTPUT_TOKEN_PRICE
+        "output_token_price": DEFAULT_OUTPUT_TOKEN_PRICE,
     }

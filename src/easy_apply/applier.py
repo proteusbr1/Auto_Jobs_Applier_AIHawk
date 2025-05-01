@@ -1,359 +1,410 @@
+# src/easy_apply/applier.py
 """
-Main module for the AIHawk Easy Apply functionality.
+Handles the step-by-step process of filling and submitting LinkedIn Easy Apply forms.
 """
 import time
-from typing import List, Optional, Tuple, Any
+from typing import Optional, Any, List
+from pathlib import Path # Import Path
 from loguru import logger
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+
+# Selenium Imports
+from selenium.common.exceptions import (
+    TimeoutException,
+    NoSuchElementException,
+    ElementNotInteractableException,
+    ElementClickInterceptedException,
+    StaleElementReferenceException,
+    WebDriverException
+)
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.remote.webelement import WebElement
 
-from src.job import Job, JobCache
-from src.llm.llm_manager import LLMAnswerer
-import src.utils as utils
-from app_config import (
-    MIN_SCORE_APPLY,
-    SALARY_EXPECTATIONS,
-    USE_JOB_SCORE,
-    USE_SALARY_EXPECTATIONS,
-    TRYING_DEGUB,
-)
-from src.easy_apply.answer_storage import AnswerStorage
-from src.easy_apply.job_info_extractor import JobInfoExtractor
-from src.easy_apply.form_handler import FormHandler
-from src.easy_apply.form_processors.processor_manager import FormProcessorManager
-from src.easy_apply.file_uploader import FileUploader
+# Internal Imports
+# Ensure correct relative import if job.py is in parent dir
+try:
+    from ..job import Job, JobCache, JobStatus # Relative import
+except ImportError:
+    from src.job import Job, JobCache, JobStatus
+try:
+    from ..llm import LLMProcessor # Relative import
+except ImportError:
+    from src.llm import LLMProcessor
+try:
+    from ..resume_manager import ResumeManager # Relative import
+except ImportError:
+    from src.resume_manager import ResumeManager
+try:
+    from .. import utils # Relative import
+except ImportError:
+    logger.error("Failed to import src.utils using relative path.")
+    utils = None
 
-class AIHawkEasyApplier:
+# Easy Apply Components (Relative imports)
+from .answer_storage import AnswerStorage
+from .job_info_extractor import JobInfoExtractor
+from .form_handler import FormHandler
+from .form_processors.processor_manager import FormProcessorManager
+from .file_uploader import FileUploader
+
+# Configuration (Consider passing these values instead of direct import)
+try:
+    from app_config import (
+        MIN_SCORE_APPLY,
+        SALARY_EXPECTATIONS,
+        USE_JOB_SCORE,
+        USE_SALARY_EXPECTATIONS,
+        TRYING_DEBUG,
+    )
+except ImportError:
+    logger.warning("Could not import from app_config. Using default values for apply checks.")
+    MIN_SCORE_APPLY = 7.0
+    SALARY_EXPECTATIONS = 50000
+    USE_JOB_SCORE = True
+    USE_SALARY_EXPECTATIONS = True
+    TRYING_DEBUG = False
+
+
+class EasyApplyHandler:
     """
-    Automates the process of applying to jobs on LinkedIn using the 'Easy Apply' feature.
+    Automates filling and submitting LinkedIn 'Easy Apply' job application forms.
     """
+    DEFAULT_WAIT_TIME = 10
+    MAX_FORM_FILL_ATTEMPTS = 10
+    MAX_FORM_ERRORS_PER_JOB = 2
 
     def __init__(
         self,
         driver: WebDriver,
-        resume_manager,
-        set_old_answers: List[Tuple[str, str, str]],
-        gpt_answerer: LLMAnswerer,
-        resume_generator_manager=None,
-        wait_time: int = 10,
-        cache: JobCache = None,
+        resume_manager: ResumeManager,
+        llm_processor: LLMProcessor,
+        cache: Optional[JobCache] = None,
+        wait_time: Optional[int] = None,
     ):
-        """
-        Initialize the AIHawkEasyApplier with necessary components.
-        
-        Args:
-            driver (WebDriver): The Selenium WebDriver instance.
-            resume_manager: The resume manager instance.
-            set_old_answers (List[Tuple[str, str, str]]): List of pre-defined answers.
-            gpt_answerer (LLMAnswerer): The GPT answerer instance.
-            resume_generator_manager: The resume generator manager instance.
-                                    Can be None if using direct HTML resume.
-            wait_time (int): The maximum time to wait for elements to appear.
-            cache (JobCache): The job cache instance.
-        """
-        logger.debug("Initializing AIHawkEasyApplier")
+        """Initializes the EasyApplyHandler."""
+        logger.info("Initializing EasyApplyHandler...")
+        if not isinstance(driver, WebDriver): raise TypeError("driver must be WebDriver")
+        if not isinstance(resume_manager, ResumeManager): raise TypeError("resume_manager must be ResumeManager")
+        if not isinstance(llm_processor, LLMProcessor): raise TypeError("llm_processor must be LLMProcessor")
+        if cache and not isinstance(cache, JobCache): raise TypeError("cache must be JobCache or None")
+
         self.driver = driver
-        self.wait = WebDriverWait(self.driver, wait_time)
+        self.wait_time = wait_time if wait_time is not None else self.DEFAULT_WAIT_TIME
+        self.wait = WebDriverWait(self.driver, self.wait_time)
         self.resume_manager = resume_manager
-        self.resume_path = self.resume_manager.get_resume()
-        self.set_old_answers = set_old_answers
-        self.gpt_answerer = gpt_answerer
-        self.resume_generator_manager = resume_generator_manager
+        self.llm_processor = llm_processor
         self.cache = cache
-        
-        # Initialize components
-        self.answer_storage = AnswerStorage()
-        self.job_info_extractor = JobInfoExtractor(driver, wait_time)
-        self.form_handler = FormHandler(driver, wait_time)
-        self.form_processor_manager = FormProcessorManager(driver, gpt_answerer, self.answer_storage, wait_time)
-        self.file_uploader = FileUploader(driver, gpt_answerer, self.resume_path, wait_time)
-        
-        logger.debug("AIHawkEasyApplier initialized successfully")
+
+        # Initialize helper components
+        # Use output dir from cache if available, else default
+        output_dir = cache.output_directory if cache else Path("data_folder/output")
+        self.answer_storage = AnswerStorage(output_dir=output_dir)
+        self.job_info_extractor = JobInfoExtractor(driver, self.wait_time)
+        self.form_handler = FormHandler(driver, self.wait_time)
+        self.form_processor_manager = FormProcessorManager(
+            driver, self.llm_processor, self.answer_storage, self.wait_time
+        )
+        self.file_uploader = FileUploader(
+            driver, self.llm_processor, self.resume_manager.get_resume(), self.wait_time
+        )
+
+        self.is_debug_mode = TRYING_DEBUG
+        if self.is_debug_mode: logger.warning("EasyApplyHandler running in DEBUG MODE. Score/Salary checks bypassed.")
+        logger.info("EasyApplyHandler initialized successfully.")
+
 
     def main_job_apply(self, job: Job) -> bool:
-        """ 
-        Main method to apply for a job.
-        
-        Args:
-            job (Job): The job object containing job details.
-            
-        Returns:
-            bool: True if the application is successful, False otherwise.
-        """
-        logger.debug(f"Opening job: {job.link}")
-        
-        if job is None:
-            logger.error("Job object is None. Cannot apply.")
-            return False
-        
-        # Set up the job in the LLMAnswerer before any evaluation or form filling
-        self.gpt_answerer.set_job(
-            title=job.title,
-            company=job.company,
-            location=job.location,
-            link=job.link,
-            apply_method=job.apply_method,
-            salary=job.salary,
-            description=job.description,
-            recruiter_link=job.recruiter_link,
-            gpt_salary=job.gpt_salary,
-            search_country=job.search_country,
-        )
-        logger.debug("Job successfully set up in LLMAnswerer.")
-        
+        """Main method to handle the Easy Apply process for a single job."""
+        if not isinstance(job, Job) or not job.link: logger.error("Invalid Job object passed."); return False
+
+        logger.info(f"--- Starting for {job.link} ' ---")
+        logger.debug(f"Job '{job.title}' at '{job.company}")
+
         try:
+            # Set initial context (description might be None/empty)
+            # self.llm_processor.set_current_job(job)
+            # logger.debug("Initial job context set in LLM Processor.")
+
+            # 1. Navigate and Extract Info
+            logger.debug(f"Navigating to job page: {job.link}")
             self.driver.get(job.link)
             self.job_info_extractor.check_for_premium_redirect(job.link)
-            job.description = self.job_info_extractor.get_job_description()
+
+            logger.debug("Extracting job details (description, salary)...")
+            extracted_description = self.job_info_extractor.get_job_description()
+            logger.debug(f"Extracted description type: {type(extracted_description)}, length: {len(extracted_description or '')}")
+            if not extracted_description or not isinstance(extracted_description, str):
+                 logger.error("JobInfoExtractor failed to return a valid description string!")
+                 job.description = None
+            else:
+                 job.description = extracted_description
+
             job.salary = self.job_info_extractor.get_job_salary()
-            # job.recruiter_link = self.job_info_extractor.get_job_recruiter()
-            
-            # Evaluate job score for logging purposes regardless of mode
-            if job.score is None:
-                job.score = self.gpt_answerer.evaluate_job(job)
-                logger.debug(f"Job Score: {job.score}")
-                self.cache.add_to_cache(job, "job_score")
-                self.cache.write_to_file(job, "job_score")
-            
-            # If in debug mode, bypass score and salary checks
-            if TRYING_DEGUB:
-                logger.debug("Debug mode enabled. Bypassing score and salary checks.")
-                
-                # Still estimate salary for debugging purposes if enabled
-                if USE_SALARY_EXPECTATIONS:
-                    job.gpt_salary = self.gpt_answerer.estimate_salary(job)
-                    logger.debug(f"Estimated salary: {job.gpt_salary} (ignored in debug mode)")
-                
-                logger.info("Debug mode: Proceeding with application regardless of score or salary.")
-                # Continue with application process in debug mode
-                proceed_with_application = True
-            elif USE_JOB_SCORE:
-                # Normal mode - check score against minimum
-                proceed_with_application = False
-                
-                if job.score >= MIN_SCORE_APPLY:
-                    logger.info(f"Job score is {job.score}. Proceeding with the application: {job.link}")
-                    proceed_with_application = True
-                    
-                    # Check salary if enabled
-                    if USE_SALARY_EXPECTATIONS:
-                        job.gpt_salary = self.gpt_answerer.estimate_salary(job)
-                        if SALARY_EXPECTATIONS > job.gpt_salary:
-                            logger.info(f"Estimated salary {job.gpt_salary} is below expected {SALARY_EXPECTATIONS}. Skipping application.")
-                            self.cache.add_to_cache(job, "skipped_low_salary")
-                            self.cache.write_to_file(job, "skipped_low_salary")
-                            proceed_with_application = False
-                        else:
-                            logger.info(f"Estimated salary {job.gpt_salary} is within expected {SALARY_EXPECTATIONS}.")
-                    else:
-                        logger.info(f"Salary is not being verified. Proceeding with the application.")
-                else:
-                    logger.info(f"Job score is {job.score}. Skipping application: {job.link}")
-                    self.cache.add_to_cache(job, "skipped_low_score")
-                    self.cache.write_to_file(job, "skipped_low_score")
-                    proceed_with_application = False
-            else:
-                # Neither debug mode nor job score checking is enabled
-                proceed_with_application = True
-                logger.info("Neither debug mode nor job score checking is enabled. Proceeding with application.")
-            
-            # If we've determined not to proceed, return early
-            if not proceed_with_application:
-                return False
-                
-            # Continue with application process
-            self.job_info_extractor.check_for_premium_redirect(job.link)
-            # self.form_handler.scroll_page()
-            
-            # Attempt to click the 'Easy Apply' buttons sequentially
-            success = self.form_handler.click_easy_apply_buttons_sequentially(job)
-            
-            if success:
-                # If clicked successfully and the modal was displayed, continue with the filling
-                self.form_handler.handle_job_search_safety_reminder()
-                success = self._fill_application_form(job)
-                if success:
-                    logger.debug(f"Application process completed successfully for job: {job.title} at company {job.company}")
-                    return True
-                else:
-                    logger.warning(f"Application process failed for job: {job.title} at company {job.company}")
-                    # self.cache.write_to_file(job, "failed")
-                    return False
-            else:
-                logger.warning(f"Clicked 'Easy Apply' buttons failed for job: {job.title} at company {job.company}")
-                # self.cache.write_to_file(job, "failed")
-                return False
-        
-        except Exception as e:
-            logger.error(f"Failed to apply for the job: {e}", exc_info=True)
-            utils.capture_screenshot(self.driver, "job_apply_exception")
-            # self.cache.write_to_file(job, "failed")
-            return False
+            logger.debug(f"Assigned Description Length: {len(job.description or '')}")
+            logger.debug(f"Extracted Salary: '{job.salary or 'Not Found'}'")
 
-    def _fill_application_form(self, job: Job, max_attempts: int = 10) -> bool:
-        """
-        Fills out the application form step by step.
-
-        Args:
-            job (Job): The job object.
-            max_attempts (int): The maximum number of attempts to fill the form.
-            
-        Returns:
-            bool: True if form submission is successful, False otherwise.
-        """
-        logger.debug(f"Filling out application form for job: {job.title} at {job.company}")
-        try:
-            attempts = 0
-            error_count = 0
-            max_errors = 1  # Maximum number of errors before skipping the job
-            
-            while attempts < max_attempts:
-                try:
-                    self._fill_up(job)
-                    if self.form_handler.next_or_submit():
-                        logger.debug("Application form submitted successfully")
-                        return True
-
-                    attempts += 1
-                    logger.debug(f"Page {attempts} complete. Next page.")
-                except KeyError as e:
-                    logger.error(f"KeyError occurred during form filling: {e}. Skipping this job.")
-                    utils.capture_screenshot(self.driver, "form_filling_key_error")
-                    return False  # Skip to the next job immediately
-                except Exception as e:
-                    error_count += 1
-                    logger.error(f"Error during form filling (error {error_count}/{max_errors}): {e}")
-                    utils.capture_screenshot(self.driver, f"form_filling_error_{error_count}")
-                    
-                    # If we've hit the maximum number of errors, skip this job
-                    if error_count >= max_errors:
-                        logger.error(f"Maximum errors ({max_errors}) reached. Skipping this job.")
-                        # Log the current URL for debugging
-                        current_url = self.driver.current_url
-                        logger.error(f"Current job URL when skipping: {current_url}")
-                        return False
-                    
-                    # Otherwise, try to continue with the next page
-                    continue
-                    
-            logger.warning("Maximum attempts reached. Aborting application process.")
-            utils.capture_screenshot(self.driver, "form_filling_max_attempts")
-            return False
-        except Exception as e:
-            logger.error(f"An error occurred while filling the application form: {e}", exc_info=True)
-            utils.capture_screenshot(self.driver, "form_filling_exception")
-            # Log the current URL for debugging
+            # Re-set LLM context AFTER getting description
+            logger.debug(f"Attempting to update LLM context. Job Desc is now: {job.description[:100] if job.description else 'None'}...")
             try:
-                current_url = self.driver.current_url
-                logger.error(f"Current job URL when exception occurred: {current_url}")
-            except:
-                pass
-            return False
+                self.llm_processor.set_current_job(job)
+                logger.debug("LLM Processor context updated successfully with extracted details.")
+            except ValueError as ve:
+                 logger.error(f"LLM Processor validation failed AFTER description extraction: {ve}. Job Desc Length={len(job.description or '')}")
+                 if "description" in str(ve).lower() and not job.description: logger.critical("Description is None/empty even after extraction attempt. Cannot proceed.")
+                 if self.cache: self.cache.record_job_status(job, JobStatus.FAILED_APPLICATION); self.cache.record_job_status(job, JobStatus.SEEN)
+                 return False
+            except Exception as e:
+                 logger.error(f"Unexpected error updating LLM job context: {e}", exc_info=True)
+                 if self.cache: self.cache.record_job_status(job, JobStatus.FAILED_APPLICATION); self.cache.record_job_status(job, JobStatus.SEEN)
+                 return False
 
-    def _fill_up(self, job: Job) -> None:
-        """
-        Fills up each section of the application form.
+            # 2. Evaluate Job Suitability (Skip if in debug mode)
+            if self.is_debug_mode:
+                logger.warning("DEBUG MODE: Bypassing score and salary checks.")
+                proceed = True
+            else:
+                 proceed = self._evaluate_job_suitability(job)
 
-        Args:
-            job (Job): The job object.
-        """
-        logger.debug(f"Starting to fill up form sections for job: {job.link}")
+            if not proceed:
+                logger.debug("Job does not meet suitability criteria. Skipping application.")
+                if self.cache: self.cache.record_job_status(job, JobStatus.SEEN) # Ensure seen if skipped here
+                return False
 
-        try:
-            # Find the modal content section (new structure)
-            try:
-                modal = self.wait.until(
-                    lambda d: d.find_element(By.CLASS_NAME, "artdeco-modal")
-                )
-                logger.debug("Modal found successfully.")
-                
-                # Try to find the form within the modal
-                form = modal.find_element(By.TAG_NAME, 'form')
-                logger.debug("Form found within modal.")
-            except (TimeoutException, NoSuchElementException):
-                # Fall back to old structure if modal not found
-                try:
-                    easy_apply_content = self.wait.until(
-                        lambda d: d.find_element(By.CLASS_NAME, "jobs-easy-apply-content")
-                    )
-                    logger.debug("Easy apply content section found successfully.")
-                    form = easy_apply_content.find_element(By.TAG_NAME, 'form')
-                    logger.debug("Form found within Easy Apply content.")
-                except (TimeoutException, NoSuchElementException):
-                    logger.info(
-                        "Neither modal nor easy apply content found. Attempting to submit the application directly."
-                    )
-                    return
+            # 3. Initiate Easy Apply
+            logger.debug("Attempting to click 'Easy Apply' button...")
+            if not self.form_handler.click_easy_apply_buttons_sequentially():
+                 logger.error("Failed to initiate Easy Apply (button click or modal issue).")
+                 if self.cache: self.cache.record_job_status(job, JobStatus.FAILED_APPLICATION); self.cache.record_job_status(job, JobStatus.SEEN)
+                 return False
 
-            # Find all form sections within the form
-            # Try the new HTML structure first
-            form_sections = form.find_elements(By.XPATH, ".//div[contains(@class, 'PhUvDQfCdKEziUOXPXmpuBzOwdFzCzynpE')]")
-            
-            # If no sections found with new class, try the old structure
-            if not form_sections:
-                form_sections = form.find_elements(By.XPATH, ".//div[contains(@class, 'jobs-easy-apply-form-section__grouping')]")
-                
-            # If still no sections found, try to find any form elements directly
-            if not form_sections:
-                form_sections = form.find_elements(By.XPATH, ".//div[contains(@class, 'fb-dash-form-element')]")
-                
-            logger.debug(f"Found {len(form_sections)} form sections to process.")
+            self.form_handler.handle_job_search_safety_reminder()
 
-            # If no form sections found, try to find form elements directly
-            if not form_sections:
-                logger.debug("No form sections found. Looking for form elements directly.")
-                
-                # Try to find select containers (dropdowns)
-                select_containers = form.find_elements(By.CSS_SELECTOR, "[data-test-text-entity-list-form-component]")
-                if select_containers:
-                    logger.debug(f"Found {len(select_containers)} select containers.")
-                    form_sections.extend(select_containers)
-                
-                # Try to find text input containers
-                text_input_containers = form.find_elements(By.CSS_SELECTOR, "[data-test-single-line-text-form-component]")
-                if text_input_containers:
-                    logger.debug(f"Found {len(text_input_containers)} text input containers.")
-                    form_sections.extend(text_input_containers)
-                
-                # Try to find textarea containers
-                textarea_containers = form.find_elements(By.CSS_SELECTOR, "[data-test-multiline-text-form-component]")
-                if textarea_containers:
-                    logger.debug(f"Found {len(textarea_containers)} textarea containers.")
-                    form_sections.extend(textarea_containers)
-                
-                logger.debug(f"Found a total of {len(form_sections)} form elements to process.")
-            
-            # Process each form section
-            for index, section in enumerate(form_sections):
-                logger.debug(f"Processing form section {index + 1}/{len(form_sections)}")
-                self._process_form_element(section, job)
-            logger.debug("All form sections processed successfully.")
+            # 4. Fill & Submit Form
+            logger.info("Starting application form filling process...")
+            submitted_successfully = self._fill_and_submit_form(job)
 
-        except TimeoutException:
-            logger.error(
-                "Form section not found within the timeout period", exc_info=True
-            )
-            utils.capture_screenshot(self.driver, "form_timeout_error")
-            raise
+            if submitted_successfully:
+                 logger.success(f"Application form submitted successfully for job: {job.link}")
+                 return True # Let JobApplier handle success recording
+            else:
+                 logger.error(f"Application form filling/submission failed for job: {job.link}")
+                 if self.cache: self.cache.record_job_status(job, JobStatus.FAILED_APPLICATION); self.cache.record_job_status(job, JobStatus.SEEN)
+                 #self.form_handler.discard_application()
+                 return False
+
+        except RuntimeError as e: # Catch specific errors like Premium redirect failure
+             logger.error(f"Runtime error during application process for {job.link}: {e}", exc_info=True)
+             if self.cache: self.cache.record_job_status(job, JobStatus.FAILED_APPLICATION); self.cache.record_job_status(job, JobStatus.SEEN)
+             return False
         except Exception as e:
-            logger.error(
-                f"An error occurred while filling up the form: {e}", exc_info=True
-            )
-            utils.capture_screenshot(self.driver, "form_fill_error")
-            raise
+            logger.critical(f"Unexpected critical error during main_job_apply for {job.link}: {e}", exc_info=True)
+            if utils: utils.capture_screenshot(self.driver, f"main_apply_critical_error_{job.company}")
+            if self.cache: self.cache.record_job_status(job, JobStatus.FAILED_APPLICATION); self.cache.record_job_status(job, JobStatus.SEEN)
+            # try: self.form_handler.discard_application()
+            # except: pass
+            return False
+        finally:
+             logger.debug(f"--- Finished Easy Apply Process for: '{job.title}' at '{job.company}' ---")
 
-    def _process_form_element(self, element: Any, job: Job) -> None:
-        """
-        Processes individual form elements.
 
-        Args:
-            element (Any): The form element to process.
-            job (Job): The job object.
-        """
-        logger.debug("Processing form element")
-        if self.form_processor_manager.is_upload_field(element):
-            self.file_uploader.handle_upload_fields(element, job)
+    def _evaluate_job_suitability(self, job: Job) -> bool:
+        """Evaluates job score and salary against configured thresholds."""
+        # --- CORRECTED SYNTAX ---
+        proceed = True # Start assuming we proceed
+
+        # 1. Evaluate Score (if enabled)
+        if USE_JOB_SCORE:
+             if job.score is None:
+                  logger.debug("Calculating job score...")
+                  job.score = self.llm_processor.evaluate_job_fit()
+                  logger.info(f"Calculated Job Score: {job.score:.2f}")
+                  if self.cache:
+                      self.cache.record_job_status(job, JobStatus.JOB_SCORE) # Record score status
+             else:
+                  logger.info(f"Using existing Job Score: {job.score:.2f}")
+
+             if job.score < MIN_SCORE_APPLY:
+                  logger.debug(f"Job score {job.score:.2f} is below minimum threshold {MIN_SCORE_APPLY}. Skipping.")
+                  if self.cache:
+                      self.cache.record_job_status(job, JobStatus.SKIPPED_LOW_SCORE) # Record reason
+                  proceed = False # Mark to skip
+             else:
+                  logger.debug(f"Job score {job.score:.2f} meets threshold {MIN_SCORE_APPLY}.")
         else:
-            self.form_processor_manager.process_form_section(element, job)
+             logger.debug("Job score check is disabled (USE_JOB_SCORE=False).")
+
+        # 2. Evaluate Salary (if enabled AND score passed)
+        if proceed and USE_SALARY_EXPECTATIONS:
+             logger.debug("Estimating job salary...")
+             job.gpt_salary = self.llm_processor.estimate_salary()
+             logger.info(f"Estimated Salary: {job.gpt_salary:.0f} USD (Expected: >{SALARY_EXPECTATIONS:.0f} USD)")
+
+             if job.gpt_salary < SALARY_EXPECTATIONS:
+                  logger.info(f"Estimated salary {job.gpt_salary:.0f} below expectation {SALARY_EXPECTATIONS:.0f}. Skipping.")
+                  if self.cache:
+                      self.cache.record_job_status(job, JobStatus.SKIPPED_LOW_SALARY) # Record reason
+                  proceed = False # Mark to skip
+             else:
+                  logger.debug(f"Estimated salary {job.gpt_salary:.0f} meets expectation {SALARY_EXPECTATIONS:.0f}.")
+        elif proceed: # Check skipped because USE_SALARY_EXPECTATIONS was false
+             logger.debug("Salary expectation check is disabled (USE_SALARY_EXPECTATIONS=False).")
+
+        if proceed:
+            logger.debug("Job meets suitability criteria. Proceeding.")
+
+        return proceed
+
+
+    def _fill_and_submit_form(self, job: Job) -> bool:
+        """Handles the multi-step process of filling form sections and submitting."""
+        # --- CORRECTED SYNTAX ---
+        logger.debug(f"Starting form filling loop for job: {job.link}")
+        form_step = 0
+        form_errors = 0
+
+        while form_step < self.MAX_FORM_FILL_ATTEMPTS:
+            form_step += 1
+            logger.info(f"Processing form step {form_step}/{self.MAX_FORM_FILL_ATTEMPTS}...")
+
+            try:
+                # Find the currently active form/modal content area
+                current_form_area = self.wait.until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, self.form_handler.MODAL_SELECTOR + " form"))
+                )
+                logger.debug("Located active form area for current step.")
+
+                # Process all relevant form elements within this area
+                self._fill_up_step(current_form_area, job)
+                logger.debug(f"Finished processing elements for step {form_step}.")
+
+                # Click Next or Submit
+                logger.debug("Attempting to navigate to next step or submit...")
+                submitted = self.form_handler.next_or_submit()
+
+                if submitted:
+                    logger.info(f"Form submitted successfully on step {form_step}.")
+                    return True # Final submission successful
+                else:
+                     logger.info(f"Clicked 'Next'/'Review' on step {form_step}. Moving to next step.")
+                     form_errors = 0 # Reset error count for the new step
+                     time.sleep(0.5) # Allow time for next step load
+                     # Continue to next iteration of the while loop
+
+            except (ValueError, ElementNotInteractableException) as form_val_err:
+                 form_errors += 1
+                 logger.error(f"Error processing form step {form_step} (Error {form_errors}/{self.MAX_FORM_ERRORS_PER_JOB}): {form_val_err}")
+                 if utils:
+                     utils.capture_screenshot(self.driver, f"form_step_{form_step}_error_{form_errors}")
+                 if form_errors >= self.MAX_FORM_ERRORS_PER_JOB:
+                      logger.error(f"Maximum form errors ({self.MAX_FORM_ERRORS_PER_JOB}) reached. Aborting application for this job.")
+                      return False # Abort for this job
+                 else:
+                      # If not max errors, still abort for now as state is uncertain
+                      logger.warning("Aborting job due to form validation/navigation error.")
+                      return False
+
+            except Exception as e:
+                 form_errors += 1
+                 logger.critical(f"Unexpected error during form step {form_step} (Error {form_errors}/{self.MAX_FORM_ERRORS_PER_JOB}): {e}", exc_info=True)
+                 if utils:
+                     utils.capture_screenshot(self.driver, f"form_step_{form_step}_unexpected_error")
+                 if form_errors >= self.MAX_FORM_ERRORS_PER_JOB:
+                      logger.error(f"Maximum form errors ({self.MAX_FORM_ERRORS_PER_JOB}) reached after unexpected error. Aborting application.")
+                      return False
+                 else:
+                      # Abort on unexpected error
+                      logger.warning("Aborting job due to unexpected form processing error.")
+                      return False
+
+        # If loop finishes without submitting
+        logger.error(f"Reached maximum form steps ({self.MAX_FORM_FILL_ATTEMPTS}) without submitting. Aborting application.")
+        if utils:
+            utils.capture_screenshot(self.driver, "form_max_steps_reached")
+        return False
+
+
+    def _fill_up_step(self, form_area: WebElement, job: Job) -> None:
+        """Processes all interactive form elements within the current form area/step."""
+        logger.debug("Processing elements in current form step...")
+    
+       # 1. Review page?  ->  nada a preencher
+        if self._is_review_page(form_area):
+            logger.info("Review page detectada – nenhum campo a preencher.")
+            return
+        
+        section_selectors = [
+            ".//div[contains(@class,'jobs-easy-apply-form-section__grouping')]",
+            ".//div[contains(@class,'fb-dash-form-element')]",
+            ".//fieldset[contains(@class,'form__input--fieldset')]",
+            ".//div[contains(@class,'pb4')]",
+            ".//div[contains(@class,'jobs-document-upload')]",
+            ".//div[contains(@class,'jobs-document-upload-redesign-card__container')]",
+        ]
+        unique_elements = []
+        for selector in section_selectors:
+             try: unique_elements.extend(form_area.find_elements(By.XPATH, selector))
+             except NoSuchElementException: continue
+        unique_elements = list(dict.fromkeys(unique_elements).keys())
+        # ─── FALLBACK NOVO ─────────────────────────────────────────────
+        if not unique_elements:                       # nada encontrado
+            file_inputs = form_area.find_elements(By.XPATH, ".//input[@type='file']")
+            if file_inputs:
+                self.logger.info(
+                    f"Fallback ativo: detectados {len(file_inputs)} <input type='file'> no passo."
+                )
+                # Envie cada input (ou seu contêiner) para o FileUploader
+                for file_input in file_inputs:
+                    self.file_uploader.handle_upload_fields(file_input, job)
+                return                                # passo tratado
+        # ───────────────────────────────────────────────────────────────
+        logger.debug(f"Found {len(unique_elements)} potential form sections/elements.")
+
+        if not unique_elements:
+             logger.warning("No processable form elements found in current step.")
+             try:
+                  # Check specifically for review page content
+                  if form_area.find_elements(By.CSS_SELECTOR, 'div.jobs-easy-apply-review-content'):
+                       logger.info("Detected Review Page content.")
+                       return # Nothing to fill on review page
+             except: pass # Ignore errors finding review content
+
+        processed_count = 0
+        for element in unique_elements:
+            try:
+                 logger.debug(f"Processing element {processed_count+1}/{len(unique_elements)}...")
+                 is_upload = bool(element.find_elements(By.XPATH, ".//input[@type='file']"))
+                 if is_upload:
+                      logger.debug("Detected file upload section.")
+                      self.file_uploader.handle_upload_fields(element, job)
+                 else:
+                      logger.debug("Passing section to FormProcessorManager.")
+                      self.form_processor_manager.process_form_section(element, job)
+                 processed_count += 1
+            except StaleElementReferenceException:
+                 logger.warning("Stale element encountered processing form step. Skipping element.")
+                 continue # Skip this specific element
+            except Exception as e:
+                 logger.error(f"Error processing form element/section: {e}", exc_info=True)
+                 continue # Skip this element on error
+
+        logger.debug(f"Finished processing {processed_count} elements in current step.")
+
+    @staticmethod
+    def _is_review_page(container: WebElement) -> bool:
+        """
+        Retorna True quando o container atual contém o cabeçalho
+        'Review your application', indicando que estamos na etapa de
+        revisão final (100 %) onde não há formulários editáveis.
+        """
+        try:
+            return bool(
+                container.find_elements(
+                    By.XPATH,
+                    ".//h3[contains(normalize-space(),'Review your application')]"
+                )
+            )
+        except Exception:
+            # Qualquer erro (stale, no such element, etc.) -> assume que não é review
+            return False

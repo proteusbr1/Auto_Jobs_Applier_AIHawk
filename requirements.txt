@@ -3,7 +3,7 @@
 # python -m pip install -r requirements.txt
 # echo $VIRTUAL_ENV
 
-
+beautifulsoup4 
 click
 # Removed resume builder library dependency - using direct HTML resume instead
 httpx
@@ -23,6 +23,7 @@ langchain-text-splitters
 langsmith
 Levenshtein
 loguru
+lxml 
 # openai removed (using langchain-openai instead)
 pdfminer.six
 pytest
@@ -38,3 +39,4 @@ pytest-cov
 python-dotenv
 jinja2 
 WeasyPrint
+ 
