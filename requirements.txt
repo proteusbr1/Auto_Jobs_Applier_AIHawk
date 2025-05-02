@@ -10,6 +10,7 @@ httpx
 inputimeout
 jsonschema
 jsonschema-specifications
+fake-useragent
 langchain
 langchain-anthropic
 langchain-huggingface

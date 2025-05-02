@@ -21,6 +21,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support.expected_conditions import (
+    visibility_of_element_located,
+    presence_of_element_located,
+)
 
 # Internal Imports
 # Ensure correct relative import if job.py is in parent dir
@@ -257,69 +261,95 @@ class EasyApplyHandler:
         return proceed
 
 
-    def _fill_and_submit_form(self, job: Job) -> bool:
-        """Handles the multi-step process of filling form sections and submitting."""
-        # --- CORRECTED SYNTAX ---
+    # ──────────────────────────────────────────────────────────────────────
+    # New: locate container for the *current* step (form OR review)
+    # ──────────────────────────────────────────────────────────────────────
+    def _locate_step_container(self) -> WebElement:
+        """
+        Return the visible container of the current Easy-Apply step.
+
+        Tries, in order:
+        1. `<form>` inside the modal (regular steps)
+        2. `.artdeco-modal__content` inside the modal (review step)
+        3. The modal root itself (last fallback)
+
+        Raises
+        ------
+        TimeoutException
+            If none of the selectors appear within `self.wait_time`.
+        """
+        selectors = [
+            f"{self.form_handler.MODAL_SELECTOR} form",
+            f"{self.form_handler.MODAL_SELECTOR} .artdeco-modal__content",
+            self.form_handler.MODAL_SELECTOR,
+        ]
+        for css in selectors:
+            try:
+                return self.wait.until(visibility_of_element_located((By.CSS_SELECTOR, css)))
+            except TimeoutException:
+                continue
+        # If we get here, nothing matched
+        raise TimeoutException("Could not locate active Easy-Apply step container")
+
+
+    # ──────────────────────────────────────────────────────────────────────
+    # Re-written main loop
+    # ──────────────────────────────────────────────────────────────────────
+    def _fill_and_submit_form(self, job: Job) -> bool:  # noqa: C901  (complexity ok here)
         logger.debug(f"Starting form filling loop for job: {job.link}")
         form_step = 0
         form_errors = 0
 
         while form_step < self.MAX_FORM_FILL_ATTEMPTS:
             form_step += 1
-            logger.info(f"Processing form step {form_step}/{self.MAX_FORM_FILL_ATTEMPTS}...")
+            logger.info(f"Processing form step {form_step}/{self.MAX_FORM_FILL_ATTEMPTS}…")
 
             try:
-                # Find the currently active form/modal content area
-                current_form_area = self.wait.until(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, self.form_handler.MODAL_SELECTOR + " form"))
-                )
-                logger.debug("Located active form area for current step.")
+                container = self._locate_step_container()
+                logger.debug("Active modal container located.")
 
-                # Process all relevant form elements within this area
-                self._fill_up_step(current_form_area, job)
-                logger.debug(f"Finished processing elements for step {form_step}.")
-
-                # Click Next or Submit
-                logger.debug("Attempting to navigate to next step or submit...")
-                submitted = self.form_handler.next_or_submit()
-
-                if submitted:
-                    logger.info(f"Form submitted successfully on step {form_step}.")
-                    return True # Final submission successful
+                # ─── Review page? nothing to fill ───────────────────────
+                if self._is_review_page(container):
+                    logger.info("📝  Review page detected – skipping fill.")
                 else:
-                     logger.info(f"Clicked 'Next'/'Review' on step {form_step}. Moving to next step.")
-                     form_errors = 0 # Reset error count for the new step
-                     time.sleep(0.5) # Allow time for next step load
-                     # Continue to next iteration of the while loop
+                    self._fill_up_step(container, job)
 
-            except (ValueError, ElementNotInteractableException) as form_val_err:
-                 form_errors += 1
-                 logger.error(f"Error processing form step {form_step} (Error {form_errors}/{self.MAX_FORM_ERRORS_PER_JOB}): {form_val_err}")
-                 if utils:
-                     utils.capture_screenshot(self.driver, f"form_step_{form_step}_error_{form_errors}")
-                 if form_errors >= self.MAX_FORM_ERRORS_PER_JOB:
-                      logger.error(f"Maximum form errors ({self.MAX_FORM_ERRORS_PER_JOB}) reached. Aborting application for this job.")
-                      return False # Abort for this job
-                 else:
-                      # If not max errors, still abort for now as state is uncertain
-                      logger.warning("Aborting job due to form validation/navigation error.")
-                      return False
+                # ─── Next / Submit ─────────────────────────────────────
+                if self.form_handler.next_or_submit():
+                    logger.info(f"Application submitted successfully on step {form_step}.")
+                    return True    # 🎉 done
+                else:
+                    logger.debug("Moved to next step.")
+                    form_errors = 0        # reset counter
+                    time.sleep(0.4)
+                    continue               # loop for next step
 
-            except Exception as e:
-                 form_errors += 1
-                 logger.critical(f"Unexpected error during form step {form_step} (Error {form_errors}/{self.MAX_FORM_ERRORS_PER_JOB}): {e}", exc_info=True)
-                 if utils:
-                     utils.capture_screenshot(self.driver, f"form_step_{form_step}_unexpected_error")
-                 if form_errors >= self.MAX_FORM_ERRORS_PER_JOB:
-                      logger.error(f"Maximum form errors ({self.MAX_FORM_ERRORS_PER_JOB}) reached after unexpected error. Aborting application.")
-                      return False
-                 else:
-                      # Abort on unexpected error
-                      logger.warning("Aborting job due to unexpected form processing error.")
-                      return False
+            except TimeoutException as te:
+                form_errors += 1
+                logger.warning(
+                    f"Timeout locating elements on step {form_step} "
+                    f"(error {form_errors}/{self.MAX_FORM_ERRORS_PER_JOB}): {te}"
+                )
+            except Exception as exc:
+                form_errors += 1
+                logger.error(
+                    f"Unexpected error on step {form_step} "
+                    f"(error {form_errors}/{self.MAX_FORM_ERRORS_PER_JOB}): {exc!r}",
+                    exc_info=True,
+                )
 
-        # If loop finishes without submitting
-        logger.error(f"Reached maximum form steps ({self.MAX_FORM_FILL_ATTEMPTS}) without submitting. Aborting application.")
+            # ─── error handling / abort logic ─────────────────────────
+            if utils:
+                utils.capture_screenshot(
+                    self.driver,
+                    f"form_step_{form_step}_error_{type(exc).__name__ if 'exc' in locals() else 'timeout'}",
+                )
+            if form_errors >= self.MAX_FORM_ERRORS_PER_JOB:
+                logger.error("Maximum form errors reached — aborting application.")
+                return False
+
+        # Out of steps
+        logger.error("Reached MAX_FORM_FILL_ATTEMPTS without submitting.")
         if utils:
             utils.capture_screenshot(self.driver, "form_max_steps_reached")
         return False

@@ -320,8 +320,8 @@ class FileUploader:
                file_name = generate_humanized_filename("CoverLetter", job.title, job.company, datetime_str)
                file_path = folder_path / file_name
 
-               generate_pdf_from_text(str(file_path), cover_letter_text, f"Cover Letter for {job.title}")
-               check_file_size(str(file_path), 2 * 1024 * 1024) # 2 MB limit
+               generate_pdf_from_text(file_path, cover_letter_text, f"Cover Letter for {job.title}")
+               check_file_size(file_path, 2 * 1024 * 1024) # 2 MB limit
 
                logger.info(f"Generated personalized cover letter PDF: {file_path}")
                return file_path

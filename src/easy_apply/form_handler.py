@@ -119,7 +119,7 @@ class FormHandler:
             try:
                 # 1) lazy-scroll – garante que os botões sejam renderizados
                 html_el = self.driver.find_element(By.TAG_NAME, "html")
-                utils.scroll_slow(self.driver, html_el, step=400, reverse=False)
+                utils.scroll_slow(self.driver, html_el)
 
                 # 2) localiza todos os candidatos
                 WebDriverWait(self.driver, 6).until(

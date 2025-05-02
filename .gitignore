@@ -166,3 +166,4 @@ data_folder/personal_info.py
 data_folder/output/
 
 web/migrations/
+data_folder/private_context.yaml

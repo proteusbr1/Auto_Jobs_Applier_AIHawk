@@ -233,8 +233,30 @@ class JobExtractor:
             # 4. Extract data using BeautifulSoup selectors (adjust selectors as needed based on current LinkedIn HTML)
 
             # --- Title ---
-            title_element = soup.select_one('a.job-card-list__title, a.job-card-container__link, a strong') # Combine selectors
+            # First try to get title from aria-hidden element (visible text)
+            title_element = soup.select_one('a.job-card-list__title span[aria-hidden="true"], a.job-card-container__link span[aria-hidden="true"]')
+            if not title_element:
+                # Fallback to more general selectors
+                title_element = soup.select_one('a.job-card-list__title, a.job-card-container__link, a strong')
+            
             job_title = title_element.get_text(strip=True) if title_element else ""
+            
+            # Fix duplicate title issue (e.g., "SalespersonSalesperson" -> "Salesperson")
+            # Check if the title appears to be duplicated
+            if job_title and len(job_title) >= 2:
+                half_len = len(job_title) // 2
+                first_half = job_title[:half_len]
+                second_half = job_title[half_len:]
+                
+                # If both halves are identical or very similar, use just one half
+                if first_half == second_half:
+                    job_title = first_half
+                # For cases where one half might have extra characters
+                elif first_half.strip() == second_half.strip():
+                    job_title = first_half.strip()
+                # Check if the second half is a duplicate regardless of position
+                elif job_title.endswith(job_title[:half_len]):
+                    job_title = job_title[:half_len]
 
             # --- Link ---
             BASE_URL = "https://www.linkedin.com"

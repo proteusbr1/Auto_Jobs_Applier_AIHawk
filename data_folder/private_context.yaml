@@ -1,6 +1,8 @@
 # data_folder/private_context.yaml
 personal:
   full_name: "Mário Eunides Junqueira Guimarães Júnior"
+  location: "Pennsylvania PA US"
+  ziocode: "19129"
   pronouns: "he/him"
   citizenship: "Brazilian"
   dob: "1983-09-32"
@@ -12,7 +14,6 @@ contact:
 
 work_authorization:
   authorized_us: true
-  visa_status: "F-1 (STEM OPT eligible)"
   sponsorship_required: false
 
 availability:
@@ -53,8 +54,8 @@ skills_languages:
 portfolio:
   - "https://github.com/proteusbr1"
   - "https://www.linkedin.com/in/mario-junqueira/"
+  - ""
 
-# Campos livres para respostas recorrentes de 'radio' ou 'dropdown'
 quick_answers:
   can_start_immediately: "yes"
   work_weekends: "yes"

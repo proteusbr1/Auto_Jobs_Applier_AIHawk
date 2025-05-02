@@ -47,8 +47,8 @@ class TypeaheadProcessor(BaseProcessor):
     """
 
     # XPaths for suggestion container and individual options (adjust if UI changes)
-    SUGGESTION_CONTAINER_XPATH: str = ".//div[contains(@class,'basic-typeahead__triggered-content') or contains(@class,'typeahead-suggestions') or contains(@class,'pac-container') or contains(@class, 'artdeco-typeahead__results-list')]" # Added artdeco class
-    SUGGESTION_OPTION_XPATH: str = ".//li[contains(@class,'basic-typeahead__selectable') or contains(@class,'typeahead-suggestion') or contains(@class,'pac-item') or contains(@class, 'artdeco-typeahead__result')]" # Added artdeco class
+    SUGGESTION_CONTAINER_XPATH: str = ".//div[contains(@class,'basic-typeahead__triggered-content') or contains(@class,'typeahead-suggestions') or contains(@class,'pac-container') or contains(@class, 'artdeco-typeahead__results-list') or contains(@class, 'dropdown-menu') or contains(@class, 'search-basic-typeahead')]" # Added LinkedIn-specific classes
+    SUGGESTION_OPTION_XPATH: str = ".//div[contains(@class,'basic-typeahead__selectable')] or .//li[contains(@class,'basic-typeahead__selectable') or contains(@class,'typeahead-suggestion') or contains(@class,'pac-item') or contains(@class, 'artdeco-typeahead__result') or contains(@class, 'dropdown-item') or contains(@role, 'option')]" # Added div containers
     SUGGESTION_OPTION_ACTIVE_XPATH: str = ".//li[contains(@class, 'active') or contains(@class,'selected') or contains(@class,'--active') or contains(@class, 'artdeco-typeahead__result--selected')]" # Added artdeco class
 
     # Fallback answer if LLM fails
@@ -203,8 +203,8 @@ class TypeaheadProcessor(BaseProcessor):
                 time.sleep(0.3) 
                 logger.debug(f"Entered text '{answer}' into typeahead '{question_text}'. Waiting for suggestions...")
 
-                # Wait a bit longer for suggestions to appear after typing
-                time.sleep(1.5) # Adjust based on observed site behavior
+                # Wait longer for suggestions to appear after typing (extended for slower sites)
+                time.sleep(2.5) # Extended wait time for suggestions to fully appear
 
                 # --- Attempt to Select Suggestion ---
                 suggestion_selected = False
@@ -223,14 +223,66 @@ class TypeaheadProcessor(BaseProcessor):
                          # Check if field still has focus (sometimes lost after typing/JS)
                          if self.driver.switch_to.active_element != field:
                              field.click() # Try to refocus
-                             time.sleep(0.2)
+                             time.sleep(0.5)  # Increased focus wait time
 
-                         field.send_keys(Keys.ARROW_DOWN)
-                         time.sleep(0.5) # Wait for potential highlight/selection change
-                         field.send_keys(Keys.RETURN)
-                         time.sleep(0.5) # Wait for selection to process
+                         # For LinkedIn fields, try multiple arrow downs to ensure option selection
+                         if "search-basic-typeahead" in field.get_attribute("outerHTML") or "artdeco" in field.get_attribute("outerHTML"):
+                             logger.info("Detected LinkedIn typeahead - using enhanced selection")
+                             # Try direct selection first
+                             try:
+                                 # Find all selectable options
+                                 options = self.driver.find_elements(By.XPATH, "//div[contains(@class,'basic-typeahead__selectable')]")
+                                 if options:
+                                     logger.info(f"Found {len(options)} LinkedIn typeahead options")
+                                     # Look for Philadelphia specifically
+                                     for option in options:
+                                         option_text = option.text.strip()
+                                         if "Philadelphia" in option_text:
+                                             logger.info(f"Found exact Philadelphia match: '{option_text}'")
+                                             # Use JS click which is more reliable
+                                             self.driver.execute_script("arguments[0].click();", option)
+                                             time.sleep(1.0)
+                                             return True
+                                     # If no Philadelphia match found, click the first option
+                                     if options[0].is_displayed():
+                                         logger.info(f"Clicking first option: '{options[0].text.strip()}'")
+                                         self.driver.execute_script("arguments[0].click();", options[0])
+                                         time.sleep(1.0)
+                                         return True
+                             except Exception as e:
+                                 logger.warning(f"Direct selection failed: {e}. Falling back to keyboard navigation.")
+                             
+                             # Clear existing text and re-enter to refresh dropdown
+                             field.clear()
+                             field.send_keys(answer)
+                             time.sleep(1.5)
+                             
+                             # Press Down Arrow just once to highlight first option (Philadelphia)
+                             field.send_keys(Keys.ARROW_DOWN)
+                             time.sleep(0.8)
+                             
+                             # Press Enter to select
+                             field.send_keys(Keys.RETURN)
+                             time.sleep(1.0)  # Longer wait
+                             
+                             # Check if there's an error message
+                             error_elements = self.driver.find_elements(By.XPATH, 
+                                 "//div[contains(@class, 'artdeco-inline-feedback--error')]")
+                             if error_elements and any(e.is_displayed() for e in error_elements):
+                                 logger.warning("Error message displayed after selection attempt")
+                                 # Try tab to blur the field and trigger validation
+                                 field.send_keys(Keys.TAB)
+                                 time.sleep(0.5)
+                             
+                         else:
+                             # Standard keyboard navigation for other implementations
+                             field.send_keys(Keys.ARROW_DOWN)
+                             time.sleep(0.8)  # Wait longer for potential highlight/selection change
+                             field.send_keys(Keys.RETURN)
+                             time.sleep(0.8)  # Wait longer for selection to process
+                             
                          logger.info(f"Keyboard fallback executed for typeahead '{question_text}'.")
-                         suggestion_selected = True # Assume success if no error
+                         suggestion_selected = True  # We'll verify this below
                          # Verification after keyboard fallback is difficult
 
                          # Optional: Check if input value changed as expected (might be flaky)
@@ -246,10 +298,18 @@ class TypeaheadProcessor(BaseProcessor):
                         logger.error(f"Keyboard fallback failed for typeahead '{question_text}': {kb_err}", exc_info=False)
                         # Do not mark as selected, let the loop retry or fail
 
-                # If successful on this attempt, break the loop
-                if suggestion_selected:
+                # Verify success by checking for errors
+                error_elements = self.driver.find_elements(By.XPATH, 
+                    "//div[contains(@class, 'artdeco-inline-feedback--error')]")
+                has_visible_error = error_elements and any(e.is_displayed() for e in error_elements)
+                
+                # If successful on this attempt (no visible errors), break the loop
+                if suggestion_selected and not has_visible_error:
                     logger.debug(f"Typeahead selection successful on attempt {attempt + 1}")
                     return # Exit the function successfully
+                elif has_visible_error:
+                    logger.warning(f"Error message still visible after typeahead selection attempt {attempt + 1}")
+                    suggestion_selected = False  # We need to try again
 
                 # If not selected, log and prepare for next attempt (if any)
                 logger.warning(f"Typeahead selection failed on attempt {attempt + 1}.")
@@ -361,13 +421,48 @@ class TypeaheadProcessor(BaseProcessor):
 
         except TimeoutException:
              logger.warning("Timed out waiting for typeahead suggestions container or options to appear/be present.")
-             # Check if the value already matches (sometimes selection happens on blur/automatically)
+             # Instead of assuming success, try keyboard navigation approach
              try:
-                 current_value = field.get_attribute('value')
-                 if current_value and entered_text and current_value.lower() == entered_text.lower():
-                      logger.info("Typeahead value already matches entered text, assuming auto-selection occurred.")
-                      return True
-             except: pass # Ignore errors checking value
+                # First check if any dropdown is visible but not matched by our selectors
+                dropdown_elements = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'dropdown') or contains(@style, 'display: block')]")
+                visible_dropdowns = [d for d in dropdown_elements if d.is_displayed()]
+                
+                if visible_dropdowns:
+                    logger.info(f"Found {len(visible_dropdowns)} potentially visible dropdown elements. Attempting keyboard navigation.")
+                    # Focus the field again
+                    field.click()
+                    time.sleep(0.5)
+                    
+                    # First press down arrow to highlight first option
+                    field.send_keys(Keys.ARROW_DOWN)
+                    time.sleep(0.8)  # Wait longer for highlighting
+                    
+                    # Press Enter to select highlighted option
+                    field.send_keys(Keys.RETURN)
+                    time.sleep(0.8)  # Wait for selection to complete
+                    
+                    # Verify the selection was made
+                    current_value = field.get_attribute('value')
+                    logger.info(f"After keyboard navigation, field value is: '{current_value}'")
+                    
+                    # If field still has our entered text, we likely selected successfully
+                    if current_value and entered_text and entered_text.lower() in current_value.lower():
+                        logger.info("Successfully selected option with keyboard navigation.")
+                        return True
+                    return False
+                else:
+                    # Only assume success if dropdown doesn't appear AND text matches exactly
+                    current_value = field.get_attribute('value')
+                    if current_value and entered_text and current_value.lower() == entered_text.lower():
+                        logger.info("No dropdown detected and field already contains expected text. Proceeding cautiously.")
+                        # One more attempt to confirm by clicking outside to trigger blur
+                        try:
+                            self.driver.execute_script("arguments[0].blur();", field)
+                            time.sleep(0.5)
+                        except: pass
+                        return True
+             except Exception as e:
+                logger.error(f"Error during keyboard fallback after timeout: {e}")
              return False # Suggestions didn't appear or match
         except NoSuchElementException: # Should be caught by WebDriverWait, but just in case
              logger.warning("Suggestion container or options not found via NoSuchElementException.")
