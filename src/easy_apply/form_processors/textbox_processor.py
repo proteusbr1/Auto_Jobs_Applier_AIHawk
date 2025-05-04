@@ -188,49 +188,51 @@ class TextboxProcessor(BaseProcessor):
             return False
 
 
-    def _extract_question_info(self, field: WebElement, section: WebElement, is_textarea: bool) -> Tuple[str, str]:
-        """Extracts the question text and determines the question type (textbox/numeric)."""
+    def _extract_question_info(
+        self,
+        field: WebElement,
+        section: WebElement,
+        is_textarea: bool
+    ) -> Tuple[str, str]:
+        """
+        1. <input type="number">                   ➜ numeric
+        2. id termina em '-numeric' ou contém 'numeric' ➜ numeric
+        3. Caso contrário                          ➜ textbox
+        """
+        # ── as variáveis originais ───────────────────────────
         question = "Unknown Question"
-        qtype = "textbox" # Default type
+        qtype = "textbox"
 
         try:
-            # Use the base processor's method to get the primary label/question
-            question = self.extract_question_text(section) # Already sanitized
+            # agora pode levantar RuntimeError
+            question = self.extract_question_text(section)
 
-            # Determine type based on input type attribute or keywords in question
+            # heurística 1 – atributo type
             field_type_attr = (field.get_attribute("type") or "").lower()
-
             is_numeric_type = field_type_attr == "number"
-            # Check for keywords commonly associated with numeric answers
-            is_numeric_keyword = any(
-                kw in question.lower() for kw in [
-                    "numeric", "number", "year", "salary", "compensation",
-                    "experience", "how many", "rate", "wage", "age"
-                 ]
-            )
 
-            # If it's explicitly type="number" or keywords suggest numeric, classify as numeric
-            # Exclude textareas unless question strongly implies numeric (like salary)
-            if is_numeric_type or (is_numeric_keyword and not is_textarea):
-                 # Special case: If it's asking for salary *range* or includes non-numeric chars, keep as textbox
-                 if "range" in question.lower() or any(c in question for c in ['$', '€', '£']):
-                      qtype = "textbox"
-                 else:
-                     qtype = "numeric"
-            elif is_textarea:
-                 # Check if textarea question implies numeric (less common but possible)
-                 if any(kw in question.lower() for kw in ["salary", "compensation", "expected wage", "numeric value"]):
-                     qtype = "numeric"
-                 else:
-                      qtype = "textbox" # Default textarea to textbox
+            # heurística 2 – id
+            id_attr = (field.get_attribute("id") or "").lower()
+            is_numeric_id = id_attr.endswith("-numeric") or "numeric" in id_attr
+
+            numeric_hint = is_numeric_type or is_numeric_id
+
+            # decisão final
+            if numeric_hint and not is_textarea:
+                qtype = "numeric"
             else:
-                 qtype = "textbox" # Default standard input to textbox
+                qtype = "textbox"
 
+        except RuntimeError:
+            # Propaga o erro “não foi possível extrair a pergunta”
+            raise
         except Exception as e:
-            logger.warning(f"Failed to accurately determine question info: {e}", exc_info=False)
-            # Fallback defaults
-            question = question if question != "Unknown Question" else "Unknown Text Field"
-            qtype = "textbox"
+            # Outros erros inesperados ainda podem ser registrados
+            logger.warning(
+                f"Failed to determine question info accurately: {e}", exc_info=False
+            )
+            if question == "Unknown Question":
+                question = "Unknown Text Field"
 
         logger.trace(f"Determined question='{question}', type='{qtype}'")
         return question, qtype

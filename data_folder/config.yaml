@@ -84,8 +84,9 @@ title_blacklist:
   - Telesales
   - Tourism
   - Sales
-  - No experience
+  - No Experience
   - Salesperson
+  - Investor
 
 description_blacklist:
   # Add keywords or phrases here that should cause a job to be skipped if found in the description.

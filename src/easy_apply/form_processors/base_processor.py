@@ -178,56 +178,66 @@ class BaseProcessor:
 
     def extract_question_text(self, section: WebElement) -> str:
         """
-        Extracts the associated question or label text for a form section/element.
+        Extracts and **returns** the label/question associated with a form
+        section.  
+        If no text can be found, **raises RuntimeError** instead of merely
+        logging a warning, so the caller can decide how to handle an
+        unrecoverable situation.
 
-        Tries multiple strategies to find the most relevant label text.
+        Args
+        ----
+        section : WebElement
+            The container that holds the form element and its label.
 
-        Args:
-            section (WebElement): The form section WebElement.
+        Returns
+        -------
+        str
+            Sanitised question text.
 
-        Returns:
-            str: The extracted question text, sanitized, or 'Unknown Question' if extraction fails.
+        Raises
+        ------
+        RuntimeError
+            When no question text can be extracted from the section.
         """
+        logger.trace("Attempting to extract question text…")
         question_text: Optional[str] = None
-        logger.trace("Attempting to extract question text...")
 
-        # Strategy 1: Find <label> elements directly within the section
+        # ─── Strategy 1: visible <label> ────────────────────────────────────
         try:
             labels = section.find_elements(By.TAG_NAME, self.selectors["common"]["label"])
-            visible_labels = [label.text.strip() for label in labels if label.is_displayed() and label.text.strip()]
+            visible_labels = [lbl.text.strip() for lbl in labels
+                              if lbl.is_displayed() and lbl.text.strip()]
             if visible_labels:
-                question_text = visible_labels[0] # Take the first visible label
-                logger.trace(f"Found question via <label>: '{question_text}'")
-                # Further check if label is associated with an input ID (more reliable)
+                question_text = visible_labels[0]
+                logger.trace(f"Found question via <label>: “{question_text}”")
+
+                # If the label’s “for” points to an input, prefer that
                 try:
-                    input_id = section.find_element(By.XPATH, ".//input[@id]|.//textarea[@id]|.//select[@id]").get_attribute("id")
+                    input_id = section.find_element(
+                        By.XPATH,
+                        ".//input[@id]|.//textarea[@id]|.//select[@id]"
+                    ).get_attribute("id")
                     if input_id:
-                        matching_label = section.find_elements(By.XPATH, f".//label[@for='{input_id}']")
-                        if matching_label and matching_label[0].text.strip():
-                            question_text = matching_label[0].text.strip()
-                            logger.trace(f"Refined question via label[@for='{input_id}']: '{question_text}'")
+                        linked = section.find_elements(By.XPATH, f".//label[@for='{input_id}']")
+                        if linked and linked[0].text.strip():
+                            question_text = linked[0].text.strip()
+                            logger.trace(f"Refined via label[@for='{input_id}']: “{question_text}”")
                 except NoSuchElementException:
-                    pass # Input ID or matching label not found, stick with first visible label
-                except Exception as e:
-                     logger.warning(f"Error refining question text using label 'for' attribute: {e}", exc_info=False)
-
-        except StaleElementReferenceException:
-            logger.warning("Stale element reference encountered while extracting label text.")
-            # Fallback to other methods or return early
+                    pass  # no associated input id, keep first visible label
         except Exception as e:
-            logger.warning(f"Error extracting text using <label>: {e}", exc_info=False)
+            logger.warning(f"Error while using <label>: {e}", exc_info=False)
 
-        # Strategy 2: Look for specific title/legend elements (common in fieldsets)
+        # ─── Strategy 2: <legend> (fieldset titles) ────────────────────────
         if not question_text:
             try:
-                # Check for legend (common in fieldsets for radio/checkbox groups)
                 legends = section.find_elements(By.TAG_NAME, "legend")
-                visible_legends = [leg.text.strip() for leg in legends if leg.is_displayed() and leg.text.strip()]
+                visible_legends = [lg.text.strip() for lg in legends
+                                   if lg.is_displayed() and lg.text.strip()]
                 if visible_legends:
                     question_text = visible_legends[0]
-                    logger.trace(f"Found question via <legend>: '{question_text}'")
+                    logger.trace(f"Found question via <legend>: “{question_text}”")
             except Exception as e:
-                 logger.warning(f"Error extracting text using <legend>: {e}", exc_info=False)
+                logger.warning(f"Error while using <legend>: {e}", exc_info=False)
 
 
         # Strategy 3: Fallback to specific class names if label/legend fails
@@ -260,18 +270,21 @@ class BaseProcessor:
 
         # Sanitize and return
         if question_text:
-            sanitized_text = self.answer_storage.sanitize_text(question_text) # Reuse sanitization logic
-            logger.debug(f"Extracted question: '{sanitized_text}' (Original: '{question_text[:50]}...')")
-            return sanitized_text
-        else:
-            logger.warning("Failed to extract question text from section.")
-            # Consider taking a screenshot if extraction fails frequently
-            if utils:
-                try:
-                    utils.capture_screenshot(self.driver, f"question_extraction_failed_{self.__class__.__name__}")
-                except Exception as ss_error:
-                    logger.warning(f"Failed to capture screenshot on question extraction failure: {ss_error}")
-            return "Unknown Question"
+            sanitised = self.answer_storage.sanitize_text(question_text)
+            logger.debug(f"Extracted question: “{sanitised}” (original: “{question_text[:50]}…”)")
+            return sanitised
+
+        # Nothing found → raise hard error
+        msg = "Failed to extract question text from the form section."
+        logger.error(msg)
+        if utils:
+            try:
+                utils.capture_screenshot(
+                    self.driver, f"question_extraction_failed_{self.__class__.__name__}"
+                )
+            except Exception as ss_err:
+                logger.warning(f"Screenshot capture failed: {ss_err}", exc_info=False)
+        raise RuntimeError(msg)
 
     def enter_text(self, element: WebElement, text: str) -> None:
         """

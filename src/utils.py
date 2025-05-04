@@ -2,20 +2,31 @@
 """
 General utility functions for the web automation bot.
 
-Includes logging configuration, browser setup helpers, file/directory operations,
-and Selenium interaction utilities like scrolling, screenshotting, and anti-detection enhancements.
+• Logging (Loguru + stdlib intercept)
+• Persistent-profile Chrome setup with anti-detection tweaks
+• Helpers: directory utils, screenshot, human-typing, smooth scroll, etc.
+
+‼️ 2025-05-02 — FIXES
+────────────────────
+1. Always fall back to DEFAULT_CHROME_PROFILE_DIR when profile_path/env var absent
+2. DEFAULT_CHROME_PROFILE_DIR is now absolute (~/.aihawk/…) to avoid duplicates
+3. Example hook to persist the **same** User-Agent between runs (optional)
 """
-import re
+
+from __future__ import annotations
+
 import os
 import random
+import re
 import sys
 import time
 import logging
+import pickle
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Union
 
-# Third-party Imports
+# ── Third-party ──────────────────────────────────────────────────────────────
 from loguru import logger
 from selenium import webdriver
 from selenium.common.exceptions import (
@@ -28,321 +39,211 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options as ChromeOptions
-# Anti-detection Enhancement: Fake User-Agent
+
 try:
     from fake_useragent import UserAgent
     _has_fake_useragent = True
 except ImportError:
-    logger.warning("`fake-useragent` not installed. Falling back to a default User-Agent. "
-                   "Install with: pip install fake-useragent")
+    logger.warning("`fake-useragent` not installed. Falling back to a default UA.  "
+                   "pip install fake-useragent for better stealth.")
     _has_fake_useragent = False
 
+# ── Defaults ────────────────────────────────────────────────────────────────
+DEFAULT_LOG_DIR            = Path("./logs")
+DEFAULT_LOG_FILENAME       = "automation_run.log"
+DEFAULT_CONSOLE_LOG_LEVEL  = "INFO"
+DEFAULT_FILE_LOG_LEVEL     = "DEBUG"
+DEFAULT_SCREENSHOT_DIR     = Path("./screenshots")
 
-# --- Configuration Defaults (Can be overridden by environment variables) ---
-DEFAULT_LOG_DIR = Path("./logs")
-DEFAULT_LOG_FILENAME = "automation_run.log"
-DEFAULT_CONSOLE_LOG_LEVEL = "INFO"
-DEFAULT_FILE_LOG_LEVEL = "DEBUG"
-DEFAULT_SCREENSHOT_DIR = Path("./screenshots")
-DEFAULT_CHROME_PROFILE_DIR = Path("./chrome_profile/default_user") # Generic name
-DEFAULT_BROWSER_LANGUAGE = "en-US,en;q=0.9" # Default language
+# *Absolute* path  evita múltiplos perfis se rodar de diretórios diferentes
+DEFAULT_CHROME_PROFILE_DIR = Path.home() / ".aihawk" / "chrome_profile" / "default_user"
+DEFAULT_BROWSER_LANGUAGE   = "en-US,en;q=0.9"
 
-# --- Logging Setup ---
+ALLOWED_LOG_LEVELS = [
+    "TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"
+]
 
-# Allowed log levels for validation
-ALLOWED_LOG_LEVELS = ["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"]
-
+# ── Logging intercept helper ────────────────────────────────────────────────
 class InterceptHandler(logging.Handler):
-    """Intercepts standard logging messages and redirects them to Loguru."""
     def emit(self, record: logging.LogRecord):
-        # Get corresponding Loguru level if it exists
         try:
             level = logger.level(record.levelname).name
         except ValueError:
-            level = record.levelno # Keep original level number if mapping fails
-        # Find caller from where originated the logged message
+            level = record.levelno
         frame, depth = logging.currentframe(), 2
-        # Handle potential None frames
         while frame and frame.f_code.co_filename == logging.__file__:
-             # Check if frame.f_back exists before accessing it
             if frame.f_back:
                 frame = frame.f_back
                 depth += 1
             else:
-                 # Break if there's no previous frame (shouldn't happen in normal logging)
-                 break
-        # Ensure frame is not None before proceeding
-        if frame:
-            logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
-        else:
-            # Fallback if frame becomes None unexpectedly
-             logger.opt(exception=record.exc_info).log(level, record.getMessage())
+                break
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
 
-
-def configure_logging():
-    """
-    Configures Loguru for console and file logging.
-
-    Reads log levels from environment variables (CONSOLE_LOG_LEVEL, FILE_LOG_LEVEL)
-    with defaults. Intercepts standard Python logging.
-    """
-    # Determine log levels from environment or use defaults
+# ── Logging setup ───────────────────────────────────────────────────────────
+def configure_logging() -> None:
     console_level = os.getenv("CONSOLE_LOG_LEVEL", DEFAULT_CONSOLE_LOG_LEVEL).upper()
-    file_level = os.getenv("FILE_LOG_LEVEL", DEFAULT_FILE_LOG_LEVEL).upper()
+    file_level    = os.getenv("FILE_LOG_LEVEL",    DEFAULT_FILE_LOG_LEVEL   ).upper()
 
-    # Validate levels
     if console_level not in ALLOWED_LOG_LEVELS:
-        print(f"Warning: Invalid CONSOLE_LOG_LEVEL '{console_level}'. Defaulting to '{DEFAULT_CONSOLE_LOG_LEVEL}'.", file=sys.stderr)
+        print(f"[utils] invalid CONSOLE_LOG_LEVEL {console_level!r}, defaulting to INFO", file=sys.stderr)
         console_level = DEFAULT_CONSOLE_LOG_LEVEL
     if file_level not in ALLOWED_LOG_LEVELS:
-        print(f"Warning: Invalid FILE_LOG_LEVEL '{file_level}'. Defaulting to '{DEFAULT_FILE_LOG_LEVEL}'.", file=sys.stderr)
+        print(f"[utils] invalid FILE_LOG_LEVEL {file_level!r}, defaulting to DEBUG", file=sys.stderr)
         file_level = DEFAULT_FILE_LOG_LEVEL
 
-    # Ensure log directory exists
     log_dir = DEFAULT_LOG_DIR
-    log_file_path = log_dir / DEFAULT_LOG_FILENAME
+    log_path = log_dir / DEFAULT_LOG_FILENAME
     try:
-         log_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
-         print(f"Error: Could not create log directory {log_dir}: {e}", file=sys.stderr)
-         # Decide: exit or continue without file logging? Continuing for now.
-         file_level = "CRITICAL" # Effectively disable file logging if dir fails
+        print(f"Error creating log dir {log_dir}: {e}", file=sys.stderr)
+        file_level = "CRITICAL"
 
-
-    # Configure Loguru
-    logger.remove() # Remove default handler
-
-    # Console Handler
+    logger.remove()
     logger.add(
-        sys.stderr, # Log to stderr for better compatibility with pipelines/redirection
+        sys.stderr,
         level=console_level,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}:{function}:{line}</cyan> - <level>{message}</level>",
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+               "<level>{level: <8}</level> | "
+               "<cyan>{name}:{function}:{line}</cyan> - <level>{message}</level>",
         colorize=True,
-        enqueue=True # Make logging calls non-blocking
+        enqueue=True,
     )
+    logger.add(
+        log_path,
+        level=file_level,
+        rotation="100 MB",
+        retention="14 days",
+        compression="zip",
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | "
+               "{process} | {name}:{function}:{line} - {message}",
+        enqueue=True,
+    )
+    logging.basicConfig(handlers=[InterceptHandler()], level=0)
 
-    # File Handler (only if directory creation succeeded implicitly)
-    try:
-         logger.add(
-             log_file_path,
-             level=file_level,
-             rotation="100 MB", # Rotate when file reaches 100MB
-             retention="14 days", # Keep logs for 14 days
-             compression="zip", # Compress rotated logs
-             format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {process} | {name}:{function}:{line} - {message}",
-             enqueue=True, # Make logging calls non-blocking
-             # serialize=True # Optional: Log as JSON objects
-         )
-         logger.info(f"File logging configured at level {file_level} to {log_file_path}")
-    except Exception as e:
-         logger.error(f"Failed to configure file logging to {log_file_path}: {e}")
-
-
-    # Intercept standard logging
-    logging.basicConfig(handlers=[InterceptHandler()], level=0) # Capture all levels, Loguru filters them
-    # Set levels for noisy libraries
-    noisy_loggers = ["webdriver_manager", "selenium.webdriver.remote.remote_connection", "urllib3.connectionpool", "hpack"]
-    for log_name in noisy_loggers:
-         logging.getLogger(log_name).setLevel(logging.WARNING)
-
-    logger.info(f"Logging configured. Console level: {console_level}. File level: {file_level}.")
-
-# Call configuration explicitly in your main application entry point (e.g., main.py)
-# configure_logging()
-
-
-# --- Directory & File Utils ---
-
+# ── Directory helpers ───────────────────────────────────────────────────────
 def ensure_directory(dir_path: Union[str, Path]) -> Optional[Path]:
-    """
-    Ensures that the specified directory exists, creating it if necessary.
-
-    Args:
-        dir_path (Union[str, Path]): The path to the directory.
-
-    Returns:
-        Optional[Path]: The Path object of the directory if successful, None otherwise.
-    """
     try:
         path = Path(dir_path)
         path.mkdir(parents=True, exist_ok=True)
-        logger.trace(f"Directory ensured: {path.resolve()}")
         return path
-    except OSError as e:
-        logger.error(f"Failed to create or access directory: {dir_path} - {e}", exc_info=True)
-        return None
-    except Exception as e: # Catch other potential errors like permission issues
-        logger.error(f"Unexpected error ensuring directory {dir_path}: {e}", exc_info=True)
+    except Exception as e:
+        logger.error(f"ensure_directory({dir_path}) failed: {e}")
         return None
 
-
-# --- Chrome Profile & Options ---
-
+# ── Chrome profile helpers ──────────────────────────────────────────────────
 def ensure_chrome_profile(profile_dir: Path = DEFAULT_CHROME_PROFILE_DIR) -> Optional[Path]:
-    """
-    Ensures the Chrome profile directory structure exists.
-
-    Args:
-        profile_dir (Path): The desired path for the Chrome profile directory.
-                            Defaults to DEFAULT_CHROME_PROFILE_DIR.
-
-    Returns:
-        Optional[Path]: The profile directory Path object if successful, None otherwise.
-    """
-    logger.debug(f"Ensuring Chrome profile directory exists at: {profile_dir}")
+    logger.debug(f"Ensuring Chrome profile dir exists: {profile_dir}")
     return ensure_directory(profile_dir)
 
+# optional: persist a UA between runs (prevents “device change” logouts)
+_UA_FILE = DEFAULT_CHROME_PROFILE_DIR.parent / ".user_agent.txt"
+def _get_persistent_ua() -> str:
+    if _UA_FILE.exists():
+        return _UA_FILE.read_text().strip()
+    if _has_fake_useragent:
+        try:
+            ua = UserAgent().chrome
+        except Exception:
+            ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+    else:
+        ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+    try:
+        _UA_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _UA_FILE.write_text(ua)
+    except OSError:
+        pass
+    return ua
 
+# ── Chrome options builder ─────────────────────────────────────────────────
 def chrome_browser_options(
     headless: bool = False,
     profile_path: Optional[Path] = None,
     binary_location: Optional[str] = None,
-    proxy: Optional[str] = None # New parameter for proxy
+    proxy: Optional[str] = None,
 ) -> ChromeOptions:
-    """
-    Configures and returns ChromeOptions for the WebDriver, including anti-detection measures.
+    opts = ChromeOptions()
 
-    Args:
-        headless (bool): Run in headless mode. Defaults to False.
-                         Forced to True if DISPLAY environment variable is not set.
-        profile_path (Optional[Path]): Path to the persistent user profile directory.
-        binary_location (Optional[str]): Path to a custom Chrome binary.
-        proxy (Optional[str]): Proxy server string (e.g., "http://user:pass@host:port" or "socks5://host:port").
-
-    Returns:
-        ChromeOptions: Configured options object.
-    """
-    logger.debug("Configuring Chrome browser options with anti-detection enhancements…")
-
-    options = ChromeOptions()
-
-    # --- Determine settings from environment variables or parameters ---
-    # Headless mode check (forced if no display)
+    # ── Resolve parameters/ENV ────────────────────────────────────────────
     env_headless = os.getenv("HEADLESS", str(headless)).lower() == "true"
     if not os.getenv("DISPLAY") and not env_headless:
-        logger.info("DISPLAY environment variable not set - forcing headless mode.")
+        logger.info("DISPLAY not set – forcing headless mode")
         env_headless = True
 
-    # Profile path
-    env_profile = Path(os.getenv("CHROME_PROFILE_PATH")) if os.getenv("CHROME_PROFILE_PATH") else profile_path
+    env_profile  = Path(os.getenv("CHROME_PROFILE_PATH")) if os.getenv("CHROME_PROFILE_PATH") else profile_path
+    # 🔧 FIX – fallback obrigatório
+    if env_profile is None:
+        env_profile = DEFAULT_CHROME_PROFILE_DIR
+    env_profile = Path(env_profile).expanduser().resolve()
 
-    # Binary path
-    env_binary = os.getenv("CHROME_BINARY_PATH") or binary_location
+    env_binary   = os.getenv("CHROME_BINARY_PATH") or binary_location
+    env_lang     = os.getenv("BROWSER_LANG", DEFAULT_BROWSER_LANGUAGE)
 
-    # Browser Language
-    env_lang = os.getenv("BROWSER_LANG", DEFAULT_BROWSER_LANGUAGE)
-
-    # --- Apply Options ---
-
-    # Headless or Headed
+    # ── Basic headless/headed flags ───────────────────────────────────────
     if env_headless:
-        logger.info("Headless mode enabled.")
-        options.add_argument("--headless=new") # Use the new, more stealthy headless mode
-        options.add_argument("--disable-gpu") # Often needed for headless
-        options.add_argument("--window-size=1920,1080") # Use a common desktop resolution
+        opts.add_argument("--headless=new")
+        opts.add_argument("--disable-gpu")
+        opts.add_argument("--window-size=1920,1080")
     else:
-        # Start maximized for a more natural appearance in headed mode
-        options.add_argument("--start-maximized")
+        opts.add_argument("--start-maximized")
 
-    # Custom Binary Path
-    if env_binary:
-        if Path(env_binary).exists():
-             options.binary_location = str(env_binary)
-             logger.info(f"Using custom Chrome binary at: {env_binary}")
-        else:
-             logger.warning(f"Custom Chrome binary path specified but not found: {env_binary}. Using default.")
+    if env_binary and Path(env_binary).exists():
+        opts.binary_location = str(env_binary)
 
+    # ── Generic stability / stealth flags ─────────────────────────────────
+    opts.page_load_strategy = "eager"
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_argument("--ignore-certificate-errors")
+    opts.add_argument("--disable-background-timer-throttling")
+    opts.add_argument("--disable-backgrounding-occluded-windows")
+    opts.add_argument("--disable-popup-blocking")
+    opts.add_argument("--no-first-run")
+    opts.add_argument("--no-default-browser-check")
+    opts.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+    opts.add_experimental_option("useAutomationExtension", False)
 
-    # Common Arguments for Stability and Stealth
-    options.page_load_strategy = "eager" # Load faster, interact sooner (can be 'normal' too)
-    options.add_argument("--no-sandbox") # Often required in containerized environments
-    options.add_argument("--disable-dev-shm-usage") # Overcomes resource limits in Docker/Linux
-    options.add_argument("--disable-blink-features=AutomationControlled") # Another way to hide automation
-    options.add_argument("--ignore-certificate-errors") # Handle potential SSL issues (use carefully)
-    options.add_argument("--disable-extensions") # Avoid interference from extensions
-    options.add_argument("--disable-background-timer-throttling")
-    options.add_argument("--disable-backgrounding-occluded-windows")
-    options.add_argument("--disable-translate") # Disable Google Translate popup
-    options.add_argument("--disable-popup-blocking")
-    options.add_argument("--no-first-run")
-    options.add_argument("--no-default-browser-check")
-    options.add_argument("--disable-logging") # Reduce browser's own logging
-    options.add_argument("--log-level=3") # Set Chrome's internal log level to FATAL
+    # User-Agent (persistent)
+    ua = _get_persistent_ua()
+    opts.add_argument(f"user-agent={ua}")
 
-    # Crucial Anti-Detection Flags
-    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-    options.add_experimental_option('useAutomationExtension', False)
+    # Language
+    opts.add_argument(f"--lang={env_lang}")
 
-    # User-Agent Spoofing (Dynamic)
-    if _has_fake_useragent:
-        try:
-            ua = UserAgent()
-            random_ua = ua.chrome # Get a random Chrome UA
-            options.add_argument(f'user-agent={random_ua}')
-            logger.info(f"Using dynamic User-Agent: {random_ua}")
-        except Exception as ua_error:
-            logger.warning(f"Failed to get dynamic User-Agent using fake-useragent: {ua_error}. Using a default.")
-            # Fallback to a recent, common UA if fake-useragent fails
-            options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36') # Update Chrome version periodically
-    else:
-        # Fallback if fake-useragent is not installed
-        options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36') # Update Chrome version periodically
-
-    # Browser Language
-    options.add_argument(f"--lang={env_lang}")
-    logger.info(f"Setting browser language: {env_lang}")
-
-    # WebRTC IP Leak Prevention (Optional, can sometimes interfere)
-    # prefs["profile.default_content_setting_values.webrtc_ip_handling_policy"] = "disable_non_proxied_udp"
-
-    # Realistic Browser Preferences
+    # Preferences
     prefs = {
-        # Enable images and stylesheets to appear more human
         "profile.default_content_setting_values.images": 1,
         "profile.managed_default_content_settings.stylesheets": 1,
-        # Essential settings
         "profile.default_content_setting_values.cookies": 1,
         "profile.default_content_setting_values.javascript": 1,
-        # Disable things that might cause popups or inconsistencies
-        "profile.default_content_setting_values.plugins": 2, # Disable plugins
-        "profile.default_content_setting_values.popups": 2, # Disable popups
-        "profile.default_content_setting_values.geolocation": 2, # Disable geolocation prompt
-        "profile.default_content_setting_values.notifications": 2, # Disable notifications prompt
-        # Security/Privacy related
-        "credentials_enable_service": False, # Disable Chrome's password saving prompt
-        "profile.password_manager_enabled": False, # Disable password manager
-        "download.prompt_for_download": False, # Disable download prompt, handle downloads programmatically if needed
+        "profile.default_content_setting_values.plugins": 2,
+        "profile.default_content_setting_values.popups": 2,
+        "profile.default_content_setting_values.geolocation": 2,
+        "profile.default_content_setting_values.notifications": 2,
+        "credentials_enable_service": False,
+        "profile.password_manager_enabled": False,
+        "download.prompt_for_download": False,
         "download.directory_upgrade": True,
-        # "safeBrowse.enabled": True, # Keep Safe Browse enabled for realism? Or disable? Test needed.
     }
-    options.add_experimental_option("prefs", prefs)
+    opts.add_experimental_option("prefs", prefs)
 
-    # Persistent Profile (Crucial for sessions, cookies, mimicking returning user)
-    if env_profile:
-        profile_dir_to_ensure = Path(env_profile)
-        if ensure_chrome_profile(profile_dir_to_ensure):
-            # Note: user-data-dir should be the *parent* directory of the profile folder
-            user_data_dir = profile_dir_to_ensure.parent.resolve()
-            profile_directory_name = profile_dir_to_ensure.name
-            options.add_argument(f"--user-data-dir={user_data_dir}")
-            options.add_argument(f"--profile-directory={profile_directory_name}")
-            logger.info(f"Using Chrome profile: Name='{profile_directory_name}', Parent Dir='{user_data_dir}'")
-        else:
-            logger.error(f"Failed to ensure profile directory {env_profile}. Profile will not be persistent.")
+    # Persistent profile flags
+    if ensure_chrome_profile(env_profile):
+        opts.add_argument(f"--user-data-dir={env_profile.parent}")
+        opts.add_argument(f"--profile-directory={env_profile.name}")
+        logger.info(f"Using Chrome profile → {env_profile}")
+    else:
+        logger.error("Profile directory could not be created; session will not persist.")
 
+    if proxy:
+        opts.add_argument(f"--proxy-server={proxy}")
 
+    return opts
 
-    # Advanced Anti-Detection (Commented out - use with caution)
-    # Some sites check navigator.webdriver; this attempts to override it after load.
-    # You would execute this script via driver.execute_script(...) after page load.
-    # logger.debug("Note: To further hide automation, consider executing JS after page load: "
-    #             "\"Object.defineProperty(navigator, 'webdriver', {get: () => undefined})\"")
-
-    logger.debug("Chrome browser options configured.")
-    return options
-
-# --- Selenium Interaction Utilities ---
-
+# ── Selenium helpers (scroll, type, screenshots) ───────────────────────────
 def capture_screenshot(driver: WebDriver, name_prefix: str) -> Optional[Path]:
     """
     Captures a screenshot of the current browser window, saving it with a timestamp.
@@ -379,30 +280,15 @@ def capture_screenshot(driver: WebDriver, name_prefix: str) -> Optional[Path]:
     except Exception as e:
         logger.error(f"Unexpected error capturing screenshot '{name_prefix}': {e}", exc_info=True)
         return None
+    
 
-def is_scrollable(driver: WebDriver, element: WebElement) -> bool:
-    """Utility function to determine if an element is scrollable using JS."""
+def is_scrollable(driver: WebDriver, el: WebElement) -> bool:
     try:
-        # Use JavaScript for a more reliable check across browser versions
         return driver.execute_script(
-            "return arguments[0].scrollHeight > arguments[0].clientHeight;",
-            element
+            "return arguments[0].scrollHeight > arguments[0].clientHeight;", el
         )
-    except StaleElementReferenceException:
-        logger.warning("Stale element reference encountered while checking scrollability.")
+    except Exception:
         return False
-    except Exception as e:
-        logger.error(f"Error determining scrollability via JS: {e}", exc_info=False)
-        # Fallback attempt using attributes (less reliable)
-        try:
-            scroll_height = int(element.get_attribute("scrollHeight") or 0)
-            client_height = int(element.get_attribute("clientHeight") or 0)
-            scrollable = scroll_height > client_height
-            logger.trace(f"Scrollability fallback check: scrollH={scroll_height}, clientH={client_height}, scrollable={scrollable}")
-            return scrollable
-        except Exception as fallback_e:
-            logger.error(f"Fallback scrollability check also failed: {fallback_e}", exc_info=False)
-            return False
 
 def scroll_slow(driver: WebDriver, scrollable_element: WebElement, direction: str = "down", max_attempts: int = 5) -> None:
     """
@@ -489,32 +375,30 @@ def scroll_slow(driver: WebDriver, scrollable_element: WebElement, direction: st
 
     logger.debug("Finished scrolling down.")
 
+def type_like_human(el: WebElement, text: str,
+                    min_delay: float = 0.05, max_delay: float = 0.18) -> None:
+    for ch in text:
+        el.send_keys(ch)
+        time.sleep(random.uniform(min_delay, max_delay))
 
-def type_like_human(element: WebElement, text: str, min_delay: float = 0.05, max_delay: float = 0.18) -> None:
-    """
-    Sends keys to an element character by character with random delays, mimicking human typing.
+# ── Cookie persistence helpers (plan B) ─────────────────────────────────────
+COOKIE_FILE = DEFAULT_CHROME_PROFILE_DIR.parent / "cookies.pkl"
 
-    Args:
-        element (WebElement): The input element to type into.
-        text (str): The text to type.
-        min_delay (float): Minimum delay between characters in seconds.
-        max_delay (float): Maximum delay between characters in seconds.
-    """
-    logger.trace(f"Typing text like human: '{text[:20]}...' into element {element.tag_name}")
-    for char in text:
-        try:
-            element.send_keys(char)
-            time.sleep(random.uniform(min_delay, max_delay))
-        except ElementNotInteractableException:
-            logger.error(f"Element {element.tag_name} not interactable while trying to type '{char}'. Stopping typing.")
-            capture_screenshot(element.parent, f"typing_error_not_interactable") # element.parent is WebDriver
-            raise # Re-raise the exception so the caller knows typing failed
-        except StaleElementReferenceException:
-             logger.error(f"Element {element.tag_name} became stale while typing '{char}'. Stopping typing.")
-             capture_screenshot(element.parent, f"typing_error_stale")
-             raise
-        except Exception as e:
-             logger.error(f"Unexpected error typing character '{char}': {e}", exc_info=True)
-             capture_screenshot(element.parent, f"typing_error_unexpected")
-             raise
-    logger.trace("Finished typing like human.")
+def save_cookies(driver: WebDriver) -> None:
+    try:
+        pickle.dump(driver.get_cookies(), COOKIE_FILE.open("wb"))
+        logger.debug(f"Saved cookies → {COOKIE_FILE}")
+    except Exception as e:
+        logger.error(f"save_cookies failed: {e}")
+
+def load_cookies(driver: WebDriver, url: str) -> None:
+    if not COOKIE_FILE.exists():
+        return
+    driver.get(url)
+    try:
+        for c in pickle.load(COOKIE_FILE.open("rb")):
+            driver.add_cookie(c)
+        driver.refresh()
+        logger.debug("Cookies re-loaded & page refreshed")
+    except Exception as e:
+        logger.error(f"load_cookies failed: {e}")

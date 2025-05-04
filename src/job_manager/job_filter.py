@@ -106,26 +106,80 @@ class JobFilter:
     # --- Helper methods ---
     # (Implementations remain the same)
     def _matches_description_blacklist(self, job: Job) -> bool:
+        """
+        Check if job description or title contains blacklisted phrases.
+        
+        Unlike the other blacklist methods, this one already performs
+        a substring check that works with multi-word phrases, checking
+        if any blacklisted phrase appears within the job description or title.
+        """
         if not self.description_blacklist_lower: return False
+        
+        # Convert job description and title to lowercase for case-insensitive comparison
         job_description_lower = job.description.lower() if job.description else ""
         job_title_lower = job.title.lower() if job.title else ""
+        
+        # Check for each blacklisted phrase in both title and description
         for criteria in self.description_blacklist_lower:
             if criteria in job_title_lower or criteria in job_description_lower:
-                logger.trace(f"Desc blacklist criteria '{criteria}' found: {job.link}")
+                logger.trace(f"Description blacklist criteria '{criteria}' found: {job.link}")
                 return True
+                
         return False
 
     def _is_title_blacklisted(self, title: str) -> bool:
+        """
+        Check if job title contains blacklisted words or phrases.
+        
+        This method performs two types of checks:
+        1. Word-level check: splits title into individual words and checks against blacklist
+        2. Phrase-level check: checks if any complete blacklist phrase appears in the title
+        """
         if not title or not self.title_blacklist_set: return False
-        title_words = set(word.strip('.,!?;:') for word in title.lower().split())
+        
+        # Convert title to lowercase for case-insensitive comparison
+        title_lower = title.lower()
+        
+        # Check 1: Word-level comparison (original method)
+        title_words = set(word.strip('.,!?;:') for word in title_lower.split())
         intersection = title_words.intersection(self.title_blacklist_set)
-        if intersection: logger.trace(f"Blacklisted title words: {intersection}"); return True
+        if intersection: 
+            logger.trace(f"Blacklisted title words: {intersection}")
+            return True
+            
+        # Check 2: Phrase-level comparison (for multi-word blacklist items)
+        for phrase in self.title_blacklist:
+            if phrase and phrase.lower() in title_lower:
+                logger.trace(f"Blacklisted phrase found: '{phrase}'")
+                return True
+                
         return False
 
     def _is_company_blacklisted(self, company: str) -> bool:
+        """
+        Check if company matches any blacklisted company names.
+        
+        This method performs two types of checks:
+        1. Exact match: checks if the company name exactly matches a blacklisted company
+        2. Phrase-level check: checks if any blacklisted company name appears within the company name
+        """
         if not company or not self.company_blacklist_set: return False
-        is_blacklisted = company.strip().lower() in self.company_blacklist_set
-        if is_blacklisted: logger.trace(f"Company '{company.strip().lower()}' blacklisted."); return True
+        
+        # Convert company name to lowercase for case-insensitive comparison
+        company_lower = company.strip().lower()
+        
+        # Check 1: Exact match (original method)
+        is_blacklisted = company_lower in self.company_blacklist_set
+        if is_blacklisted: 
+            logger.trace(f"Company '{company_lower}' exactly matches blacklist.")
+            return True
+            
+        # Check 2: Phrase-level comparison (for multi-word blacklist items)
+        for name in self.company_blacklist:
+            if name and name.lower() in company_lower:
+                logger.trace(f"Blacklisted company phrase found: '{name}' in '{company}'")
+                return True
+                
         return False
     
     def _is_job_state_invalid(self, job: Job) -> bool:
